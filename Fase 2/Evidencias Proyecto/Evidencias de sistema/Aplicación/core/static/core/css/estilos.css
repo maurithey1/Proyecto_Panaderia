@@ -1,0 +1,397 @@
+/* ==========================================================
+   Los Tres Spa · estilos del menú principal
+   Paleta de panadería: crema, café claro, café tostado, trigo, terracota
+   ========================================================== */
+
+:root {
+  --crema: #fbf5ea;
+  --crema-2: #f3e7d3;
+  --papel: #fffdf8;
+  --borde: #e6d5bc;
+
+  --cafe-claro: #c8a27a;
+  --cafe: #7b4b2a;
+  --cafe-hover: #5e381f;
+  --cafe-oscuro: #3e2a1d;
+  --texto-suave: #6e5848;
+
+  --trigo: #e3b25b;
+  --trigo-claro: #f1d596;
+  --terracota: #b4532a;
+
+  /* Colores de la hogaza del bloque de bienvenida */
+  --corteza: #9a5a2e;
+  --corteza-brillo: #c98a4b;
+  --miga: #f6e3bd;
+
+  --radio: 12px;
+  --fuente-titulos: "Young Serif", Georgia, "Times New Roman", serif;
+  --fuente-texto: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--crema);
+  color: var(--cafe-oscuro);
+  font-family: var(--fuente-texto);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+img { max-width: 100%; display: block; }
+a { color: inherit; }
+
+/* Young Serif solo existe en peso 400: se fija para evitar negrita simulada */
+h1, h2, h3 {
+  font-family: var(--fuente-titulos);
+  font-weight: 400;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.contenedor {
+  width: min(1120px, 100% - 32px);
+  margin-inline: auto;
+}
+
+.icono {
+  width: 1.25em;
+  height: 1.25em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:focus-visible {
+  outline: 3px solid var(--terracota);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.saltar {
+  position: absolute;
+  left: 12px;
+  top: -60px;
+  background: var(--cafe-oscuro);
+  color: var(--crema);
+  padding: 8px 14px;
+  border-radius: 8px;
+  z-index: 10;
+}
+.saltar:focus { top: 12px; }
+
+/* ---------- Botones ---------- */
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1.5px solid var(--cafe);
+  font: 500 0.95rem/1 var(--fuente-texto);
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.boton--primario { background: var(--cafe); color: var(--crema); }
+.boton--primario:hover { background: var(--cafe-hover); border-color: var(--cafe-hover); }
+.boton--contorno { background: transparent; color: var(--cafe-oscuro); }
+.boton--contorno:hover { background: var(--cafe); color: var(--papel); }
+.boton--texto { background: transparent; border-color: transparent; color: var(--cafe-oscuro); }
+.boton--texto:hover { background: var(--crema-2); }
+.boton--grande { padding: 15px 28px; font-size: 1.05rem; }
+.boton:active { transform: translateY(1px); }
+
+/* ---------- Cabecera ---------- */
+.cabecera {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgb(251 245 234 / 94%);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--borde);
+}
+
+.cabecera__fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 12px;
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 1.35rem/1 var(--fuente-titulos);
+  text-decoration: none;
+  color: var(--cafe-oscuro);
+}
+.logo .icono { color: var(--terracota); width: 1.5em; height: 1.5em; }
+
+.menu { display: flex; align-items: center; }
+.menu a {
+  padding: 4px 16px;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: var(--texto-suave);
+  transition: color 0.18s ease;
+}
+.menu a + a { border-left: 1.5px solid var(--cafe-claro); }
+.menu a:hover { color: var(--cafe-oscuro); }
+.menu a[aria-current="page"] { color: var(--cafe-oscuro); font-weight: 700; }
+
+.cabecera__acciones { display: flex; align-items: center; gap: 10px; }
+
+.carrito {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  color: var(--cafe-oscuro);
+  transition: background-color 0.18s ease;
+}
+.carrito:hover { background: var(--crema-2); }
+
+/* ---------- Bienvenida ---------- */
+.hero {
+  background: var(--crema-2);
+  border-bottom: 1px solid var(--borde);
+}
+
+main { flex: 1; }
+
+.hero__grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  align-items: center;
+  gap: 40px;
+  padding-block: clamp(40px, 7vw, 88px);
+}
+
+.hero h1 {
+  font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin-bottom: 18px;
+}
+
+.hero__texto p {
+  max-width: 42ch;
+  margin: 0 0 30px;
+  color: var(--texto-suave);
+  font-size: 1.1rem;
+}
+
+.hero__figura {
+  position: relative;
+  width: min(100%, 320px);
+  aspect-ratio: 1;
+  margin-inline: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--trigo-claro);
+  box-shadow: inset 0 0 0 10px rgb(255 253 248 / 55%);
+}
+.hero__figura::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  border: 2px dashed var(--cafe-claro);
+}
+
+.hogaza { width: 78%; height: auto; overflow: visible; }
+.hogaza__sombra { fill: var(--cafe); opacity: 0.18; }
+.hogaza__corteza { fill: var(--corteza); }
+.hogaza__brillo { fill: none; stroke: var(--corteza-brillo); stroke-width: 6; stroke-linecap: round; }
+.hogaza__cortes path { fill: var(--miga); }
+.hogaza__harina circle { fill: var(--miga); opacity: 0.7; }
+
+/* ---------- Los más pedidos ---------- */
+.destacados { padding-block: clamp(36px, 6vw, 72px); }
+.destacados h2 { font-size: clamp(1.7rem, 3.2vw, 2.2rem); margin-bottom: 24px; }
+
+.productos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 20px;
+}
+
+.tarjeta {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--papel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.tarjeta__imagen {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  background: var(--crema-2);
+  border-bottom: 1px solid var(--borde);
+  color: var(--cafe);
+}
+.tarjeta__imagen img { width: 100%; height: 100%; object-fit: cover; }
+.tarjeta__imagen .icono { width: 3.2rem; height: 3.2rem; stroke-width: 1.4; }
+
+/* Sin foto: cada tarjeta toma un tono distinto de la paleta */
+.tarjeta:nth-child(4n + 1) .tarjeta__imagen--sin-foto { background: var(--trigo-claro); }
+.tarjeta:nth-child(4n + 2) .tarjeta__imagen--sin-foto { background: #ecc3a6; color: var(--terracota); }
+.tarjeta:nth-child(4n + 3) .tarjeta__imagen--sin-foto { background: #e8d2ae; }
+.tarjeta:nth-child(4n + 4) .tarjeta__imagen--sin-foto { background: #dcc0a0; }
+
+.tarjeta__cuerpo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+}
+.tarjeta h3 { font-size: 1.2rem; }
+
+.tarjeta__desc {
+  margin: 0;
+  color: var(--texto-suave);
+  font-size: 0.9rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tarjeta__stock { margin: 4px 0 0; font-size: 0.875rem; color: var(--texto-suave); }
+.tarjeta__stock strong { color: var(--cafe-oscuro); }
+.tarjeta__aviso { margin-left: 4px; color: var(--terracota); font-weight: 700; }
+
+.tarjeta__pie {
+  margin-top: auto;
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tarjeta__precio {
+  margin: 0;
+  font: 400 1.45rem/1 var(--fuente-titulos);
+  color: var(--terracota);
+}
+
+.agregar {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--cafe);
+  background: transparent;
+  color: var(--cafe);
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.agregar:hover:not(:disabled) { background: var(--cafe); color: var(--crema); transform: scale(1.06); }
+.agregar:active:not(:disabled) { transform: scale(0.95); }
+.agregar:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.vacio {
+  padding: 32px;
+  text-align: center;
+  color: var(--texto-suave);
+  background: var(--papel);
+  border: 1px dashed var(--cafe-claro);
+  border-radius: var(--radio);
+}
+
+/* ---------- Pie de página ---------- */
+.pie {
+  background: var(--cafe-oscuro);
+  color: var(--borde);
+  font-size: 0.95rem;
+}
+.pie :focus-visible { outline-color: var(--trigo); }
+.pie a { text-decoration: none; }
+.pie a:hover { text-decoration: underline; }
+
+.pie__grid {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 1fr);
+  gap: 32px;
+  padding-block: 40px 28px;
+}
+.pie__marca .logo { color: var(--crema); }
+.pie__marca .logo .icono { color: var(--trigo); }
+.pie__marca p { margin: 12px 0 0; max-width: 28ch; }
+
+/* Los títulos del pie son h2 por estructura, pero se ven como etiquetas */
+.pie h2 { font: 700 1rem/1.3 var(--fuente-texto); color: var(--crema); margin-bottom: 8px; }
+.pie p, .pie address { margin: 0; font-style: normal; }
+
+/* .pie p pone margin: 0; se repite el centrado de .contenedor con más especificidad */
+.pie .pie__legal {
+  margin-inline: auto;
+  padding-block: 16px 24px;
+  border-top: 1px solid rgb(230 213 188 / 22%);
+  font-size: 0.85rem;
+}
+
+/* ---------- Pantallas pequeñas ---------- */
+@media (max-width: 860px) {
+  .cabecera__fila { flex-wrap: wrap; }
+  .menu { order: 3; width: 100%; justify-content: center; padding-top: 4px; }
+
+  .hero__grid { grid-template-columns: 1fr; text-align: center; gap: 20px; padding-block: 28px 36px; }
+  .hero__texto p { margin-inline: auto; margin-bottom: 22px; }
+  .hero__figura { width: 150px; order: -1; }
+  .hero__figura::after { inset: -10px; }
+  .hero h1 { margin-bottom: 12px; }
+
+  .pie__grid { grid-template-columns: 1fr 1fr; }
+  .pie__marca { grid-column: 1 / -1; }
+}
+
+/* Móvil: cabecera de dos filas (logo, sesión y carrito; menú debajo) */
+@media (max-width: 520px) {
+  .cabecera { position: static; }
+  .cabecera__fila { gap: 0 8px; padding-block: 8px; }
+  .cabecera__acciones { gap: 2px; }
+  .cabecera__acciones .boton--texto { padding-inline: 10px; }
+  .cabecera__acciones .boton--registro { display: none; }
+  .logo { font-size: 1.2rem; }
+
+  .hero__grid { padding-block: 20px 28px; gap: 16px; }
+  .hero__figura { width: 120px; }
+  .pie__grid { grid-template-columns: 1fr; gap: 24px; }
+
+  /* Dos tarjetas por fila para no alargar tanto la página */
+  .productos { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .tarjeta__cuerpo { padding: 12px; }
+  .tarjeta h3 { font-size: 1.05rem; }
+  .tarjeta__precio { font-size: 1.25rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition: none !important; }
+}
