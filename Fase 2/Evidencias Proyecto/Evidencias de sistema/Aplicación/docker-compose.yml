@@ -18,6 +18,7 @@ services:
   web:
     build: .
     container_name: panaderia_web
+    restart: on-failure
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
