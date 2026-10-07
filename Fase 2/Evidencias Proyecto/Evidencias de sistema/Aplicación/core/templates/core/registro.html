@@ -1,0 +1,358 @@
+{% extends "core/base.html" %}
+{% load static %}
+
+{% block titulo %}Crear cuenta{% endblock %}
+
+{% block contenido %}
+<section class="registro-seccion" aria-labelledby="registro-titulo">
+  <div class="contenedor registro-panel">
+
+    <!-- ==========================================
+         STEPPER VISUAL (INDICADOR DE PROGRESO)
+         ========================================== -->
+    <nav class="stepper" aria-label="Progreso del registro">
+      <div id="indicador-paso-1" class="stepper__paso activo">
+        <span class="stepper__circulo">1</span>
+        <span class="stepper__nombre">Datos personales</span>
+      </div>
+
+      <div id="linea-paso" class="stepper__linea" aria-hidden="true"></div>
+
+      <div id="indicador-paso-2" class="stepper__paso">
+        <span class="stepper__circulo">2</span>
+        <span class="stepper__nombre">Domicilio de entrega</span>
+      </div>
+    </nav>
+
+    <!-- ==========================================
+         TARJETA DEL FORMULARIO MULTI-PASO
+         ========================================== -->
+    <div class="registro-tarjeta">
+      <!-- Iconos decorativos idénticos al login -->
+      <span class="tarjeta-adorno tarjeta-adorno--izq" aria-hidden="true">
+        <svg class="icono"><use href="#i-pan"/></svg>
+      </span>
+      <span class="tarjeta-adorno tarjeta-adorno--der" aria-hidden="true">
+        <svg class="icono"><use href="#i-espiga"/></svg>
+      </span>
+
+      <!-- Alertas de Django (backend) -->
+      {% if messages %}
+        <div class="registro-alertas" role="alert">
+          {% for m in messages %}
+            <p class="alerta">{{ m }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- Alerta dinámica de validación JavaScript (frontend) -->
+      <div id="js-alerta" class="alerta" style="display: none;" role="alert"></div>
+
+      <form method="POST" action="{% url 'registro' %}" id="form-registro" novalidate>
+        {% csrf_token %}
+
+        <!-- ==========================================
+             PASO 1: DATOS PERSONALES Y CUENTA
+             ========================================== -->
+        <div id="paso-1" class="paso-contenedor">
+          <h1 id="registro-titulo" class="registro-titulo">Crear cuenta nueva</h1>
+
+          <div class="campo">
+            <label for="id_rut">RUT</label>
+            <input 
+              type="text" 
+              name="rut" 
+              id="id_rut" 
+              class="entrada" 
+              placeholder="Ej: 12.345.678-9" 
+              value="{{ datos.rut|default:'' }}" 
+              autocomplete="off" 
+              required
+            >
+          </div>
+
+          <div class="fila-dos">
+            <div class="campo">
+              <label for="id_first_name">Nombre</label>
+              <input 
+                type="text" 
+                name="first_name" 
+                id="id_first_name" 
+                class="entrada" 
+                placeholder="Ej: Jose" 
+                value="{{ datos.first_name|default:'' }}" 
+                autocomplete="given-name" 
+                required
+              >
+            </div>
+
+            <div class="campo">
+              <label for="id_last_name">Apellidos</label>
+              <input 
+                type="text" 
+                name="last_name" 
+                id="id_last_name" 
+                class="entrada" 
+                placeholder="Ej: Peralta Vásquez" 
+                value="{{ datos.last_name|default:'' }}" 
+                autocomplete="family-name" 
+                required
+              >
+            </div>
+          </div>
+
+          <div class="fila-dos">
+            <div class="campo">
+              <label for="id_email">Correo electrónico</label>
+              <input 
+                type="email" 
+                name="email" 
+                id="id_email" 
+                class="entrada" 
+                placeholder="ejemplo@correo.cl" 
+                value="{{ datos.email|default:'' }}" 
+                autocomplete="email" 
+                required
+              >
+            </div>
+
+            <div class="campo">
+              <label for="id_telefono">Teléfono</label>
+              <input 
+                type="tel" 
+                name="telefono" 
+                id="id_telefono" 
+                class="entrada" 
+                placeholder="+56 9 1234 5678" 
+                value="{{ datos.telefono|default:'' }}" 
+                autocomplete="tel" 
+                required
+              >
+            </div>
+          </div>
+
+          <div class="fila-dos">
+            <div class="campo">
+              <label for="id_password">Ingrese su contraseña</label>
+              <input 
+                type="password" 
+                name="password" 
+                id="id_password" 
+                class="entrada" 
+                placeholder="••••••••" 
+                autocomplete="new-password" 
+                required
+              >
+            </div>
+
+            <div class="campo">
+              <label for="id_password_confirm">Confirme su contraseña</label>
+              <input 
+                type="password" 
+                name="password_confirm" 
+                id="id_password_confirm" 
+                class="entrada" 
+                placeholder="••••••••" 
+                autocomplete="new-password" 
+                required
+              >
+            </div>
+          </div>
+          <p class="ayuda-contrasena">La contraseña debe tener un mínimo de 6 caracteres.</p>
+
+          <div class="registro-acciones">
+            <button type="button" id="btn-continuar" class="boton boton--primario">Continuar →</button>
+          </div>
+
+          <div class="registro-pie">
+            ¿Ya tienes una cuenta? <a href="{% url 'login' %}">Iniciar sesión</a>
+          </div>
+        </div>
+
+        <!-- ==========================================
+             PASO 2: DATOS DE DOMICILIO Y DESPACHO
+             ========================================== -->
+        <div id="paso-2" class="paso-contenedor oculto">
+          <h2 class="registro-titulo">Datos de domicilio</h2>
+
+          <div class="fila-dos">
+            <div class="campo">
+              <label for="id_region">Región</label>
+              <input 
+                type="text" 
+                name="region" 
+                id="id_region" 
+                class="entrada" 
+                placeholder="Metropolitana" 
+                value="{{ datos.region|default:'Región Metropolitana' }}" 
+                required
+              >
+            </div>
+
+            <div class="campo">
+              <label for="id_comuna">Comuna</label>
+              <input 
+                type="text" 
+                name="comuna" 
+                id="id_comuna" 
+                class="entrada" 
+                placeholder="La Florida" 
+                value="{{ datos.comuna|default:'La Florida' }}" 
+                required
+              >
+            </div>
+          </div>
+
+          <div class="fila-dos">
+            <div class="campo">
+              <label for="id_direccion1">Dirección 1 (Calle y número)</label>
+              <input 
+                type="text" 
+                name="direccion1" 
+                id="id_direccion1" 
+                class="entrada" 
+                placeholder="Ej: Fuenzalida 1344" 
+                value="{{ datos.direccion1|default:'' }}" 
+                required
+              >
+            </div>
+
+            <div class="campo">
+              <label for="id_direccion2">Dirección 2 (Opcional)</label>
+              <input 
+                type="text" 
+                name="direccion2" 
+                id="id_direccion2" 
+                class="entrada" 
+                placeholder="Ej: Depto 402, Block B" 
+                value="{{ datos.direccion2|default:'' }}"
+              >
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="id_indicaciones">Indicaciones adicionales (Opcional)</label>
+            <textarea 
+              name="indicaciones" 
+              id="id_indicaciones" 
+              class="entrada entrada--textarea" 
+              placeholder="Ej: Casa del portón rojo junto al negocio de la esquina..."
+            >{{ datos.indicaciones|default:'' }}</textarea>
+          </div>
+
+          <div class="registro-acciones registro-acciones--split">
+            <button type="button" id="btn-volver" class="boton boton--contorno">← Volver</button>
+            <button type="submit" id="btn-crear" class="boton boton--primario">Crear cuenta</button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+  </div>
+</section>
+
+<!-- ==========================================
+     LÓGICA JAVASCRIPT DEL STEPPER (2 PASOS)
+     ========================================== -->
+<script>
+  (function() {
+    const paso1 = document.getElementById('paso-1');
+    const paso2 = document.getElementById('paso-2');
+    const ind1 = document.getElementById('indicador-paso-1');
+    const ind2 = document.getElementById('indicador-paso-2');
+    const linea = document.getElementById('linea-paso');
+    const btnContinuar = document.getElementById('btn-continuar');
+    const btnVolver = document.getElementById('btn-volver');
+    const form = document.getElementById('form-registro');
+    const alerta = document.getElementById('js-alerta');
+
+    function mostrarError(mensaje) {
+      alerta.textContent = mensaje;
+      alerta.style.display = 'block';
+      alerta.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function ocultarError() {
+      alerta.style.display = 'none';
+      alerta.textContent = '';
+    }
+
+    // Botón Continuar (Paso 1 -> Paso 2)
+    btnContinuar.addEventListener('click', function() {
+      ocultarError();
+
+      const rut = document.getElementById('id_rut').value.trim();
+      const nombre = document.getElementById('id_first_name').value.trim();
+      const apellidos = document.getElementById('id_last_name').value.trim();
+      const email = document.getElementById('id_email').value.trim();
+      const telefono = document.getElementById('id_telefono').value.trim();
+      const pass = document.getElementById('id_password').value;
+      const passConf = document.getElementById('id_password_confirm').value;
+
+      if (!rut || !nombre || !apellidos || !email || !telefono || !pass || !passConf) {
+        mostrarError('Por favor completa todos los campos del Paso 1.');
+        return;
+      }
+
+      // Validar formato de correo básico
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        mostrarError('Por favor ingresa un correo electrónico válido.');
+        return;
+      }
+
+      if (pass.length < 6) {
+        mostrarError('La contraseña debe tener al menos 6 caracteres.');
+        return;
+      }
+
+      if (pass !== passConf) {
+        mostrarError('Las contraseñas ingresadas no coinciden.');
+        return;
+      }
+
+      // Transición al Paso 2
+      paso1.classList.add('oculto');
+      paso2.classList.remove('oculto');
+
+      ind1.classList.remove('activo');
+      ind1.classList.add('completado');
+      linea.classList.add('completada');
+      ind2.classList.add('activo');
+
+      // Scroll arriba suave
+      window.scrollTo({ top: paso2.offsetTop - 80, behavior: 'smooth' });
+    });
+
+    // Botón Volver (Paso 2 -> Paso 1)
+    btnVolver.addEventListener('click', function() {
+      ocultarError();
+
+      paso2.classList.add('oculto');
+      paso1.classList.remove('oculto');
+
+      ind2.classList.remove('activo');
+      linea.classList.remove('completada');
+      ind1.classList.remove('completado');
+      ind1.classList.add('activo');
+
+      window.scrollTo({ top: paso1.offsetTop - 80, behavior: 'smooth' });
+    });
+
+    // Validación final al enviar el formulario
+    form.addEventListener('submit', function(e) {
+      ocultarError();
+
+      const region = document.getElementById('id_region').value.trim();
+      const comuna = document.getElementById('id_comuna').value.trim();
+      const dir1 = document.getElementById('id_direccion1').value.trim();
+
+      if (!region || !comuna || !dir1) {
+        e.preventDefault();
+        mostrarError('Por favor completa los campos de Región, Comuna y Dirección 1.');
+      }
+    });
+  })();
+</script>
+{% endblock %}

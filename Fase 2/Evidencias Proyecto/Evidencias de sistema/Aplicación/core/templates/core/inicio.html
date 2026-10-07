@@ -1,0 +1,82 @@
+{% extends "core/base.html" %}
+{% load formato %}
+
+{% block titulo %}Inicio{% endblock %}
+
+{% block contenido %}
+<section class="hero" aria-labelledby="hero-titulo">
+  <div class="contenedor hero__grid">
+    <div class="hero__texto">
+      <h1 id="hero-titulo">Pan recién horneado, todos los días</h1>
+      <p>
+        Horneamos cada mañana con harinas seleccionadas.
+        Pide online y retira en la tienda o recíbelo en tu casa.
+      </p>
+      {# TODO: enlazar con la vista de pedidos cuando exista #}
+      <a class="boton boton--primario boton--grande" href="#">Hacer un pedido</a>
+    </div>
+
+    <div class="hero__figura" aria-hidden="true">
+      <svg class="hogaza" viewBox="0 0 200 200" focusable="false">
+        <ellipse class="hogaza__sombra" cx="100" cy="160" rx="72" ry="8"/>
+        <path class="hogaza__corteza" d="M30 118c0-40 31-68 70-68s70 28 70 68c0 22-30 38-70 38s-70-16-70-38z"/>
+        <path class="hogaza__brillo" d="M50 96c8-22 28-35 52-36"/>
+        <g class="hogaza__cortes">
+          <path d="M64 78c10 3 17 19 15 40-10-3-17-19-15-40z"/>
+          <path d="M64 78c10 3 17 19 15 40-10-3-17-19-15-40z" transform="translate(30 -8)"/>
+          <path d="M64 78c10 3 17 19 15 40-10-3-17-19-15-40z" transform="translate(60 0)"/>
+        </g>
+        <g class="hogaza__harina">
+          <circle cx="52" cy="124" r="2"/><circle cx="84" cy="136" r="1.6"/>
+          <circle cx="118" cy="134" r="2"/><circle cx="148" cy="118" r="1.6"/>
+          <circle cx="106" cy="148" r="1.4"/><circle cx="70" cy="144" r="1.4"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section class="destacados" aria-labelledby="destacados-titulo">
+  <div class="contenedor">
+    <h2 id="destacados-titulo">Los más pedidos</h2>
+
+    {% if productos %}
+      <ul class="productos">
+        {% for p in productos %}
+          <li class="tarjeta">
+            <div class="tarjeta__imagen{% if not p.imagen_url %} tarjeta__imagen--sin-foto{% endif %}">
+              {% if p.imagen_url %}
+                <img src="{{ p.imagen_url }}" alt="{{ p.nombre }}" loading="lazy">
+              {% else %}
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+              {% endif %}
+            </div>
+
+            <div class="tarjeta__cuerpo">
+              <h3>{{ p.nombre }}</h3>
+              {% if p.descripcion %}<p class="tarjeta__desc">{{ p.descripcion }}</p>{% endif %}
+              <p class="tarjeta__stock">
+                {% if p.stock <= 0 %}
+                  <strong>Agotado</strong>
+                {% else %}
+                  <strong>Stock:</strong> {{ p.stock }} unidad{{ p.stock|pluralize:"es" }}
+                  {% if p.stock <= p.stock_critico %}<span class="tarjeta__aviso">Quedan pocas</span>{% endif %}
+                {% endif %}
+              </p>
+              <div class="tarjeta__pie">
+                <p class="tarjeta__precio">{{ p.precio|clp }}</p>
+                {# TODO: conectar con el carrito cuando exista #}
+                <button class="agregar" type="button" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
+                  <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+                </button>
+              </div>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="vacio">Pronto tendremos productos para mostrarte.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

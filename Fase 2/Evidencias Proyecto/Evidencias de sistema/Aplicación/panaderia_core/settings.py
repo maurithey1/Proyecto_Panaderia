@@ -129,6 +129,11 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Media files (Imágenes de productos y archivos multimedia)
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
@@ -136,3 +141,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom User Model
 AUTH_USER_MODEL = 'core.Usuario'
+
+LOGIN_URL = 'login'  # Redirige a esta URL si el usuario no está autenticado

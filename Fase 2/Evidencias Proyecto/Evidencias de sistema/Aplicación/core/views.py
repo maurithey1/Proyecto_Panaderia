@@ -1,44 +1,194 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
-from .models import Usuario
+from django.db import transaction
+from django.db.models import Q
+from .models import Producto, Usuario, Cliente, PuntosFidelizacion
 
-def home(request):
-    return render(request, 'core/index.html')
+def inicio(request):
+    """
+    Vista principal de la panadería.
+    Carga los productos activos para la sección 'Los más pedidos'.
+    """
+    productos = Producto.objects.filter(activo=True)
+    return render(request, 'core/inicio.html', {'productos': productos})
+
+
+def redireccionar_por_rol(user):
+    """
+    Redirige al usuario según su rol en el sistema:
+    - ADMINISTRADOR -> /admin/
+    - CAJERO -> /pos/
+    - CLIENTE -> 'inicio'
+    """
+    if getattr(user, 'es_administrador', False):
+        return redirect('/admin/')
+    elif getattr(user, 'es_cajero', False):
+        return redirect('/pos/')
+    return redirect('inicio')
+
 
 def login_view(request):
-    # Si ya está autenticado, redirigir según su rol
+    """
+    Controlador de inicio de sesión con soporte para:
+    - Autenticación por Correo Electrónico o Nombre de Usuario.
+    - Redirección según rol (Administrador, Cajero, Cliente).
+    - Redirección previa con parámetro ?next=/...
+    """
+    # Si el usuario ya está conectado, redirigir a su vista correspondiente
     if request.user.is_authenticated:
-        if getattr(request.user, 'rol', None) == 'ADMINISTRADOR' or request.user.is_superuser:
-            return redirect('/admin/')
-        elif getattr(request.user, 'rol', None) == 'CAJERO':
-            return redirect('/pos/')
-        return redirect('/')
+        return redireccionar_por_rol(request.user)
+
+    next_url = request.GET.get('next') or request.POST.get('next')
 
     if request.method == 'POST':
         identificador = request.POST.get('username', '').strip()
         password = request.POST.get('password', '')
 
-        # Permitir inicio de sesión tanto con Correo Electrónico como con Nombre de Usuario
-        user_obj = Usuario.objects.filter(email__iexact=identificador).first()
-        username = user_obj.username if user_obj else identificador
+        if not identificador or not password:
+            messages.error(request, 'Por favor, ingrese su correo o usuario y contraseña.')
+            return render(request, 'core/login.html', {'next': next_url})
 
-        user = authenticate(request, username=username, password=password)
+        # Buscar si el dato ingresado corresponde al email o al username
+        usuario_encontrado = Usuario.objects.filter(
+            Q(username__iexact=identificador) | Q(email__iexact=identificador)
+        ).first()
+
+        username_auth = usuario_encontrado.username if usuario_encontrado else identificador
+
+        # Autenticación de Django
+        user = authenticate(request, username=username_auth, password=password)
 
         if user is not None:
-            login(request, user)
-            # Redirección basada en roles (Sprint 1)
-            if user.rol == 'ADMINISTRADOR' or user.is_superuser:
-                return redirect('/admin/')
-            elif user.rol == 'CAJERO':
-                return redirect('/pos/')
-            else:
-                return redirect('/')
-        else:
-            messages.error(request, 'Correo o contraseña incorrectos. Por favor, intente nuevamente.')
+            if not user.is_active:
+                messages.error(request, 'Esta cuenta se encuentra desactivada.')
+                return render(request, 'core/login.html', {'next': next_url})
 
-    return render(request, 'core/login.html')
+            login(request, user)
+
+            # Redirección personalizada o según rol
+            if next_url and next_url.startswith('/'):
+                return redirect(next_url)
+
+            return redireccionar_por_rol(user)
+        else:
+            messages.error(request, 'Credenciales incorrectas. Verifique sus datos e intente nuevamente.')
+
+    return render(request, 'core/login.html', {'next': next_url})
+
 
 def logout_view(request):
+    """Cierra la sesión y redirige a la página de inicio."""
     logout(request)
-    return redirect('/')
+    messages.info(request, 'Has cerrado sesión correctamente.')
+    return redirect('inicio')
+
+
+def registro_view(request):
+    """
+    Vista de registro público exclusiva para clientes (Formulario en 2 Pasos).
+    - Asigna obligatoriamente rol='CLIENTE'.
+    - Crea Usuario, Perfil Cliente y registro inicial de PuntosFidelizacion (0 pts).
+    - Inicia sesión automáticamente tras el registro y redirige a 'inicio'.
+    """
+    if request.user.is_authenticated:
+        return redirect('inicio')
+
+    if request.method == 'POST':
+        rut = request.POST.get('rut', '').strip()
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        email = request.POST.get('email', '').strip().lower()
+        telefono = request.POST.get('telefono', '').strip()
+        password = request.POST.get('password', '')
+        password_confirm = request.POST.get('password_confirm', '')
+
+        # Datos de domicilio
+        region = request.POST.get('region', '').strip()
+        comuna = request.POST.get('comuna', '').strip()
+        direccion1 = request.POST.get('direccion1', '').strip()
+        direccion2 = request.POST.get('direccion2', '').strip()
+        indicaciones = request.POST.get('indicaciones', '').strip()
+
+        # Validaciones de backend
+        errores = []
+
+        if not (rut and first_name and last_name and email and telefono and password and password_confirm and region and comuna and direccion1):
+            errores.append('Por favor completa todos los campos obligatorios.')
+
+        if password != password_confirm:
+            errores.append('Las contraseñas no coinciden.')
+
+        if len(password) < 6:
+            errores.append('La contraseña debe tener al menos 6 caracteres.')
+
+        if Usuario.objects.filter(username__iexact=rut).exists():
+            errores.append('Ya existe una cuenta registrada con este RUT.')
+
+        if email and Usuario.objects.filter(email__iexact=email).exists():
+            errores.append('Ya existe una cuenta con este correo electrónico.')
+
+        if errores:
+            for err in errores:
+                messages.error(request, err)
+            return render(request, 'core/registro.html', {
+                'datos': {
+                    'rut': rut,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'email': email,
+                    'telefono': telefono,
+                    'region': region,
+                    'comuna': comuna,
+                    'direccion1': direccion1,
+                    'direccion2': direccion2,
+                    'indicaciones': indicaciones,
+                }
+            })
+
+        try:
+            with transaction.atomic():
+                # 1. Crear Usuario cliente
+                user = Usuario.objects.create_user(
+                    username=rut,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    rol='CLIENTE'
+                )
+
+                # 2. Formatear dirección para el perfil
+                partes_dir = [direccion1]
+                if direccion2:
+                    partes_dir.append(direccion2)
+                partes_dir.append(comuna)
+                partes_dir.append(region)
+                direccion_completa = ", ".join(partes_dir)
+                if indicaciones:
+                    direccion_completa += f" (Ref: {indicaciones})"
+
+                # 3. Crear Perfil Cliente
+                cliente = Cliente.objects.create(
+                    user=user,
+                    direccion=direccion_completa[:255],
+                    telefono=telefono or "+56 9"
+                )
+
+                # 4. Inicializar bolsa de puntos de fidelización
+                PuntosFidelizacion.objects.create(
+                    cliente=cliente,
+                    puntos_acumulados=0
+                )
+
+                # 5. Iniciar sesión automática
+                login(request, user)
+                messages.success(request, f'¡Bienvenido/a a Los Tres Spa, {first_name}! Tu cuenta ha sido creada exitosamente.')
+                return redirect('inicio')
+
+        except Exception as e:
+            messages.error(request, f'Ocurrió un error al procesar el registro: {str(e)}')
+            return render(request, 'core/registro.html', {'datos': request.POST})
+
+    return render(request, 'core/registro.html')
+
