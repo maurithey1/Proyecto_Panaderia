@@ -338,6 +338,26 @@ main { flex: 1; }
 .hogaza__cortes path { fill: var(--miga); }
 .hogaza__harina circle { fill: var(--miga); opacity: 0.7; }
 
+/* Página Pedir: cabecera y filtros por categoría */
+.pagina { padding-block: clamp(28px, 5vw, 56px) clamp(36px, 6vw, 72px); }
+.pagina__cabecera { margin-bottom: 24px; }
+.pagina__cabecera h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); margin-bottom: 8px; }
+.pagina__cabecera p { margin: 0; max-width: 52ch; color: var(--texto-suave); }
+
+.filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.filtros a {
+  padding: 10px 16px;
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  background: var(--papel);
+  font-size: 0.95rem;
+  line-height: 1;
+  text-decoration: none;
+  transition: border-color 0.18s ease, background-color 0.18s ease, color 0.18s ease;
+}
+.filtros a:hover { border-color: var(--cafe); }
+.filtros a[aria-current="page"] { background: var(--cafe); border-color: var(--cafe); color: var(--papel); }
+
 /* Los más pedidos */
 .destacados { padding-block: clamp(36px, 6vw, 72px); }
 .destacados h2 { font-size: clamp(1.7rem, 3.2vw, 2.2rem); margin-bottom: 24px; }

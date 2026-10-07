@@ -1,0 +1,36 @@
+{% extends "core/base.html" %}
+
+{% block titulo %}Pedir{% endblock %}
+
+{% block contenido %}
+<section class="pagina" aria-labelledby="pedir-titulo">
+  <div class="contenedor">
+    <header class="pagina__cabecera">
+      <h1 id="pedir-titulo">Nuestros productos</h1>
+      <p>Elige lo que quieras llevar. Puedes ver todo el catálogo sin crear una cuenta.</p>
+    </header>
+
+    {% if categorias %}
+      <nav class="filtros" aria-label="Categorías">
+        <a href="{% url 'pedir' %}"{% if not categoria_actual %} aria-current="page"{% endif %}>Todos</a>
+        {% for c in categorias %}
+          <a href="{% url 'pedir' %}?categoria={{ c.pk }}"{% if categoria_actual.pk == c.pk %} aria-current="page"{% endif %}>{{ c.nombre }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
+
+    {% if productos %}
+      <ul class="productos">
+        {% for p in productos %}
+          {% include "core/_tarjeta_producto.html" %}
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="vacio">
+        Todavía no hay productos disponibles.
+        {% if categoria_actual %}<a href="{% url 'pedir' %}">Ver todos los productos</a>{% endif %}
+      </p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

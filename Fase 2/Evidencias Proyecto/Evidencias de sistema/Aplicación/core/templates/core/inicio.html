@@ -1,5 +1,4 @@
 {% extends "core/base.html" %}
-{% load formato %}
 
 {% block titulo %}Inicio{% endblock %}
 
@@ -12,8 +11,7 @@
         Horneamos cada mañana con harinas seleccionadas.
         Pide online y retira en la tienda o recíbelo en tu casa.
       </p>
-      {# TODO: enlazar con la vista de pedidos cuando exista #}
-      <a class="boton boton--primario boton--grande" href="#">Hacer un pedido</a>
+      <a class="boton boton--primario boton--grande" href="{% url 'pedir' %}">Hacer un pedido</a>
     </div>
 
     <div class="hero__figura" aria-hidden="true">
@@ -43,35 +41,7 @@
     {% if productos %}
       <ul class="productos">
         {% for p in productos %}
-          <li class="tarjeta">
-            <div class="tarjeta__imagen{% if not p.imagen_url %} tarjeta__imagen--sin-foto{% endif %}">
-              {% if p.imagen_url %}
-                <img src="{{ p.imagen_url }}" alt="{{ p.nombre }}" loading="lazy">
-              {% else %}
-                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
-              {% endif %}
-            </div>
-
-            <div class="tarjeta__cuerpo">
-              <h3>{{ p.nombre }}</h3>
-              {% if p.descripcion %}<p class="tarjeta__desc">{{ p.descripcion }}</p>{% endif %}
-              <p class="tarjeta__stock">
-                {% if p.stock <= 0 %}
-                  <strong>Agotado</strong>
-                {% else %}
-                  <strong>Stock:</strong> {{ p.stock }} unidad{{ p.stock|pluralize:"es" }}
-                  {% if p.stock <= p.stock_critico %}<span class="tarjeta__aviso">Quedan pocas</span>{% endif %}
-                {% endif %}
-              </p>
-              <div class="tarjeta__pie">
-                <p class="tarjeta__precio">{{ p.precio|clp }}</p>
-                {# TODO: conectar con el carrito cuando exista #}
-                <button class="agregar" type="button" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
-                  <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
-                </button>
-              </div>
-            </div>
-          </li>
+          {% include "core/_tarjeta_producto.html" %}
         {% endfor %}
       </ul>
     {% else %}

@@ -2,16 +2,61 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Q
-from .models import Producto, Usuario, Cliente, PuntosFidelizacion
+from django.db.models import Case, IntegerField, Q, Sum, Value, When
+from django.db.models.functions import Coalesce
+from .models import Categoria, Pedido, Producto, Usuario, Cliente, PuntosFidelizacion
+
+PRODUCTOS_DESTACADOS = 4
+
 
 def inicio(request):
     """
     Vista principal de la panadería.
-    Carga los productos activos para la sección 'Los más pedidos'.
+    Muestra los 4 productos más vendidos en la sección 'Los más pedidos'.
     """
-    productos = Producto.objects.filter(activo=True)
+    # Cuenta lo vendido en pedidos que no fueron cancelados.
+    estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
+
+    productos = (
+        Producto.objects.filter(activo=True)
+        .annotate(
+            vendidos=Coalesce(
+                Sum(
+                    'detallepedido__cantidad',
+                    filter=Q(detallepedido__pedido__estado__in=estados_validos),
+                ),
+                0,
+            )
+        )
+        .order_by('-vendidos', 'nombre')[:PRODUCTOS_DESTACADOS]
+    )
+
     return render(request, 'core/inicio.html', {'productos': productos})
+
+
+def pedir(request):
+    """Catálogo completo, público. Se puede filtrar con ?categoria=<id>."""
+    categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
+
+    productos = Producto.objects.filter(activo=True).order_by(
+        # Los agotados van al final
+        Case(When(stock__gt=0, then=Value(0)), default=Value(1), output_field=IntegerField()),
+        'nombre',
+    )
+
+    categoria_actual = None
+    valor = request.GET.get('categoria', '')
+    if valor.isdigit():
+        categoria_actual = categorias.filter(pk=int(valor)).first()
+        if categoria_actual:
+            productos = productos.filter(categoria=categoria_actual)
+
+    contexto = {
+        'productos': productos,
+        'categorias': categorias,
+        'categoria_actual': categoria_actual,
+    }
+    return render(request, 'core/pedir.html', contexto)
 
 
 def redireccionar_por_rol(user):

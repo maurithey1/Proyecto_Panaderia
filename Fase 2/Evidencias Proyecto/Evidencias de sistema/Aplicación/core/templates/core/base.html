@@ -31,8 +31,8 @@
 
       <nav class="menu" aria-label="Principal">
         <a href="{% url 'inicio' %}"{% if request.resolver_match.url_name == 'inicio' %} aria-current="page"{% endif %}>Inicio</a>
-        {# TODO: enlazar "Pedir" y "Local" cuando existan esas vistas #}
-        <a href="#">Pedir</a>
+        <a href="{% url 'pedir' %}"{% if request.resolver_match.url_name == 'pedir' %} aria-current="page"{% endif %}>Pedir</a>
+        {# TODO: enlazar "Local" cuando exista esa vista #}
         <a href="#">Local</a>
       </nav>
 
