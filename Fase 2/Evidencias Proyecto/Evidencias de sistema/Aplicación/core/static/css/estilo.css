@@ -281,7 +281,7 @@ h1, h2, h3 {
 
 
 /* ==========================================================
-   index
+   inicio 
    ========================================================== */
 .hero {
   background: var(--crema-2);
@@ -475,7 +475,9 @@ main { flex: 1; }
   .tarjeta h3 { font-size: 1.05rem; }
   .tarjeta__precio { font-size: 1.25rem; }
 }
-/* index */
+/* ==========================================================
+   inicio 
+   ========================================================== */
 
 
 /* ==========================================================
@@ -635,7 +637,9 @@ main { flex: 1; }
     margin-inline: auto;
   }
 }
-/* login */
+/* ==========================================================
+   login
+   ========================================================== */
 
 
 /* ==========================================================
@@ -821,7 +825,985 @@ main { flex: 1; }
     margin-inline: 8px;
   }
 }
-/* registro */
+/* ==========================================================
+   registro
+   ========================================================== */
+
+
+/* ==========================================================
+   PANEL DE ADMINISTRACIÓN (base_admin.html & inicio_admin.html)
+   ========================================================== */
+
+/* Layout general de administración (Ancho fluido) */
+.admin-contenedor {
+  width: min(1380px, 100% - 40px);
+  margin-inline: auto;
+}
+
+.admin-main {
+  flex: 1;
+  padding-block: 28px 48px;
+}
+
+/* ------------------------------------------
+   HEADER ADMINISTRATIVO
+   ------------------------------------------ */
+.admin-cabecera {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--papel);
+  border-bottom: 1.5px solid var(--borde);
+}
+
+.admin-cabecera__fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-block: 14px;
+}
+
+.admin-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: 400 1.4rem/1 var(--fuente-titulos);
+  text-decoration: none;
+  color: var(--cafe-oscuro);
+  white-space: nowrap;
+}
+.admin-logo .icono { color: var(--terracota); width: 1.5em; height: 1.5em; }
+
+.admin-separador-v {
+  width: 1.5px;
+  height: 32px;
+  background-color: var(--borde);
+  flex-shrink: 0;
+}
+
+.admin-menu {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+}
+
+.admin-menu a {
+  padding: 4px 18px;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: var(--texto-suave);
+  transition: color 0.18s ease;
+  white-space: nowrap;
+}
+.admin-menu a + a { border-left: 1.5px solid var(--cafe-claro); }
+.admin-menu a:hover { color: var(--cafe-oscuro); }
+.admin-menu a[aria-current="page"] { color: var(--cafe-oscuro); font-weight: 700; }
+
+.admin-cabecera__acciones {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------
+   DROPDOWN DEL ADMINISTRADOR Y TABLAS DE GESTIÓN
+   ---------------------------------------------------------- */
+
+.admin-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.admin-dropdown__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  font: 500 0.95rem/1 var(--fuente-texto);
+  color: var(--cafe-oscuro);
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.admin-dropdown__toggle:hover,
+.admin-dropdown.activo .admin-dropdown__toggle {
+  background: var(--crema-2);
+}
+
+.admin-dropdown__flecha {
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.admin-dropdown.activo .admin-dropdown__flecha {
+  transform: rotate(180deg);
+}
+
+.admin-dropdown__menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 220px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: 0 8px 24px rgba(62, 42, 29, 0.12);
+  padding: 8px 0;
+  z-index: 100;
+}
+
+.admin-dropdown.activo .admin-dropdown__menu {
+  display: block;
+  animation: fadeInPaso 0.15s ease-out;
+}
+
+.admin-dropdown__header {
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-dropdown__header strong { color: var(--cafe-oscuro); font-size: 0.9rem; }
+.admin-dropdown__header small { color: var(--texto-suave); font-size: 0.8rem; }
+
+.admin-dropdown__divider {
+  border: none;
+  border-top: 1px solid var(--borde);
+  margin: 6px 0;
+}
+
+.admin-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+  transition: background-color 0.15s ease;
+}
+
+.admin-dropdown__item:hover {
+  background: var(--crema-2);
+}
+
+.admin-dropdown__item--danger { color: var(--terracota); }
+
+/* Layout y Tablas de Administración */
+.admin-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.admin-panel__subtitulo {
+  font-family: var(--fuente-titulos);
+  font-size: 1.25rem;
+  color: var(--cafe-oscuro);
+  margin-bottom: 16px;
+}
+
+.admin-tabla-wrapper {
+  overflow-x: auto;
+}
+
+.admin-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.admin-tabla th {
+  background: var(--crema-2);
+  color: var(--cafe-oscuro);
+  padding: 12px 14px;
+  border-bottom: 1.5px solid var(--borde);
+}
+
+.admin-tabla td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--borde);
+  color: var(--cafe-oscuro);
+}
+
+.badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.badge--exito { background: #e6f4ea; color: #137333; }
+.badge--alerta { background: #fce8e6; color: #c5221f; }
+
+.tabla-acciones { display: flex; gap: 8px; }
+.boton-tabla {
+  padding: 4px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 0.82rem;
+  border: 1px solid var(--borde);
+  background: var(--papel);
+}
+.boton-tabla:hover { background: var(--crema-2); }
+.boton-tabla--danger { color: var(--terracota); }
+
+/* Modal Nativo HTML5 */
+.admin-modal {
+  border: none;
+  border-radius: var(--radio);
+  padding: 0;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+  background: transparent;
+}
+.admin-modal::backdrop { background: rgba(0,0,0,0.4); }
+.admin-modal__content {
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 28px;
+  width: min(500px, 90vw);
+}
+
+
+/* ------------------------------------------
+   DASHBOARD / SECCIÓN SUPERIOR (Ventas + Stock)
+   ------------------------------------------ */
+.admin-top-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 28px;
+  align-items: stretch;
+}
+
+.admin-v-line {
+  width: 1.5px;
+  background-color: var(--borde);
+  height: 100%;
+}
+
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-panel__titulo {
+  font-family: var(--fuente-titulos);
+  font-size: 1.5rem;
+  color: var(--cafe-oscuro);
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+/* Gráficos en paralelo */
+.admin-graficos-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  flex: 1;
+}
+
+.admin-grafico-card {
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-grafico-card__titulo {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin-bottom: 12px;
+}
+
+.admin-grafico-placeholder {
+  flex: 1;
+  min-height: 180px;
+  background: var(--crema-2);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+}
+
+/* Fila de Tarjetas de Stock (Exactamente 4 por fila) */
+.admin-stock-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.admin-card-stock {
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  padding: 12px 8px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-card-stock__img {
+  width: 100%;
+  aspect-ratio: 1.1;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--papel);
+  color: var(--cafe-oscuro);
+}
+.admin-card-stock__img .icono { width: 2.4rem; height: 2.4rem; }
+
+.admin-card-stock__nombre {
+  font-family: var(--fuente-texto);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin: 0;
+}
+
+.admin-card-stock__unidades {
+  font-size: 0.8rem;
+  color: var(--texto-suave);
+  margin: 0;
+}
+
+/* Divisor Horizontal Principal */
+.admin-hr {
+  border: none;
+  border-top: 1.5px solid var(--borde);
+  margin-block: 36px 28px;
+}
+
+
+/* ------------------------------------------
+   DASHBOARD / SECCIÓN INFERIOR (Materias Primas)
+   ------------------------------------------ */
+.admin-panel__header-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+.admin-icono-filtro {
+  position: absolute;
+  left: 0;
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--cafe-oscuro);
+}
+
+/* Grilla de Proveedores (5 columnas exactas según mock-up) */
+.admin-proveedores-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px;
+}
+
+.admin-col-proveedor {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.admin-col-proveedor__nombre {
+  font-family: var(--fuente-texto);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin-bottom: 16px;
+  min-height: 2.4em;
+  display: flex;
+  align-items: center;
+}
+
+.admin-col-proveedor__items {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  align-items: center;
+}
+
+.admin-card-materia {
+  width: 100%;
+  max-width: 160px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.admin-card-materia__img {
+  width: 60px;
+  height: 60px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: var(--papel);
+  color: var(--cafe-oscuro);
+  margin-bottom: 4px;
+}
+.admin-card-materia__img .icono { width: 1.8rem; height: 1.8rem; }
+
+.admin-card-materia__nombre {
+  font-size: 0.85rem;
+  color: var(--cafe-oscuro);
+  margin: 0;
+}
+
+.admin-card-materia__precio {
+  font-family: var(--fuente-texto);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin: 0;
+}
+
+.admin-vacio {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--texto-suave);
+  padding: 24px;
+}
+
+
+/* ------------------------------------------
+   ADAPTACIÓN RESPONSIVA
+   ------------------------------------------ */
+@media (max-width: 1100px) {
+  .admin-top-grid {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+  .admin-v-line { display: none; }
+  .admin-proveedores-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .admin-cabecera__fila { flex-wrap: wrap; justify-content: center; }
+  .admin-separador-v { display: none; }
+  .admin-menu { order: 3; width: 100%; }
+  .admin-graficos-container { grid-template-columns: 1fr; }
+  .admin-stock-grid { grid-template-columns: repeat(2, 1fr); }
+  .admin-proveedores-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .admin-stock-grid { grid-template-columns: 1fr; }
+  .admin-proveedores-grid { grid-template-columns: 1fr; }
+}
+
+/* ==========================================================
+   PANEL DE ADMINISTRACIÓN (base_admin.html & inicio_admin.html)
+   ========================================================== */
+
+/* ==========================================================
+   MÓDULO PUNTO DE VENTA / CAJERO (base_cajero & inicio_cajero)
+   ========================================================== */
+
+.cajero-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--crema);
+  color: var(--cafe-oscuro);
+  font-family: var(--fuente-texto);
+}
+
+/* ------------------------------------------
+   CABECERA DEL CAJERO
+   ------------------------------------------ */
+.cajero-cabecera {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--papel);
+  border-bottom: 1.5px solid var(--borde);
+}
+
+.cajero-contenedor-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+}
+
+.cajero-cabecera__izq,
+.cajero-cabecera__der {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.cajero-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 1.35rem/1 var(--fuente-titulos);
+  text-decoration: none;
+  color: var(--cafe-oscuro);
+}
+.cajero-logo .icono { color: var(--terracota); width: 1.4em; height: 1.4em; }
+
+.cajero-separador-v {
+  width: 1.5px;
+  height: 28px;
+  background-color: var(--borde);
+}
+
+.cajero-titulo-modulo {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--cafe-oscuro);
+}
+
+/* DROPDOWN CAJERO */
+.cajero-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.cajero-dropdown__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  font: 500 0.95rem/1 var(--fuente-texto);
+  color: var(--cafe-oscuro);
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cajero-dropdown__toggle:hover,
+.cajero-dropdown.activo .cajero-dropdown__toggle {
+  background: var(--crema-2);
+}
+
+.cajero-dropdown__flecha { font-size: 0.75rem; }
+
+.cajero-dropdown__menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 200px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: 0 8px 24px rgba(62, 42, 29, 0.12);
+  padding: 8px 0;
+  z-index: 100;
+}
+.cajero-dropdown.activo .cajero-dropdown__menu { display: block; }
+
+.cajero-dropdown__header { padding: 8px 16px; display: flex; flex-direction: column; }
+.cajero-dropdown__header strong { color: var(--cafe-oscuro); font-size: 0.9rem; }
+.cajero-dropdown__header small { color: var(--texto-suave); font-size: 0.8rem; }
+
+.cajero-dropdown__divider { border: none; border-top: 1px solid var(--borde); margin: 6px 0; }
+
+.cajero-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+}
+.cajero-dropdown__item:hover { background: var(--crema-2); }
+.cajero-dropdown__item--danger { color: var(--terracota); }
+
+
+/* ------------------------------------------
+   LAYOUT CON SIDEBAR LATERAL
+   ------------------------------------------ */
+.cajero-layout {
+  display: flex;
+  flex: 1;
+}
+
+.cajero-sidebar {
+  width: 220px;
+  background: var(--papel);
+  border-right: 1.5px solid var(--borde);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px 12px;
+}
+
+.cajero-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cajero-sidebar__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  text-decoration: none;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--cafe-oscuro);
+  border-radius: 8px;
+  transition: background-color 0.18s ease;
+}
+
+.cajero-sidebar__link:hover,
+.cajero-sidebar__link.activo {
+  background: var(--crema-2);
+}
+
+.cajero-sidebar__time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-top: 1.5px solid var(--borde);
+  font-size: 0.82rem;
+  color: var(--texto-suave);
+}
+
+.cajero-main {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+
+/* ------------------------------------------
+   GRID POS (CATÁLOGOC ENTRAL + PANEL DERECHO)
+   ------------------------------------------ */
+.cajero-pos-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 20px;
+  height: 100%;
+}
+
+/* BUSCADOR Y CATEGORÍAS */
+.cajero-pos-catalogo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cajero-buscar-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cajero-buscar-icon {
+  position: absolute;
+  left: 14px;
+  width: 1.3rem;
+  height: 1.3rem;
+  color: var(--texto-suave);
+}
+
+.cajero-buscar-input {
+  width: 100%;
+  padding: 12px 14px 12px 44px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font-size: 1rem;
+}
+
+.cajero-categorias-row {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.cajero-chip {
+  padding: 8px 18px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--cafe-oscuro);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cajero-chip.activo {
+  background: var(--crema-2);
+  border-color: var(--cafe);
+}
+
+/* GRILLA DE PRODUCTOS (4 Columnas) */
+.cajero-productos-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.cajero-prod-card {
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.cajero-prod-card__img {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: var(--papel);
+  color: var(--cafe-oscuro);
+}
+
+.cajero-prod-card__nombre {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin: 0;
+}
+
+.cajero-prod-card__precio {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  margin: 0;
+}
+
+.cajero-btn-agregar {
+  width: 100%;
+  padding: 8px;
+  border: 1.5px solid var(--borde);
+  border-radius: 6px;
+  background: var(--papel);
+  font-weight: 500;
+  cursor: pointer;
+}
+.cajero-btn-agregar:hover:not(:disabled) { background: var(--crema-2); }
+.cajero-btn-agregar.agotado { background: #e0e0e0; opacity: 0.6; cursor: not-allowed; }
+
+
+/* ------------------------------------------
+   PANEL DERECHO: REGISTRO DE VENTA
+   ------------------------------------------ */
+.cajero-pos-cart {
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.cajero-cart-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cajero-cart-header h2 {
+  font-family: var(--fuente-titulos);
+  font-size: 1.3rem;
+}
+
+.cajero-cart-table-wrapper {
+  flex: 1;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.cajero-cart-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  text-align: left;
+}
+
+.cajero-cart-table th {
+  border-bottom: 1.5px solid var(--borde);
+  padding-bottom: 8px;
+  color: var(--texto-suave);
+}
+
+.cajero-cart-table td {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--borde);
+}
+
+.cajero-qty-input {
+  width: 48px;
+  padding: 4px;
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  text-align: center;
+}
+
+.cajero-btn-remove {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--texto-suave);
+  font-weight: bold;
+}
+
+/* CAJA DE TOTAL DESTACADA (AZUL CLARO SEGÚN MOCKUP) */
+.cajero-box-total {
+  background: #a4cdff;
+  padding: 12px 18px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #000;
+}
+
+.cajero-pago-seccion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cajero-pago-label {
+  font-size: 0.88rem;
+  color: var(--texto-suave);
+}
+
+.cajero-pago-opciones {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.cajero-btn-pago {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.cajero-btn-pago.activo {
+  border-color: var(--cafe-oscuro);
+  background: var(--crema-2);
+}
+
+/* CAJA DE VUELTO DESTACADA (VERDE CLARO SEGÚN MOCKUP) */
+.cajero-box-vuelto {
+  background: #9bd398;
+  padding: 12px 18px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.15rem;
+  font-weight: bold;
+  color: #000;
+}
+
+/* BOTONES DE ACCIÓN (VERDE Y ROJO SOLIDIS SEGÚN MOCKUP) */
+.cajero-cart-acciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cajero-btn-finalizar {
+  background: #009929;
+  color: #fff;
+  border: none;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.cajero-btn-cancelar {
+  background: #cc0000;
+  color: #fff;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+/* Estado vacío en catálogo del cajero */
+.cajero-vacio {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--texto-suave);
+  padding: 36px 20px;
+  background: var(--papel);
+  border: 1.5px dashed var(--borde);
+  border-radius: var(--radio);
+}
+
+.cajero-vacio-tabla {
+  text-align: center;
+  color: var(--texto-suave);
+  padding: 24px 8px;
+}
+
+/* ------------------------------------------
+   ADAPTACIÓN RESPONSIVA CAJERO
+   ------------------------------------------ */
+@media (max-width: 1200px) {
+  .cajero-pos-grid { grid-template-columns: 1fr; }
+  .cajero-productos-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 768px) {
+  .cajero-layout { flex-direction: column; }
+  .cajero-sidebar { width: 100%; border-right: none; border-bottom: 1.5px solid var(--borde); }
+  .cajero-productos-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ==========================================================
+   MÓDULO PUNTO DE VENTA / CAJERO (base_cajero & inicio_cajero)
+   ========================================================== */
 
 
 /* ==========================================================

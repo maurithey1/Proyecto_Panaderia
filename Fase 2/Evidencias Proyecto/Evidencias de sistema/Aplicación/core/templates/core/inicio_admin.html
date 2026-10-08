@@ -1,0 +1,84 @@
+{% extends 'core/base_admin.html' %}
+{% load static %}
+
+{% block titulo %}Dashboard Administrador{% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor admin-dashboard">
+
+  <!-- Fila Superior: Ventas (Izq) + Separador + Stock (Der) -->
+  <div class="admin-top-grid">
+
+    <!-- Bloque Ventas -->
+    <section class="admin-panel admin-panel--ventas">
+      <h2 class="admin-panel__titulo">Ventas ultimo mes</h2>
+      <div class="admin-graficos-container">
+        <div class="admin-grafico-card">
+          <span class="admin-grafico-card__titulo">Ventas Mes anterior / Actual</span>
+          <div class="admin-grafico-placeholder">[ Gráfico Barras ]</div>
+        </div>
+        <div class="admin-grafico-card">
+          <span class="admin-grafico-card__titulo">Comparación ventas Mes abril / Mayo</span>
+          <div class="admin-grafico-placeholder">[ Gráfico Líneas ]</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Divisor vertical central de la sección superior -->
+    <div class="admin-v-line" aria-hidden="true"></div>
+
+    <!-- Bloque Stock en Tiempo Real -->
+    <section class="admin-panel admin-panel--stock">
+      <h2 class="admin-panel__titulo">Stock Productos en Tiempo real</h2>
+      <div class="admin-stock-grid">
+        {% for producto in productos_stock %}
+          <article class="admin-card-stock">
+            <div class="admin-card-stock__img">
+              <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+            </div>
+            <h3 class="admin-card-stock__nombre">{{ producto.nombre }}</h3>
+            <p class="admin-card-stock__unidades">Stock: <strong>{{ producto.stock }} unidades</strong></p>
+          </article>
+        {% empty %}
+          <p class="admin-vacio">No hay productos registrados.</p>
+        {% endfor %}
+      </div>
+    </section>
+
+  </div>
+
+  <hr class="admin-hr">
+
+  <!-- Fila Inferior: Valor de materias primas por proveedor -->
+  <section class="admin-panel admin-panel--materias">
+    <div class="admin-panel__header-icon">
+      <svg class="icono admin-icono-filtro" aria-hidden="true"><use href="#i-filtro"/></svg>
+      <h2 class="admin-panel__titulo">Valor de materias primas</h2>
+    </div>
+
+    <div class="admin-proveedores-grid">
+      {% regroup tarifas_proveedores by proveedor as lista_proveedores %}
+
+      {% for item in lista_proveedores %}
+        <div class="admin-col-proveedor">
+          <h3 class="admin-col-proveedor__nombre">{{ item.grouper.nombre_proveedor }}</h3>
+          <div class="admin-col-proveedor__items">
+            {% for tarifa in item.list %}
+              <article class="admin-card-materia">
+                <div class="admin-card-materia__img">
+                  <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                </div>
+                <p class="admin-card-materia__nombre">{{ tarifa.insumo.nombre }}</p>
+                <p class="admin-card-materia__precio">${{ tarifa.precio_ofrecido|floatformat:0 }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        </div>
+      {% empty %}
+        <p class="admin-vacio">No hay registros de precios de materias primas.</p>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

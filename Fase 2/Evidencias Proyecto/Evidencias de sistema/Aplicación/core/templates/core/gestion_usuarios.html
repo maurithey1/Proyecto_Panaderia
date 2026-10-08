@@ -1,0 +1,119 @@
+{% extends 'core/base_admin.html' %}
+{% load static %}
+
+{% block titulo %}Gestión de Usuarios{% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor">
+  
+  <div class="admin-page-header">
+    <h1 class="admin-panel__titulo" style="text-align: left; margin-bottom: 0;">Gestión de Cuentas del Sistema</h1>
+    <button class="boton boton--primario" onclick="abrirModalCajero()">+ Registrar Nuevo Cajero</button>
+  </div>
+
+  <!-- SECCIÓN 1: TRABAJADORES (CAJEROS) - CRUD COMPLETO -->
+  <section class="admin-panel" style="margin-bottom: 32px;">
+    <h2 class="admin-panel__subtitulo">Trabajadores y Cajeros (Acceso POS)</h2>
+    <div class="admin-tabla-wrapper">
+      <table class="admin-tabla">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Nombre Completo</th>
+            <th>Correo Electrónico</th>
+            <th>N° Caja</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in cajeros %}
+            <tr>
+              <td><strong>{{ c.user.username }}</strong></td>
+              <td>{{ c.user.get_full_name|default:"-" }}</td>
+              <td>{{ c.user.email }}</td>
+              <td>Caja N° {{ c.num_caja_asignada }}</td>
+              <td>
+                {% if c.user.is_active %}
+                  <span class="badge badge--exito">Activo</span>
+                {% else %}
+                  <span class="badge badge--alerta">Inactivo</span>
+                {% endif %}
+              </td>
+              <td class="tabla-acciones">
+                <a href="{% url 'editar_cajero' c.pk %}" class="boton-tabla">✏️ Editar</a>
+                <a href="{% url 'eliminar_cajero' c.pk %}" class="boton-tabla boton-tabla--danger" onclick="return confirm('¿Desea desactivar este cajero?')">🗑️ Desactivar</a>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="admin-vacio">No hay cajeros registrados en el sistema.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SECCIÓN 2: CLIENTES REGISTRADOS - SOLO LECTURA -->
+  <section class="admin-panel">
+    <h2 class="admin-panel__subtitulo">Clientes Registrados (Solo Lectura)</h2>
+    <div class="admin-tabla-wrapper">
+      <table class="admin-tabla">
+        <thead>
+          <tr>
+            <th>RUT / Usuario</th>
+            <th>Nombre Completo</th>
+            <th>Correo</th>
+            <th>Teléfono</th>
+            <th>Dirección</th>
+            <th>Puntos Fidelización</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cl in clientes %}
+            <tr>
+              <td><strong>{{ cl.user.username }}</strong></td>
+              <td>{{ cl.user.get_full_name }}</td>
+              <td>{{ cl.user.email }}</td>
+              <td>{{ cl.telefono }}</td>
+              <td><small>{{ cl.direccion }}</small></td>
+              <td><strong>{{ cl.puntos.puntos_acumulados|default:0 }} pts</strong></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="admin-vacio">No hay clientes registrados en la plataforma.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<!-- Modal Ligero para Crear Cajero -->
+<dialog id="modalCajero" class="admin-modal">
+  <form method="POST" action="{% url 'crear_cajero' %}" class="admin-modal__content">
+    {% csrf_token %}
+    <h3>Registrar Nuevo Cajero</h3>
+    
+    <div class="campo"><label>Usuario / Login:</label><input type="text" name="username" class="entrada" required></div>
+    <div class="fila-dos">
+      <div class="campo"><label>Nombre:</label><input type="text" name="first_name" class="entrada" required></div>
+      <div class="campo"><label>Apellido:</label><input type="text" name="last_name" class="entrada" required></div>
+    </div>
+    <div class="campo"><label>Correo Electrónico:</label><input type="email" name="email" class="entrada" required></div>
+    <div class="fila-dos">
+      <div class="campo"><label>Contraseña:</label><input type="password" name="password" class="entrada" required></div>
+      <div class="campo"><label>N° Caja Asignada:</label><input type="number" name="num_caja_asignada" value="1" min="1" class="entrada" required></div>
+    </div>
+
+    <div class="registro-acciones">
+      <button type="button" class="boton boton--contorno" onclick="cerrarModalCajero()">Cancelar</button>
+      <button type="submit" class="boton boton--primario">Guardar Cajero</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  function abrirModalCajero() { document.getElementById('modalCajero').showModal(); }
+  function cerrarModalCajero() { document.getElementById('modalCajero').close(); }
+</script>
+{% endblock %}

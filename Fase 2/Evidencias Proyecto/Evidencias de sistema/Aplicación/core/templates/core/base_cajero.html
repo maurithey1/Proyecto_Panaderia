@@ -1,0 +1,134 @@
+{% load static %}<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fbf5ea">
+  <meta name="description" content="Los Tres Spa: punto de venta y operaciones de caja.">
+  <title>{% block titulo %}Punto de Venta{% endblock %} · Los Tres Spa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700&family=Young+Serif&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/estilo.css' %}">
+</head>
+<body class="cajero-body">
+  {# Iconos SVG para el Sistema POS #}
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-espiga" viewBox="0 0 24 24"><path d="M12 21V8"/><path d="M12 3v2"/><path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z"/><path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6"/></symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24"><path d="M6 10.5C4.5 7 7.5 4 12 4s7.5 3 6 6.5c1.2.6 2 1.7 2 3.2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4.3c0-1.5.8-2.6 2-3.2z"/><path d="M9.5 8.5l1.5 3M13 8l1.5 3"/></symbol>
+    <symbol id="i-salir" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></symbol>
+    <symbol id="i-inicio" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></symbol>
+    <symbol id="i-historial" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></symbol>
+    <symbol id="i-caja" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></symbol>
+    <symbol id="i-buscar" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+    <symbol id="i-carrito" viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L20 8H6"/><circle cx="9" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/></symbol>
+    <symbol id="i-efectivo" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></symbol>
+    <symbol id="i-tarjeta" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></symbol>
+    <symbol id="i-reloj" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+  </svg>
+
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+
+  <!-- CABECERA DE CAJERO -->
+  <header class="cajero-cabecera">
+    <div class="cajero-contenedor-cabecera">
+      <div class="cajero-cabecera__izq">
+        <a class="cajero-logo" href="{% url 'inicio_cajero' %}">
+          <svg class="icono" aria-hidden="true"><use href="#i-espiga"/></svg>
+          <span>Los Tres Spa</span>
+        </a>
+        <span class="cajero-separador-v" aria-hidden="true"></span>
+        <span class="cajero-titulo-modulo">Punto de venta (Caja)</span>
+      </div>
+
+      <div class="cajero-cabecera__der">
+        <!-- Menú Desplegable Cajero -->
+        <div class="cajero-dropdown" id="cajeroDropdown">
+          <button type="button" class="cajero-dropdown__toggle" onclick="toggleCajeroMenu()" aria-expanded="false">
+            <svg class="icono" aria-hidden="true"><use href="#i-usuario"/></svg>
+            <span>Cajero: {{ user.get_full_name|default:user.username }}</span>
+            <span class="cajero-dropdown__flecha">▾</span>
+          </button>
+
+          <div class="cajero-dropdown__menu" id="cajeroMenu">
+            <div class="cajero-dropdown__header">
+              <strong>{{ user.username }}</strong>
+              <small>Cajero / Operador</small>
+              <small>Caja: {{ user.perfil_cajero.num_caja_asignada|default:"1" }}</small>
+            </div>
+            <hr class="cajero-dropdown__divider">
+            <a href="{% url 'logout' %}" class="cajero-dropdown__item cajero-dropdown__item--danger">
+              <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>
+              <span>Cerrar Sesión</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- CONTENEDOR PRINCIPAL CON SIDEBAR -->
+  <div class="cajero-layout">
+    <!-- BARRA LATERAL (SIDEBAR) -->
+    <aside class="cajero-sidebar">
+      <nav class="cajero-sidebar__nav">
+        <a href="{% url 'inicio_cajero' %}" class="cajero-sidebar__link{% if request.resolver_match.url_name == 'inicio_cajero' %} activo{% endif %}">
+          <svg class="icono" aria-hidden="true"><use href="#i-inicio"/></svg>
+          <span>Inicio</span>
+        </a>
+        <a href="#" class="cajero-sidebar__link">
+          <svg class="icono" aria-hidden="true"><use href="#i-historial"/></svg>
+          <span>Historial de ventas</span>
+        </a>
+        <a href="#" class="cajero-sidebar__link">
+          <svg class="icono" aria-hidden="true"><use href="#i-caja"/></svg>
+          <span>Apertura de caja</span>
+        </a>
+        <a href="#" class="cajero-sidebar__link">
+          <svg class="icono" aria-hidden="true"><use href="#i-caja"/></svg>
+          <span>Cierre de caja</span>
+        </a>
+      </nav>
+
+      <!-- WIDGET INFERIOR CON FECHA / HORA -->
+      <div class="cajero-sidebar__time">
+        <svg class="icono" aria-hidden="true"><use href="#i-reloj"/></svg>
+        <div>
+          <div>Fecha: <strong id="fechaActual">{% now "d/m/Y" %}</strong></div>
+          <div>Hora: <strong id="horaActual">{% now "H:i" %}</strong></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ÁREA DE CONTENIDO PRINCIPAL -->
+    <main id="contenido" class="cajero-main">
+      {% block contenido %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    function toggleCajeroMenu() {
+      const dropdown = document.getElementById('cajeroDropdown');
+      dropdown.classList.toggle('activo');
+    }
+
+    window.addEventListener('click', function(e) {
+      const dropdown = document.getElementById('cajeroDropdown');
+      if (dropdown && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('activo');
+      }
+    });
+
+    // Actualización del reloj en tiempo real
+    function actualizarReloj() {
+      const ahora = new Date();
+      const horas = String(ahora.getHours()).padStart(2, '0');
+      const minutos = String(ahora.getMinutes()).padStart(2, '0');
+      const elementoHora = document.getElementById('horaActual');
+      if (elementoHora) { elementoHora.textContent = `${horas}:${minutos}`; }
+    }
+    setInterval(actualizarReloj, 10000);
+  </script>
+</body>
+</html>

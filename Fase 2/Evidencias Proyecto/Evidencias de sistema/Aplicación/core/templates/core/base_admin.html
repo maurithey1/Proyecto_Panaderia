@@ -1,0 +1,126 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fbf5ea">
+  <meta name="description" content="Los Tres Spa: panel de administración y gestión interna.">
+  <title>{% block titulo %}Panel de Administración{% endblock %} · Los Tres Spa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700&family=Young+Serif&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/estilo.css' %}">
+</head>
+
+<body class="admin-body">
+  {# Iconos SVG reutilizables para el Panel de Administración #}
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-espiga" viewBox="0 0 24 24">
+      <path d="M12 21V8" />
+      <path d="M12 3v2" />
+      <path
+        d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z" />
+      <path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6" />
+    </symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24">
+      <path
+        d="M6 10.5C4.5 7 7.5 4 12 4s7.5 3 6 6.5c1.2.6 2 1.7 2 3.2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4.3c0-1.5.8-2.6 2-3.2z" />
+      <path d="M9.5 8.5l1.5 3M13 8l1.5 3" />
+    </symbol>
+    <symbol id="i-salir" viewBox="0 0 24 24">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24">
+      <circle cx="12" cy="7" r="4" />
+      <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+    </symbol>
+    <symbol id="i-filtro" viewBox="0 0 24 24">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </symbol>
+  </svg>
+
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+
+  <header class="admin-cabecera">
+    <div class="admin-contenedor admin-cabecera__fila">
+      <a class="admin-logo" href="{% url 'inicio_admin' %}">
+        <svg class="icono" aria-hidden="true">
+          <use href="#i-espiga" />
+        </svg>
+        <span>Los Tres Spa</span>
+      </a>
+
+      <span class="admin-separador-v" aria-hidden="true"></span>
+
+      <nav class="admin-menu" aria-label="Navegación de administración">
+        <a href="{% url 'inicio_admin' %}"{% if request.resolver_match.url_name == 'inicio_admin' %} aria-current="page"{% endif %}>Inicio</a>
+        <a href="#">Proyección de ventas</a>
+        <a href="#">Precios materias primas</a>
+        <a href="#">Gestión de inventario</a>
+      </nav>
+
+      <div class="admin-cabecera__acciones">
+
+        <!-- Menú Desplegable del Administrador -->
+        <div class="admin-dropdown" id="adminDropdown">
+          <button type="button" class="admin-dropdown__toggle" onclick="toggleAdminMenu()" aria-expanded="false">
+            <svg class="icono" aria-hidden="true">
+              <use href="#i-usuario" />
+            </svg>
+            <span>{{ user.get_full_name|default:user.username }}</span>
+            <span class="admin-dropdown__flecha">▾</span>
+          </button>
+
+          <div class="admin-dropdown__menu" id="adminMenu">
+            <div class="admin-dropdown__header">
+              <strong>{{ user.username }}</strong>
+              <small>Administrador</small>
+            </div>
+            <hr class="admin-dropdown__divider">
+            <a href="{% url 'gestion_usuarios' %}" class="admin-dropdown__item">
+              <svg class="icono" aria-hidden="true">
+                <use href="#i-usuario" />
+              </svg>
+              <span>Gestionar usuarios</span>
+            </a>
+            <hr class="admin-dropdown__divider">
+            <a href="{% url 'logout' %}" class="admin-dropdown__item admin-dropdown__item--danger">
+              <svg class="icono" aria-hidden="true">
+                <use href="#i-salir" />
+              </svg>
+              <span>Cerrar sesión</span>
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Script ligero para alternar el menú desplegable -->
+      <script>
+        function toggleAdminMenu() {
+          const dropdown = document.getElementById('adminDropdown');
+          dropdown.classList.toggle('activo');
+        }
+
+        // Cerrar el menú si se hace clic fuera de él
+        window.addEventListener('click', function (e) {
+          const dropdown = document.getElementById('adminDropdown');
+          if (dropdown && !dropdown.contains(e.target)) {
+            dropdown.classList.remove('activo');
+          }
+        });
+      </script>
+    </div>
+  </header>
+
+  <main id="contenido" class="admin-main">
+    {% block contenido %}{% endblock %}
+  </main>
+</body>
+
+</html>

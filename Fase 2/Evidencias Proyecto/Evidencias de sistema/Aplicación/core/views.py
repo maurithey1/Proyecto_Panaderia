@@ -1,13 +1,17 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import user_passes_test, login_required
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Case, IntegerField, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
-from .models import Categoria, Pedido, Producto, Usuario, Cliente, PuntosFidelizacion
+from .models import Categoria, Pedido, Producto, Usuario, Cliente, PuntosFidelizacion, ProveedorInsumo, Cajero
 
 PRODUCTOS_DESTACADOS = 4
 
+# ==========================================
+# FUNCIONES DE CLIENTE
+# ==========================================
 
 def inicio(request):
     """
@@ -58,19 +62,190 @@ def pedir(request):
     }
     return render(request, 'core/pedir.html', contexto)
 
+# ==========================================
+# FUNCIONES DE CLIENTE
+# ==========================================
+
 
 def redireccionar_por_rol(user):
     """
     Redirige al usuario según su rol en el sistema:
-    - ADMINISTRADOR -> /admin/
-    - CAJERO -> /pos/
+    - ADMINISTRADOR -> 'inicio_admin'
+    - CAJERO -> 'inicio_cajero'
     - CLIENTE -> 'inicio'
     """
     if getattr(user, 'es_administrador', False):
-        return redirect('/admin/')
+        return redirect('inicio_admin')
     elif getattr(user, 'es_cajero', False):
-        return redirect('/pos/')
+        return redirect('inicio_cajero')
     return redirect('inicio')
+
+
+# ==========================================
+# FUNCIONES DE ADMINISTRADOR
+# ==========================================
+
+# --------------------------------------------
+# DECORADOR Y CONTROL DE ACCESO ADMINISTRADOR
+# --------------------------------------------
+
+def admin_required(view_func):
+    """
+    Decorador que verifica que el usuario esté autenticado y sea Administrador.
+    Si no cumple, lo redirige al inicio con un mensaje de error.
+    """
+    def _wrapped_view(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            messages.error(request, 'Debe iniciar sesión para acceder a esta sección.')
+            return redirect('login')
+        if not request.user.es_administrador:
+            messages.error(request, 'No tiene permisos de administrador para acceder a esta página.')
+            return redirect('inicio')
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+@admin_required
+def inicio_admin(request):
+    """
+    Vista principal del Panel de Administración.
+    Muestra indicadores de stock, proyecciones de ventas y precios de insumos.
+    """
+    # Consulta de productos con stock actual
+    productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
+    
+    # Consulta de insumos/materias primas y sus precios de proveedores
+    tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
+
+    contexto = {
+        'productos_stock': productos_stock,
+        'tarifas_proveedores': tarifas_proveedores,
+    }
+    return render(request, 'core/inicio_admin.html', contexto)
+
+@admin_required
+def gestion_usuarios(request):
+    """
+    Vista principal de gestión de cuentas.
+    Separa los usuarios en Clientes (Solo Lectura) y Cajeros/Trabajadores (CRUD).
+    """
+    clientes = Cliente.objects.select_related('user', 'puntos').all().order_by('-user__date_joined')
+    cajeros = Cajero.objects.select_related('user').all().order_by('num_caja_asignada')
+
+    contexto = {
+        'clientes': clientes,
+        'cajeros': cajeros,
+    }
+    return render(request, 'core/gestion_usuarios.html', contexto)
+
+@admin_required
+def crear_cajero(request):
+    """Crea un nuevo usuario de tipo CAJERO con su correspondiente perfil operativo."""
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        email = request.POST.get('email', '').strip().lower()
+        password = request.POST.get('password', '')
+        num_caja = request.POST.get('num_caja_asignada', 1)
+
+        if Usuario.objects.filter(username__iexact=username).exists():
+            messages.error(request, 'El nombre de usuario ya está registrado.')
+            return redirect('gestion_usuarios')
+
+        try:
+            with transaction.atomic():
+                user = Usuario.objects.create_user(
+                    username=username,
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    rol='CAJERO',
+                    is_staff=True # Permite accesos operativos
+                )
+                Cajero.objects.create(user=user, num_caja_asignada=num_caja)
+                messages.success(request, f'Cajero "{username}" registrado con éxito.')
+        except Exception as e:
+            messages.error(request, f'Error al crear el cajero: {str(e)}')
+
+    return redirect('gestion_usuarios')
+
+
+@admin_required
+def editar_cajero(request, pk):
+    """Edita la información de un cajero existente y su asignación de caja."""
+    cajero = get_object_or_404(Cajero, pk=pk)
+    user = cajero.user
+
+    if request.method == 'POST':
+        user.first_name = request.POST.get('first_name', '').strip()
+        user.last_name = request.POST.get('last_name', '').strip()
+        user.email = request.POST.get('email', '').strip().lower()
+        cajero.num_caja_asignada = request.POST.get('num_caja_asignada', 1)
+        
+        # Cambio de contraseña opcional
+        nueva_pass = request.POST.get('password', '').strip()
+        if nueva_pass:
+            user.set_password(nueva_pass)
+
+        user.save()
+        cajero.save()
+        messages.success(request, f'Datos del cajero "{user.username}" actualizados correctamente.')
+        return redirect('gestion_usuarios')
+
+    return render(request, 'core/editar_cajero.html', {'cajero': cajero})
+
+
+@admin_required
+def eliminar_cajero(request, pk):
+    """Desactiva o elimina la cuenta de un cajero."""
+    cajero = get_object_or_404(Cajero, pk=pk)
+    user = cajero.user
+    
+    # Desactivar en lugar de eliminar físicamente para no perder historial de cajas
+    user.is_active = False
+    user.save()
+    messages.warning(request, f'El cajero "{user.username}" ha sido desactivado del sistema.')
+    return redirect('gestion_usuarios')
+
+# ==========================================
+# FUNCIONES DE ADMINISTRADOR
+# ==========================================
+
+# ==========================================
+# FUNCIONES DE CAJERO
+# ==========================================
+
+# ------------------------------------------
+# DECORADOR Y CONTROL DE ACCESO CAJERO
+# ------------------------------------------
+def cajero_required(view_func):
+    """Verifica que el usuario esté autenticado y sea Cajero o Administrador."""
+    def _wrapped_view(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            messages.error(request, 'Debe iniciar sesión para acceder al sistema POS.')
+            return redirect('login')
+        if not (request.user.es_cajero or request.user.es_administrador):
+            messages.error(request, 'No tiene permisos de cajero para acceder a esta área.')
+            return redirect('inicio')
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+@cajero_required
+def inicio_cajero(request):
+    """Vista principal del Terminal POS / Punto de Venta."""
+    categorias = Categoria.objects.all().order_by('nombre')
+    productos = Producto.objects.filter(activo=True).order_by('nombre')
+
+    contexto = {
+        'categorias': categorias,
+        'productos': productos,
+    }
+    return render(request, 'core/inicio_cajero.html', contexto)
+
+# ==========================================
+# FUNCIONES DE CAJERO
+# ==========================================
 
 
 def login_view(request):
