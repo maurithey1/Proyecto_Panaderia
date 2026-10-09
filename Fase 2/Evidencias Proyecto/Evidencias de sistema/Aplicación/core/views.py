@@ -62,6 +62,13 @@ def pedir(request):
     }
     return render(request, 'core/pedir.html', contexto)
 
+
+def local(request):
+    """Información de la tienda: dirección, horarios, despacho y mapa de cobertura.
+    Los datos salen de core/templatetags/tienda.py."""
+    return render(request, 'core/local.html')
+
+
 # ==========================================
 # FUNCIONES DE CLIENTE
 # ==========================================

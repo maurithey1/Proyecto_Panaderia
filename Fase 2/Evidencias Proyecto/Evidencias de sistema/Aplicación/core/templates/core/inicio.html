@@ -39,11 +39,12 @@
     <h2 id="destacados-titulo">Los más pedidos</h2>
 
     {% if productos %}
-      <ul class="productos">
+      {# Lista ordenada: los productos van del más vendido al menos vendido #}
+      <ol class="productos">
         {% for p in productos %}
           {% include "core/_tarjeta_producto.html" %}
         {% endfor %}
-      </ul>
+      </ol>
     {% else %}
       <p class="vacio">Pronto tendremos productos para mostrarte.</p>
     {% endif %}

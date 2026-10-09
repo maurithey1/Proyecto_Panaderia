@@ -11,18 +11,21 @@
     </header>
 
     {% if categorias %}
-      <nav class="filtros" aria-label="Categorías">
-        <a href="{% url 'pedir' %}"{% if not categoria_actual %} aria-current="page"{% endif %}>Todos</a>
-        {% for c in categorias %}
-          <a href="{% url 'pedir' %}?categoria={{ c.pk }}"{% if categoria_actual.pk == c.pk %} aria-current="page"{% endif %}>{{ c.nombre }}</a>
-        {% endfor %}
+      <nav aria-label="Categorías">
+        <ul class="filtros">
+          <li><a href="{% url 'pedir' %}"{% if not categoria_actual %} aria-current="page"{% endif %}>Todos</a></li>
+          {% for c in categorias %}
+            <li><a href="{% url 'pedir' %}?categoria={{ c.pk }}"{% if categoria_actual.pk == c.pk %} aria-current="page"{% endif %}>{{ c.nombre }}</a></li>
+          {% endfor %}
+        </ul>
       </nav>
     {% endif %}
 
     {% if productos %}
       <ul class="productos">
         {% for p in productos %}
-          {% include "core/_tarjeta_producto.html" %}
+          {# Aquí no hay h2 antes de los productos, así que sus títulos son h2 (no h3) #}
+          {% include "core/_tarjeta_producto.html" with nivel=2 %}
         {% endfor %}
       </ul>
     {% else %}

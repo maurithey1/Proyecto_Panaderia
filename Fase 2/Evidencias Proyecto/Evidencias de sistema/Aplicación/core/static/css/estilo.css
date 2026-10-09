@@ -254,13 +254,8 @@ h1, h2, h3 {
 
 .pie h2 { font: 700 1rem/1.3 var(--fuente-texto); color: var(--crema); margin-bottom: 8px; }
 .pie p, .pie address { margin: 0; font-style: normal; }
-
-.pie .pie__legal {
-  margin-inline: auto;
-  padding-block: 16px 24px;
-  border-top: 1px solid rgb(230 213 188 / 22%);
-  font-size: 0.85rem;
-}
+.pie ul { margin: 0; padding: 0; list-style: none; }
+.pie__legal small { font-size: inherit; }
 
 .pie__legal {
   display: flex;
@@ -269,6 +264,7 @@ h1, h2, h3 {
   align-items: center;
   gap: 1rem;
   padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
   margin-top: 2rem;
   border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
@@ -316,16 +312,9 @@ h1, h2, h3 {
   }
 }
 
-@media (max-width: 520px) {
-  .cabecera { position: static; }
-  .cabecera__fila { gap: 0 8px; padding-block: 8px; }
-  .cabecera__acciones { gap: 2px; }
-  .cabecera__acciones .boton--texto { padding-inline: 10px; }
-  .cabecera__acciones .boton--registro { display: none; }
-  .logo { font-size: 1.2rem; }
-  .pie__grid { grid-template-columns: 1fr; gap: 24px; }
-
-  /* En móviles se apilan al centro para que no queden apretados */
+/* Con poco ancho el pie legal se apila al centro. Se hace desde 700px (y no solo en móvil)
+   porque la fila de enlaces empieza a partirse hacia los 620px y la barra "|" quedaba colgando. */
+@media (max-width: 700px) {
   .pie__legal {
     flex-direction: column-reverse;
     justify-content: center;
@@ -334,9 +323,23 @@ h1, h2, h3 {
   }
 
   .pie__enlaces {
+    flex-direction: column;
     justify-content: center;
-    gap: 8px;
+    gap: 0;
   }
+
+  .pie__enlace { padding-block: 6px; }
+  .pie__separador { display: none; }
+}
+
+@media (max-width: 520px) {
+  .cabecera { position: static; }
+  .cabecera__fila { gap: 0 8px; padding-block: 8px; }
+  .cabecera__acciones { gap: 2px; }
+  .cabecera__acciones .boton--texto { padding-inline: 10px; }
+  .cabecera__acciones .boton--registro { display: none; }
+  .logo { font-size: 1.2rem; }
+  .pie__grid { grid-template-columns: 1fr; gap: 24px; }
 }
 
 /* ==========================================================
@@ -404,8 +407,9 @@ main { flex: 1; }
 .pagina__cabecera h1 { font-size: clamp(1.9rem, 4vw, 2.6rem); margin-bottom: 8px; }
 .pagina__cabecera p { margin: 0; max-width: 52ch; color: var(--texto-suave); }
 
-.filtros { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+.filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; padding: 0; list-style: none; }
 .filtros a {
+  display: block; /* antes era hijo directo del flex; ahora va dentro de <li> */
   padding: 10px 16px;
   border: 1.5px solid var(--borde);
   border-radius: 999px;
@@ -417,6 +421,85 @@ main { flex: 1; }
 }
 .filtros a:hover { border-color: var(--cafe); }
 .filtros a[aria-current="page"] { background: var(--cafe); border-color: var(--cafe); color: var(--papel); }
+
+/* Página Local: datos de la tienda y mapa de cobertura */
+.local {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 32px 56px;
+  align-items: start;
+}
+.local__datos { display: grid; gap: 28px; }
+.local__mapa { position: sticky; top: 88px; }
+.local__mapa h2 { font-size: 1.3rem; margin-bottom: 12px; }
+.local__mapa figure { margin: 0; }
+
+.datos__bloque { padding-top: 16px; border-top: 2px solid var(--cafe-claro); }
+.datos__bloque h2 { font-size: 1.3rem; margin-bottom: 8px; }
+.datos__bloque p, .datos__bloque address { margin: 0; font-style: normal; color: var(--texto-suave); }
+.datos__bloque p + .horario { margin-top: 10px; }
+.datos__bloque .boton { margin-top: 14px; }
+.datos__bloque .despacho__valor {
+  margin-bottom: 6px;
+  font: 400 2rem/1 var(--fuente-titulos);
+  color: var(--terracota);
+}
+
+.horario { margin: 0; display: grid; gap: 2px; }
+.horario div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 6px;
+  border-bottom: 1px dotted var(--cafe-claro);
+}
+.horario dt { color: var(--texto-suave); }
+.horario dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.mapa {
+  isolation: isolate; /* el mapa no se superpone a la cabecera fija */
+  height: min(520px, 70vh);
+  background: var(--crema-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+}
+.mapa__aviso { margin: 0; padding: 16px; color: var(--texto-suave); }
+.mapa__aviso--fuera {
+  margin-top: 12px;
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  background: var(--crema-2);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+}
+.mapa-pin span {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cafe);
+  border: 3px solid var(--papel);
+  box-shadow: 0 1px 6px rgb(0 0 0 / 35%);
+}
+.mapa__leyenda {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+  color: var(--texto-suave);
+}
+.mapa__muestra { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px; }
+.mapa__muestra--zona { border: 2px solid var(--terracota); border-radius: 3px; background: rgb(180 83 42 / 14%); }
+.mapa__muestra--local { border-radius: 50%; background: var(--cafe); }
+
+@media (max-width: 860px) {
+  .local { grid-template-columns: 1fr; }
+  .local__mapa { position: static; }
+  .mapa { height: 340px; }
+}
 
 /* Los más pedidos */
 .destacados { padding-block: clamp(36px, 6vw, 72px); }
@@ -463,7 +546,7 @@ main { flex: 1; }
   gap: 4px;
   padding: 16px;
 }
-.tarjeta h3 { font-size: 1.2rem; }
+.tarjeta__nombre { font-size: 1.2rem; }
 
 .tarjeta__desc {
   margin: 0;
@@ -532,7 +615,7 @@ main { flex: 1; }
   .hero__figura { width: 120px; }
   .productos { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .tarjeta__cuerpo { padding: 12px; }
-  .tarjeta h3 { font-size: 1.05rem; }
+  .tarjeta__nombre { font-size: 1.05rem; }
   .tarjeta__precio { font-size: 1.25rem; }
 }
 /* ==========================================================
@@ -1939,4 +2022,17 @@ main { flex: 1; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+
+/* Texto solo para lectores de pantalla */
+.solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }

@@ -1,4 +1,5 @@
 {% load formato %}
+{# `nivel` es el nivel del título del producto: 3 por defecto (bajo un h2 de sección) o 2 si la página no tiene h2 antes #}
 <li class="tarjeta">
   <div class="tarjeta__imagen{% if not p.imagen_url %} tarjeta__imagen--sin-foto{% endif %}">
     {% if p.imagen_url %}
@@ -9,7 +10,7 @@
   </div>
 
   <div class="tarjeta__cuerpo">
-    <h3>{{ p.nombre }}</h3>
+    <h{{ nivel|default:3 }} class="tarjeta__nombre">{{ p.nombre }}</h{{ nivel|default:3 }}>
     {% if p.descripcion %}<p class="tarjeta__desc">{{ p.descripcion }}</p>{% endif %}
     <p class="tarjeta__stock">
       {% if p.stock <= 0 %}
@@ -20,7 +21,7 @@
       {% endif %}
     </p>
     <div class="tarjeta__pie">
-      <p class="tarjeta__precio">{{ p.precio|clp }}</p>
+      <p class="tarjeta__precio"><data value="{{ p.precio|floatformat:'0u' }}">{{ p.precio|clp }}</data></p>
       {# TODO Sprint 2: conectar con el carrito (sin exigir sesión para agregar) #}
       <button class="agregar" type="button" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
         <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>

@@ -1,0 +1,91 @@
+{% extends "core/base.html" %}
+{% load static l10n formato %}
+
+{% block titulo %}Local{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+{% endblock %}
+
+{% block contenido %}
+<section class="pagina" aria-labelledby="local-titulo">
+  <div class="contenedor">
+    <header class="pagina__cabecera">
+      <h1 id="local-titulo">Visita nuestro local</h1>
+      <p>Retira tu pedido en la tienda o pide despacho a domicilio dentro de {{ tienda.despacho_zona }}.</p>
+    </header>
+
+    <div class="local">
+      <div class="local__datos">
+        <section class="datos__bloque" aria-labelledby="local-donde">
+          <h2 id="local-donde">Dónde estamos</h2>
+          <address>{{ tienda.direccion }}<br>{{ tienda.zona }}</address>
+          <a class="boton boton--contorno" href="{{ tienda.mapa_url }}" target="_blank" rel="noopener noreferrer">Cómo llegar<span class="solo-lector"> (se abre en una pestaña nueva)</span></a>
+        </section>
+
+        <section class="datos__bloque" aria-labelledby="local-atencion">
+          <h2 id="local-atencion">Horario de atención</h2>
+          <dl class="horario">
+            {% for dias, horas in tienda.horario_atencion %}
+              <div><dt>{{ dias }}</dt><dd>{{ horas }}</dd></div>
+            {% endfor %}
+          </dl>
+        </section>
+
+        <section class="datos__bloque" aria-labelledby="local-retiro">
+          <h2 id="local-retiro">Retiro en tienda</h2>
+          <p>Retira tu pedido sin costo en estos horarios.</p>
+          <dl class="horario">
+            {% for dias, horas in tienda.horario_retiro %}
+              <div><dt>{{ dias }}</dt><dd>{{ horas }}</dd></div>
+            {% endfor %}
+          </dl>
+        </section>
+
+        <section class="datos__bloque" aria-labelledby="local-despacho">
+          <h2 id="local-despacho">Despacho a domicilio</h2>
+          <p class="despacho__valor"><data value="{{ tienda.despacho_valor|unlocalize }}">{{ tienda.despacho_valor|clp }}</data></p>
+          <p>Mismo valor en toda la zona marcada en el mapa, dentro de {{ tienda.despacho_zona }}. Si estás fuera de ella, puedes retirar tu pedido en la tienda.</p>
+        </section>
+
+        <section class="datos__bloque" aria-labelledby="local-contacto">
+          <h2 id="local-contacto">Contacto</h2>
+          <address>
+            <a href="tel:{{ tienda.telefono_enlace }}">{{ tienda.telefono }}</a><br>
+            <a href="mailto:{{ tienda.correo }}">{{ tienda.correo }}</a>
+          </address>
+        </section>
+      </div>
+
+      <section class="local__mapa" aria-labelledby="local-mapa">
+        <h2 id="local-mapa">Zona de despacho</h2>
+        <figure>
+          <div id="mapa-cobertura" class="mapa"
+               data-lat="{{ tienda.latitud|unlocalize }}" data-lng="{{ tienda.longitud|unlocalize }}"
+               data-nombre="{{ tienda.nombre }}, {{ tienda.direccion }}"
+               data-geojson="{% static 'data/la_florida.geojson' %}">
+            <noscript><p class="mapa__aviso">Activa JavaScript para ver el mapa. Despachamos dentro de {{ tienda.despacho_zona }}.</p></noscript>
+          </div>
+          <p id="mapa-aviso" class="mapa__aviso mapa__aviso--fuera" hidden>
+            El mapa de calles no está disponible por ahora. La zona marcada es donde despachamos, en {{ tienda.despacho_zona }}; usa "Cómo llegar" para ver la ubicación del local.
+          </p>
+          <figcaption>
+            <span class="solo-lector">Mapa estático de la zona de despacho en {{ tienda.despacho_zona }} y la ubicación del local.</span>
+            <ul class="mapa__leyenda">
+              <li><span class="mapa__muestra mapa__muestra--zona" aria-hidden="true"></span>Zona de despacho en {{ tienda.despacho_zona }}</li>
+              <li><span class="mapa__muestra mapa__muestra--local" aria-hidden="true"></span>Nuestro local</li>
+            </ul>
+          </figcaption>
+        </figure>
+      </section>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="{% static 'js/local_mapa.js' %}"></script>
+{% endblock %}

@@ -1,4 +1,4 @@
-{% load static %}<!DOCTYPE html>
+{% load static tienda %}<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
@@ -10,8 +10,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;700&family=Young+Serif&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/estilo.css' %}">
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
+  {# Datos de la tienda (core/templatetags/tienda.py), disponibles como `tienda` en todas las páginas #}
+  {% datos_tienda as tienda %}
   {# Iconos reutilizables: se usan con <svg class="icono"><use href="#i-..."/></svg> #}
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <symbol id="i-espiga" viewBox="0 0 24 24"><path d="M12 21V8"/><path d="M12 3v2"/><path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z"/><path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6"/></symbol>
@@ -32,11 +35,10 @@
       <nav class="menu" aria-label="Principal">
         <a href="{% url 'inicio' %}"{% if request.resolver_match.url_name == 'inicio' %} aria-current="page"{% endif %}>Inicio</a>
         <a href="{% url 'pedir' %}"{% if request.resolver_match.url_name == 'pedir' %} aria-current="page"{% endif %}>Pedir</a>
-        {# TODO: enlazar "Local" cuando exista esa vista #}
-        <a href="#">Local</a>
+        <a href="{% url 'local' %}"{% if request.resolver_match.url_name == 'local' %} aria-current="page"{% endif %}>Local</a>
       </nav>
 
-      <div class="cabecera__acciones">
+      <nav class="cabecera__acciones" aria-label="Cuenta y carrito">
         {% if user.is_authenticated %}
           <span style="font-size: 0.9rem; font-weight: 500; color: var(--cafe-oscuro);">Hola, {{ user.first_name|default:user.username }}</span>
           <a class="boton boton--texto" href="{% url 'logout' %}">Cerrar sesión</a>
@@ -47,7 +49,7 @@
         <a class="carrito" href="#" aria-label="Carrito de compras">
           <svg class="icono" aria-hidden="true"><use href="#i-carrito"/></svg>
         </a>
-      </div>
+      </nav>
     </div>
   </header>
 
@@ -55,7 +57,6 @@
     {% block contenido %}{% endblock %}
   </main>
 
-  {# Dirección según el documento 1.5 (Fase 1). TODO: horario, teléfono y correo siguen siendo de ejemplo #}
   <footer class="pie">
     <div class="contenedor pie__grid">
       <div class="pie__marca">
@@ -66,26 +67,30 @@
         <p>Pan recién horneado, todos los días.</p>
       </div>
 
-      <section aria-labelledby="pie-local">
-        <h2 id="pie-local">Visítanos</h2>
-        <address>Marigen 9795<br>La Florida, Región Metropolitana</address>
+      <section class="pie__seccion">
+        <h2>Visítanos</h2>
+        <address>{{ tienda.direccion }}<br>{{ tienda.zona }}</address>
       </section>
 
-      <section aria-labelledby="pie-horario">
-        <h2 id="pie-horario">Horario</h2>
-        <p>Lunes a sábado, 8:00 a 20:00<br>Domingo, 9:00 a 14:00</p>
+      <section class="pie__seccion">
+        <h2>Horario</h2>
+        <ul>
+          {% for dias, horas in tienda.horario_atencion %}
+            <li>{{ dias }}, {{ horas }}</li>
+          {% endfor %}
+        </ul>
       </section>
 
-      <section aria-labelledby="pie-contacto">
-        <h2 id="pie-contacto">Contacto</h2>
-        <p>
-          <a href="tel:+56900000000">+56 9 0000 0000</a><br>
-          <a href="mailto:contacto@ejemplo.cl">contacto@ejemplo.cl</a>
-        </p>
+      <section class="pie__seccion">
+        <h2>Contacto</h2>
+        <address>
+          <a href="tel:{{ tienda.telefono_enlace }}">{{ tienda.telefono }}</a><br>
+          <a href="mailto:{{ tienda.correo }}">{{ tienda.correo }}</a>
+        </address>
       </section>
     </div>
     <div class="contenedor pie__legal">
-      <p class="pie__copyright">© {% now "Y" %} Los Tres Spa</p>
+      <p class="pie__copyright"><small>© {% now "Y" %} {{ tienda.nombre }}</small></p>
       <nav class="pie__enlaces" aria-label="Enlaces legales">
         <a href="{% url 'terminos_condiciones' %}" class="pie__enlace">Términos y condiciones</a>
         <span class="pie__separador" aria-hidden="true">|</span>
@@ -95,5 +100,6 @@
       </nav>
     </div>
   </footer>
+  {% block scripts %}{% endblock %}
 </body>
 </html>
