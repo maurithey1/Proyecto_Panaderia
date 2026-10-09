@@ -1,0 +1,462 @@
+[
+{
+  "model": "core.categoria",
+  "pk": 1,
+  "fields": {
+    "nombre": "Panadería",
+    "descripcion": "Pan tradicional chileno y artesanal recién horneado."
+  }
+},
+{
+  "model": "core.categoria",
+  "pk": 2,
+  "fields": {
+    "nombre": "Pastelería",
+    "descripcion": "Tortas tradicionales chilenas, kuchenes y postres elaborados con recetas artesanales."
+  }
+},
+{
+  "model": "core.categoria",
+  "pk": 3,
+  "fields": {
+    "nombre": "Dulces",
+    "descripcion": "Pastelillos individuales, bollería y clásicos de once chilena."
+  }
+},
+{
+  "model": "core.categoria",
+  "pk": 4,
+  "fields": {
+    "nombre": "Empanadas",
+    "descripcion": "Empanadas chilenas horneadas preparadas con masa artesanal."
+  }
+},
+{
+  "model": "core.categoria",
+  "pk": 5,
+  "fields": {
+    "nombre": "Salados",
+    "descripcion": "Bocados salados, masas rellenas y opciones para colaciones y eventos."
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 1,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Marraqueta (Pan Batido)",
+    "descripcion": "Pan crujiente tradicional chileno de cuatro cuartos con corteza dorada y miga esponjosa.",
+    "precio": "2190.00",
+    "stock": 50,
+    "stock_critico": 10,
+    "imagen_url": "/media/productos/marraqueta.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 2,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Hallulla Especial",
+    "descripcion": "Pan redondo y plano con los tradicionales orificios superiores. Masa suave y dorada.",
+    "precio": "2190.00",
+    "stock": 45,
+    "stock_critico": 10,
+    "imagen_url": "/media/productos/hallulla.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 3,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Dobladitas Artesanales",
+    "descripcion": "Masa doblada en triángulos con receta tradicional a base de manteca y sal de mar.",
+    "precio": "650.00",
+    "stock": 40,
+    "stock_critico": 8,
+    "imagen_url": "/media/productos/dobladita.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 4,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan Amasado Tradicional",
+    "descripcion": "Pan casero rústico amasado a mano con receta campestre, dorado al horno.",
+    "precio": "550.00",
+    "stock": 35,
+    "stock_critico": 10,
+    "imagen_url": "/media/productos/pan_amasado.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 5,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan Coliza",
+    "descripcion": "Pan tradicional chileno de miga densa y corteza suave, con forma rectangular.",
+    "precio": "2190.00",
+    "stock": 30,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/pan_coliza.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 6,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan Baguette Rústica",
+    "descripcion": "Barra de pan alargada de estilo francés con corteza extra crujiente y miga alveolada.",
+    "precio": "1600.00",
+    "stock": 25,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/pan_baguette.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 7,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Ciabatta Artesanal",
+    "descripcion": "Pan italiano rústico de alta hidratación y fermentación lenta con un toque de aceite de oliva.",
+    "precio": "1800.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/ciabatta.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 8,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan de Molde Blanco",
+    "descripcion": "Hogaza de pan de molde artesanal suave y esponjoso, ideal para tostadas y sándwiches.",
+    "precio": "3200.00",
+    "stock": 15,
+    "stock_critico": 3,
+    "imagen_url": "/media/productos/pan_molde_blanco.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 9,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan de Molde Semillas",
+    "descripcion": "Pan de molde integral elaborado con mezcla de semillas de chía, sésamo, girasol y linaza.",
+    "precio": "3600.00",
+    "stock": 15,
+    "stock_critico": 3,
+    "imagen_url": "/media/productos/pan_molde_semillas.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 10,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Pan Frica (Hamburguesa)",
+    "descripcion": "Pan redondo esponjoso y resistente para hamburguesas, sándwiches y churrascos.",
+    "precio": "700.00",
+    "stock": 30,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/pan_frica.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 11,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Torta Milhojas con Manjar",
+    "descripcion": "Deliciosas capas de hojarasca crujiente rellenas con abundante manjar artesanal de campo.",
+    "precio": "18990.00",
+    "stock": 5,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/torta_mil_hojas.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 12,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Torta Tres Leches",
+    "descripcion": "Bizcochuelo esponjoso remojado en mezcla de tres leches y cubierto con merengue italiano suave.",
+    "precio": "16990.00",
+    "stock": 6,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/torta_tres_leches.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 13,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Brazo de Reina Artesanal",
+    "descripcion": "Rollo de bizcocho esponjoso relleno con manjar casero y espolvoreado con azúcar flor.",
+    "precio": "7500.00",
+    "stock": 8,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/brazo_de_reina.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 14,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Pie de Limón Clásico",
+    "descripcion": "Masa quebrada crujiente rellena con crema de limón natural y coronada con merengue dorado.",
+    "precio": "12500.00",
+    "stock": 6,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/pie_de_limon.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 15,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Kuchen de Manzana Sureño",
+    "descripcion": "Tarta tradicional del sur de Chile con manzanas salteadas con canela y cubierta crocante.",
+    "precio": "11900.00",
+    "stock": 5,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/kuchen_manzana.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 16,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Torta Selva Negra",
+    "descripcion": "Bizcochuelo de cacao relleno con crema chantilly, guindas ácidas y lluvia de virutas de chocolate.",
+    "precio": "19990.00",
+    "stock": 4,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/torta_selva_negra.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 17,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Tartaleta de Frutas de la Estación",
+    "descripcion": "Base de masa dulce rellena con crema pastelera suave y fruta fresca seleccionada con brillo pastelero.",
+    "precio": "13500.00",
+    "stock": 5,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/tartaleta_fruta.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 18,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Torta Panqueque Naranja",
+    "descripcion": "Finas capas de masa panqueque alternadas con crema suave de naranja natural y trufa.",
+    "precio": "17990.00",
+    "stock": 4,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/panqueque_naranja.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 19,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Cheesecake de Frutos Rojos",
+    "descripcion": "Tarta horneada de queso crema sobre base de galleta crocante, cubierta con coulis de frambuesas y arándanos.",
+    "precio": "18500.00",
+    "stock": 5,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/torta_frutos_rojos.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 20,
+  "fields": {
+    "categoria": 2,
+    "nombre": "Tiramisú Clásico",
+    "descripcion": "Postre italiano con capas de bizcochos savoiardi bañados en café espresso y crema de mascarpone con cacao.",
+    "precio": "14990.00",
+    "stock": 6,
+    "stock_critico": 2,
+    "imagen_url": "/media/productos/tiramisu_clasico.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 21,
+  "fields": {
+    "categoria": 3,
+    "nombre": "Berlinés Crema Pastelera",
+    "descripcion": "Bollo frito dorado relleno con abundante crema pastelera casera y espolvoreado con azúcar flor.",
+    "precio": "1200.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/berlin.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 22,
+  "fields": {
+    "categoria": 3,
+    "nombre": "Berlinés con Manjar",
+    "descripcion": "Masa frita tradicional rellena con manjar artesanal chileno y cubierta de azúcar flor.",
+    "precio": "1200.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/berlin_manjar.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 23,
+  "fields": {
+    "categoria": 3,
+    "nombre": "Medialunas Dulces",
+    "descripcion": "Medialunas hojaldradas esponjosas y doradas, pinceladas con suave almíbar de naranja.",
+    "precio": "900.00",
+    "stock": 25,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/medialuna.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 24,
+  "fields": {
+    "categoria": 3,
+    "nombre": "Alfajores de Maicena",
+    "descripcion": "Tapas suaves que se deshacen en la boca, rellenas con manjar y bordes con coco rallado.",
+    "precio": "1100.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/alfajor_maicena.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 25,
+  "fields": {
+    "categoria": 3,
+    "nombre": "Palmeras Chilenas",
+    "descripcion": "Hojaldre crujiente horneado con azúcar caramelizada en forma de corazón.",
+    "precio": "1300.00",
+    "stock": 15,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/palmera_chilena.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 26,
+  "fields": {
+    "categoria": 4,
+    "nombre": "Empanada de Pino de Horno",
+    "descripcion": "Empanada tradicional chilena rellena de carne picada sazonada con cebolla, huevo duro, aceituna y pasas.",
+    "precio": "2500.00",
+    "stock": 30,
+    "stock_critico": 6,
+    "imagen_url": "/media/productos/empanada_pino_horno.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 27,
+  "fields": {
+    "categoria": 4,
+    "nombre": "Empanada de Queso",
+    "descripcion": "Empanada horneada con masa crujiente rellena con abundante queso fundido.",
+    "precio": "2200.00",
+    "stock": 25,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/empanada_queso.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 28,
+  "fields": {
+    "categoria": 4,
+    "nombre": "Empanada Champiñón y Queso",
+    "descripcion": "Masa de horno rellena de champiñones salteados con finas hierbas y queso derretido.",
+    "precio": "2400.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/empanada_champinon_queso.jfif",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 29,
+  "fields": {
+    "categoria": 5,
+    "nombre": "Chaparrita Tradicional",
+    "descripcion": "Masa de pan suave enrollada con vienesa de primera calidad y abundante queso mantecoso.",
+    "precio": "2300.00",
+    "stock": 20,
+    "stock_critico": 5,
+    "imagen_url": "/media/productos/chaparrita.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 30,
+  "fields": {
+    "categoria": 5,
+    "nombre": "Quiche de Verduras",
+    "descripcion": "Tarta salada horneada sobre masa brisa con relleno de espinaca, zapallo italiano y queso gratinado.",
+    "precio": "3500.00",
+    "stock": 12,
+    "stock_critico": 3,
+    "imagen_url": "/media/productos/quiche_verdura.jpg",
+    "activo": true
+  }
+}
+]
