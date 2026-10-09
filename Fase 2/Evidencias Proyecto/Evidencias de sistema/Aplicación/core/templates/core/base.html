@@ -84,7 +84,16 @@
         </p>
       </section>
     </div>
-    <p class="contenedor pie__legal">© {% now "Y" %} Los Tres Spa</p>
+    <div class="contenedor pie__legal">
+      <p class="pie__copyright">© {% now "Y" %} Los Tres Spa</p>
+      <nav class="pie__enlaces" aria-label="Enlaces legales">
+        <a href="{% url 'terminos_condiciones' %}" class="pie__enlace">Términos y condiciones</a>
+        <span class="pie__separador" aria-hidden="true">|</span>
+        <a href="{% url 'politicas_privacidad' %}" class="pie__enlace">Políticas de privacidad</a>
+        <span class="pie__separador" aria-hidden="true">|</span>
+        <a href="#" class="pie__enlace">Trabaja con nosotros</a>
+      </nav>
+    </div>
   </footer>
 </body>
 </html>

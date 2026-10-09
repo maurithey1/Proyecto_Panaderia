@@ -412,3 +412,15 @@ def registro_view(request):
 
     return render(request, 'core/registro.html')
 
+# ---------------------------------------------------------------
+# APARTADO TERMINOS Y CONDICIONES / POLÍTICAS DE PRIVACIDAD
+# ---------------------------------------------------------------
+
+def terminos_condiciones(request):
+    """Muestra la página de Términos y Condiciones de Uso."""
+    return render(request, 'core/terminos_condiciones.html')
+
+def politicas_privacidad(request):
+    """Muestra la página de Políticas de Privacidad y Protección de Datos."""
+    return render(request, 'core/politicas_privacidad.html')
+

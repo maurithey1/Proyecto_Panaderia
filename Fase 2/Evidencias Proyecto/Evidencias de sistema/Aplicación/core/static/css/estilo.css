@@ -232,6 +232,7 @@ h1, h2, h3 {
 /* ==========================================
    COMPONENTES GLOBALES: PIE DE PÁGINA
    ========================================== */
+
 .pie {
   background: var(--cafe-oscuro);
   color: var(--borde);
@@ -261,12 +262,58 @@ h1, h2, h3 {
   font-size: 0.85rem;
 }
 
+.pie__legal {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1.5rem;
+  margin-top: 2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.pie__copyright {
+  margin: 0;
+  font-size: 0.9rem;
+  color: inherit;
+}
+
+.pie__enlaces {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pie__enlace {
+  color: inherit;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: opacity 0.2s ease;
+}
+
+.pie__enlace:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.pie__separador {
+  opacity: 0.4;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
 /* Adaptación responsiva común */
 @media (max-width: 860px) {
   .cabecera__fila { flex-wrap: wrap; }
   .menu { order: 3; width: 100%; justify-content: center; padding-top: 4px; }
   .pie__grid { grid-template-columns: 1fr 1fr; }
   .pie__marca { grid-column: 1 / -1; }
+  /* Ajuste de pie__legal si el espacio horizontal se estrecha */
+  .pie__legal {
+    gap: 1rem;
+  }
 }
 
 @media (max-width: 520px) {
@@ -277,12 +324,25 @@ h1, h2, h3 {
   .cabecera__acciones .boton--registro { display: none; }
   .logo { font-size: 1.2rem; }
   .pie__grid { grid-template-columns: 1fr; gap: 24px; }
-}
 
+  /* En móviles se apilan al centro para que no queden apretados */
+  .pie__legal {
+    flex-direction: column-reverse;
+    justify-content: center;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .pie__enlaces {
+    justify-content: center;
+    gap: 8px;
+  }
+}
 
 /* ==========================================================
    inicio 
    ========================================================== */
+
 .hero {
   background: var(--crema-2);
   border-bottom: 1px solid var(--borde);
@@ -483,6 +543,7 @@ main { flex: 1; }
 /* ==========================================================
    login
    ========================================================== */
+
 .login-seccion {
   padding-block: 56px 72px;
   flex: 1;
@@ -637,6 +698,7 @@ main { flex: 1; }
     margin-inline: auto;
   }
 }
+
 /* ==========================================================
    login
    ========================================================== */
@@ -645,6 +707,7 @@ main { flex: 1; }
 /* ==========================================================
    registro
    ========================================================== */
+
 .registro-seccion {
   padding-block: 48px 64px;
   flex: 1;
@@ -825,6 +888,7 @@ main { flex: 1; }
     margin-inline: 8px;
   }
 }
+
 /* ==========================================================
    registro
    ========================================================== */
@@ -1805,6 +1869,69 @@ main { flex: 1; }
    MÓDULO PUNTO DE VENTA / CAJERO (base_cajero & inicio_cajero)
    ========================================================== */
 
+
+/* ==========================================================
+   PÁGINAS LEGALES (Términos y Privacidad)
+   ========================================================== */
+
+.legales-contenedor {
+  max-width: 860px;
+  margin: 32px auto 60px auto;
+  padding: 0 20px;
+}
+
+.legales-header {
+  border-bottom: 2px solid var(--borde);
+  padding-bottom: 16px;
+  margin-bottom: 28px;
+}
+
+.legales-titulo {
+  font-family: var(--fuente-titulos);
+  font-size: 2rem;
+  color: var(--cafe-oscuro);
+  margin-bottom: 6px;
+}
+
+.legales-subtitulo {
+  font-size: 0.88rem;
+  color: var(--texto-suave);
+  margin: 0;
+}
+
+.legales-cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  line-height: 1.65;
+  color: var(--cafe-oscuro);
+}
+
+.legales-seccion h2 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  margin-bottom: 10px;
+}
+
+.legales-seccion p {
+  margin: 0 0 10px 0;
+  font-size: 0.96rem;
+}
+
+.legales-seccion ul {
+  margin: 8px 0 12px 24px;
+  font-size: 0.95rem;
+}
+
+.legales-seccion li {
+  margin-bottom: 6px;
+}
+
+/* ==========================================================
+   PÁGINAS LEGALES (Términos y Privacidad)
+   ========================================================== */
+   
 
 /* ==========================================================
    ACCESIBILIDAD Y PREFERENCIAS DEL SISTEMA
