@@ -22,10 +22,13 @@
     </p>
     <div class="tarjeta__pie">
       <p class="tarjeta__precio"><data value="{{ p.precio|floatformat:'0u' }}">{{ p.precio|clp }}</data></p>
-      {# TODO Sprint 2: conectar con el carrito (sin exigir sesión para agregar) #}
-      <button class="agregar" type="button" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
-        <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
-      </button>
+      <form action="{% url 'carrito_agregar' %}" method="post">
+        {% csrf_token %}
+        <input type="hidden" name="producto_id" value="{{ p.pk }}">
+        <button class="agregar" type="submit" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
+          <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+        </button>
+      </form>
     </div>
   </div>
 </li>

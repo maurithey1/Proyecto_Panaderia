@@ -1,0 +1,57 @@
+{% extends "core/base.html" %}
+{% load formato %}
+
+{% block titulo %}Comprobante de demostración{% endblock %}
+
+{% block contenido %}
+<section class="pagina" aria-labelledby="boleta-titulo">
+  <div class="contenedor compra">
+    <div class="boleta">
+      <p class="boleta__estado">Compra de demostración completada</p>
+      <h1 id="boleta-titulo">Comprobante simulado</h1>
+      <p class="compra__aviso-legal">
+        Este documento es ficticio. No es una boleta tributaria y no acredita un pago real.
+      </p>
+
+      <dl class="boleta__datos">
+        <div><dt>Número de pedido</dt><dd>#{{ pedido.pk }}</dd></div>
+        <div><dt>Fecha</dt><dd>{{ pedido.fecha|date:"d/m/Y H:i" }}</dd></div>
+        <div><dt>Estado de la demostración</dt><dd>Ejecutada correctamente</dd></div>
+        <div><dt>Entrega</dt><dd>{{ pedido.get_tipo_entrega_display }}</dd></div>
+        {% if pedido.direccion_despacho %}
+          <div><dt>Dirección de despacho</dt><dd>{{ pedido.direccion_despacho }}</dd></div>
+        {% endif %}
+        <div><dt>Pago</dt><dd>Simulado; no se realizó ningún cobro</dd></div>
+      </dl>
+
+      <div class="compra__tabla-contenedor">
+        <table class="compra__tabla">
+          <thead>
+            <tr>
+              <th scope="col">Producto</th>
+              <th scope="col">Cantidad</th>
+              <th scope="col">Precio unitario</th>
+              <th scope="col">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for detalle in pedido.detalles.all %}
+              <tr>
+                <th scope="row">{{ detalle.producto.nombre }}</th>
+                <td>{{ detalle.cantidad }}</td>
+                <td>{{ detalle.precio_unitario|clp }}</td>
+                <td>{{ detalle.subtotal|clp }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr><th scope="row" colspan="3">Total de demostración</th><td><strong>{{ pedido.total|clp }}</strong></td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <a class="boton boton--primario" href="{% url 'pedir' %}">Volver a los productos</a>
+    </div>
+  </div>
+</section>
+{% endblock %}

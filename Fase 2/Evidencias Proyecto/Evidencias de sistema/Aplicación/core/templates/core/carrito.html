@@ -1,0 +1,90 @@
+{% extends "core/base.html" %}
+{% load formato %}
+
+{% block titulo %}Carrito{% endblock %}
+
+{% block contenido %}
+<section class="pagina" aria-labelledby="carrito-titulo">
+  <div class="contenedor compra">
+    <header class="pagina__cabecera">
+      <h1 id="carrito-titulo">Tu carrito</h1>
+      <p>Revisa tus panes antes de confirmar la compra de demostración.</p>
+    </header>
+
+    {% if messages %}
+      <ul class="compra__mensajes" aria-label="Notificaciones">
+        {% for message in messages %}
+          <li class="compra__mensaje compra__mensaje--{{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if items %}
+      <div class="compra__tabla-contenedor">
+        <table class="compra__tabla">
+          <thead>
+            <tr>
+              <th scope="col">Producto</th>
+              <th scope="col">Cantidad</th>
+              <th scope="col">Precio</th>
+              <th scope="col">Subtotal</th>
+              <th scope="col"><span class="sr-only">Acciones</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr>
+                <th scope="row">
+                  {{ item.producto.nombre }}
+                  {% if item.cantidad > item.producto.stock %}
+                    <span class="compra__aviso">Stock disponible: {{ item.producto.stock }}</span>
+                  {% endif %}
+                </th>
+                <td>{{ item.cantidad }}</td>
+                <td>{{ item.producto.precio|clp }}</td>
+                <td>{{ item.subtotal|clp }}</td>
+                <td>
+                  <form action="{% url 'carrito_quitar' item.producto.pk %}" method="post">
+                    {% csrf_token %}
+                    <button class="boton boton--contorno compra__quitar" type="submit">Quitar</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row" colspan="3">Total</th>
+              <td colspan="2"><strong>{{ total|clp }}</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <form class="compra__confirmar" action="{% url 'finalizar_compra' %}" method="post">
+        {% csrf_token %}
+        <fieldset>
+          <legend>Entrega</legend>
+          <label class="compra__opcion">
+            <input type="radio" name="tipo_entrega" value="RETIRO" checked>
+            Retiro en tienda
+          </label>
+          <label class="compra__opcion">
+            <input type="radio" name="tipo_entrega" value="DESPACHO">
+            Despacho a domicilio
+          </label>
+          <label class="campo" for="direccion-despacho">Dirección para despacho</label>
+          <input id="direccion-despacho" class="campo__control" type="text" name="direccion_despacho" maxlength="255" autocomplete="street-address">
+          <p class="compra__ayuda">El despacho de esta demostración no calcula costos adicionales.</p>
+        </fieldset>
+        <p class="compra__aviso-legal">
+          Esta compra es una demostración: no se realizará ningún cobro ni se emitirá una boleta tributaria.
+        </p>
+        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock %} disabled{% endif %}>Completar compra de demostración</button>
+      </form>
+    {% else %}
+      <p class="vacio">Tu carrito está vacío. <a href="{% url 'pedir' %}">Ver productos</a></p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

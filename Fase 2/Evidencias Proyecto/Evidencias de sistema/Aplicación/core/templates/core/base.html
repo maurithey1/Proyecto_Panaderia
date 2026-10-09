@@ -46,8 +46,9 @@
           <a class="boton boton--texto" href="{% url 'login' %}">Iniciar sesión</a>
           <a class="boton boton--contorno boton--registro" href="{% url 'registro' %}">Crear cuenta</a>
         {% endif %}
-        <a class="carrito" href="#" aria-label="Carrito de compras">
+        <a class="carrito" href="{% url 'carrito' %}" aria-label="Carrito de compras">
           <svg class="icono" aria-hidden="true"><use href="#i-carrito"/></svg>
+          <span>Carrito</span>
         </a>
       </nav>
     </div>

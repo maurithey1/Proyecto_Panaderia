@@ -1,41 +1,25 @@
+from decimal import Decimal
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import user_passes_test, login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Case, IntegerField, Q, Sum, Value, When
-from django.db.models.functions import Coalesce
-from .models import Categoria, Pedido, Producto, Usuario, Cliente, PuntosFidelizacion, ProveedorInsumo, Cajero
-
-PRODUCTOS_DESTACADOS = 4
+from django.db.models import Case, IntegerField, Q, Value, When
+from django.http import Http404
+from django.views.decorators.http import require_POST
+from .models import (
+    Categoria, Cliente, Cajero, DetallePedido, Pago, Pedido, Producto,
+    ProveedorInsumo, PuntosFidelizacion, Usuario,
+)
 
 # ==========================================
 # FUNCIONES DE CLIENTE
 # ==========================================
 
 def inicio(request):
-    """
-    Vista principal de la panadería.
-    Muestra los 4 productos más vendidos en la sección 'Los más pedidos'.
-    """
-    # Cuenta lo vendido en pedidos que no fueron cancelados.
-    estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
-
-    productos = (
-        Producto.objects.filter(activo=True)
-        .annotate(
-            vendidos=Coalesce(
-                Sum(
-                    'detallepedido__cantidad',
-                    filter=Q(detallepedido__pedido__estado__in=estados_validos),
-                ),
-                0,
-            )
-        )
-        .order_by('-vendidos', 'nombre')[:PRODUCTOS_DESTACADOS]
-    )
-
-    return render(request, 'core/inicio.html', {'productos': productos})
+    """Muestra la página principal de la panadería."""
+    return render(request, 'core/inicio.html')
 
 
 def pedir(request):
@@ -61,6 +45,211 @@ def pedir(request):
         'categoria_actual': categoria_actual,
     }
     return render(request, 'core/pedir.html', contexto)
+
+
+@require_POST
+def agregar_al_carrito(request):
+    producto_id = request.POST.get('producto_id', '')
+    if not producto_id.isdigit():
+        messages.error(request, 'No se pudo identificar el producto.')
+        return redirect('pedir')
+
+    producto = get_object_or_404(Producto, pk=int(producto_id), activo=True)
+    carrito = request.session.get('carrito', {})
+    if not isinstance(carrito, dict):
+        carrito = {}
+
+    clave = str(producto.pk)
+    cantidad = carrito.get(clave, 0)
+    if not isinstance(cantidad, int) or cantidad < 0:
+        cantidad = 0
+    if producto.stock <= cantidad:
+        messages.error(request, f'No hay más stock disponible de {producto.nombre}.')
+        return redirect('carrito')
+
+    carrito[clave] = cantidad + 1
+    request.session['carrito'] = carrito
+    messages.success(request, f'{producto.nombre} se agregó al carrito.')
+    return redirect('carrito')
+
+
+def carrito(request):
+    carrito_sesion = request.session.get('carrito', {})
+    if not isinstance(carrito_sesion, dict):
+        carrito_sesion = {}
+
+    cantidades = {}
+    for producto_id, cantidad in carrito_sesion.items():
+        try:
+            producto_id = int(producto_id)
+            cantidad = int(cantidad)
+        except (TypeError, ValueError):
+            continue
+        if producto_id > 0 and cantidad > 0:
+            cantidades[producto_id] = cantidad
+
+    productos = Producto.objects.filter(
+        pk__in=cantidades,
+        activo=True,
+    ).order_by('nombre')
+    items = []
+    ids_validos = set()
+    total = Decimal('0.00')
+    for producto in productos:
+        cantidad = cantidades[producto.pk]
+        subtotal = producto.precio * cantidad
+        total += subtotal
+        ids_validos.add(producto.pk)
+        items.append({
+            'producto': producto,
+            'cantidad': cantidad,
+            'subtotal': subtotal,
+        })
+
+    carrito_normalizado = {
+        str(producto_id): cantidad
+        for producto_id, cantidad in cantidades.items()
+        if producto_id in ids_validos
+    }
+    if carrito_sesion != carrito_normalizado:
+        request.session['carrito'] = carrito_normalizado
+        if len(carrito_normalizado) < len(cantidades):
+            messages.warning(request, 'Se quitaron del carrito productos que ya no están disponibles.')
+
+    return render(request, 'core/carrito.html', {
+        'items': items,
+        'total': total,
+        'carrito_tiene_stock': all(
+            item['cantidad'] <= item['producto'].stock for item in items
+        ),
+    })
+
+
+@require_POST
+def quitar_del_carrito(request, producto_id):
+    carrito_sesion = request.session.get('carrito', {})
+    if isinstance(carrito_sesion, dict):
+        carrito_sesion.pop(str(producto_id), None)
+        request.session['carrito'] = carrito_sesion
+    messages.success(request, 'Producto quitado del carrito.')
+    return redirect('carrito')
+
+
+@require_POST
+def finalizar_compra(request):
+    carrito_sesion = request.session.get('carrito', {})
+    if not isinstance(carrito_sesion, dict) or not carrito_sesion:
+        messages.error(request, 'Tu carrito está vacío.')
+        return redirect('carrito')
+
+    tipo_entrega = request.POST.get('tipo_entrega', 'RETIRO')
+    if tipo_entrega not in {'RETIRO', 'DESPACHO'}:
+        messages.error(request, 'Selecciona una opción de entrega válida.')
+        return redirect('carrito')
+
+    direccion = request.POST.get('direccion_despacho', '').strip()
+    if tipo_entrega == 'DESPACHO' and not direccion:
+        messages.error(request, 'Ingresa la dirección para el despacho.')
+        return redirect('carrito')
+
+    cantidades = {}
+    for producto_id, cantidad in carrito_sesion.items():
+        try:
+            producto_id = int(producto_id)
+            cantidad = int(cantidad)
+        except (TypeError, ValueError):
+            messages.error(request, 'El carrito contiene un producto inválido.')
+            return redirect('carrito')
+        if producto_id <= 0 or cantidad <= 0:
+            messages.error(request, 'El carrito contiene una cantidad inválida.')
+            return redirect('carrito')
+        cantidades[producto_id] = cantidad
+
+    with transaction.atomic():
+        productos = list(
+            Producto.objects.select_for_update()
+            .filter(pk__in=cantidades, activo=True)
+            .order_by('pk')
+        )
+        if len(productos) != len(cantidades):
+            messages.error(request, 'Uno o más productos ya no están disponibles.')
+            return redirect('carrito')
+
+        faltantes = [
+            producto.nombre
+            for producto in productos
+            if producto.stock < cantidades[producto.pk]
+        ]
+        if faltantes:
+            messages.error(
+                request,
+                'Stock insuficiente para: ' + ', '.join(faltantes) + '. Revisa tu carrito.',
+            )
+            return redirect('carrito')
+
+        total = sum(
+            (producto.precio * cantidades[producto.pk] for producto in productos),
+            Decimal('0.00'),
+        )
+        cliente = None
+        if request.user.is_authenticated:
+            cliente = Cliente.objects.filter(user=request.user).first()
+
+        pedido = Pedido.objects.create(
+            cliente=cliente,
+            estado='PAGADO',
+            canal='WEB',
+            tipo_entrega=tipo_entrega,
+            direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else '',
+            total=total,
+        )
+        for producto in productos:
+            cantidad = cantidades[producto.pk]
+            subtotal = producto.precio * cantidad
+            DetallePedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=cantidad,
+                precio_unitario=producto.precio,
+                subtotal=subtotal,
+            )
+            producto.stock -= cantidad
+            producto.save(update_fields=['stock'])
+
+        Pago.objects.create(
+            pedido=pedido,
+            monto=total,
+            metodo='Simulación (sin cobro real)',
+            estado='SIMULADO',
+            codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
+        )
+
+    request.session['carrito'] = {}
+    boletas = request.session.get('boletas_simuladas', [])
+    if not isinstance(boletas, list):
+        boletas = []
+    boletas.append(pedido.pk)
+    request.session['boletas_simuladas'] = boletas
+    messages.success(request, 'Compra de demostración completada correctamente.')
+    return redirect('boleta_simulada', pedido_id=pedido.pk)
+
+
+def boleta_simulada(request, pedido_id):
+    boletas = request.session.get('boletas_simuladas', [])
+    autorizada = isinstance(boletas, list) and pedido_id in boletas
+    if not autorizada and request.user.is_authenticated:
+        autorizada = Pedido.objects.filter(
+            pk=pedido_id,
+            cliente__user=request.user,
+        ).exists()
+    if not autorizada:
+        raise Http404
+
+    pedido = get_object_or_404(
+        Pedido.objects.prefetch_related('detalles__producto').select_related('pago'),
+        pk=pedido_id,
+    )
+    return render(request, 'core/boleta_simulada.html', {'pedido': pedido})
 
 
 def local(request):
@@ -430,4 +619,3 @@ def terminos_condiciones(request):
 def politicas_privacidad(request):
     """Muestra la página de Políticas de Privacidad y Protección de Datos."""
     return render(request, 'core/politicas_privacidad.html')
-
