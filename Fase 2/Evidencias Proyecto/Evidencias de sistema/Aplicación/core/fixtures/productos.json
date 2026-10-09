@@ -458,5 +458,33 @@
     "imagen_url": "/media/productos/quiche_verdura.jpg",
     "activo": true
   }
+},
+{
+  "model": "core.producto",
+  "pk": 31,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Centeno Niebla de Avellana",
+    "descripcion": "Pan rustico de masa madre de trigo y centeno, de alta hidratacion y fermentacion lenta durante 20 horas, con avellanas tostadas. Preparado con harina de centeno, harina de trigo, agua, masa madre natural, avellanas y sal de mar. Corteza fina y oscura; miga humeda, tierna y ligeramente acida, con trozos crujientes de avellana. Peso: 650 g.",
+    "precio": "6500.00",
+    "stock": 10,
+    "stock_critico": 10,
+    "imagen_url": "/media/productos/pan_molde_semillas.jpg",
+    "activo": true
+  }
+},
+{
+  "model": "core.producto",
+  "pk": 32,
+  "fields": {
+    "categoria": 1,
+    "nombre": "Hogaza Sol de Quillay",
+    "descripcion": "Hogaza artesanal de masa madre de trigo e integral, fermentada en frio durante 24 horas. Elaborada con harina de trigo, harina integral, agua, masa madre natural, miel de quillay y sal de mar. Corteza gruesa y dorada, crujiente; miga humeda, elastica y de alveolos irregulares, con suaves notas de cereal tostado y miel. Peso: 750 g.",
+    "precio": "5900.00",
+    "stock": 12,
+    "stock_critico": 10,
+    "imagen_url": "/media/productos/pan_amasado.jpg",
+    "activo": true
+  }
 }
 ]
