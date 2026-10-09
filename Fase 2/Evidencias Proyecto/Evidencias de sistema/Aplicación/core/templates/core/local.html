@@ -16,6 +16,26 @@
       <p>Retira tu pedido en la tienda o pide despacho a domicilio dentro de {{ tienda.despacho_zona }}.</p>
     </header>
 
+    <section class="nosotros" id="quienes-somos" aria-labelledby="nosotros-titulo">
+      <div class="nosotros__texto">
+        <h2 id="nosotros-titulo">¿Quiénes somos?</h2>
+        <p>{{ tienda.nombre }} es una panadería artesanal de {{ tienda.comuna }}. Elaboramos pan y pastelería tradicional en un solo local.</p>
+        <p>Atendemos sobre todo a clientes habituales de {{ tienda.comuna }}, que nos visitan seguido.</p>
+        {% if tienda.mision or tienda.vision %}
+          <dl class="nosotros__ideas">
+            {% if tienda.mision %}<div><dt>Misión</dt><dd>{{ tienda.mision }}</dd></div>{% endif %}
+            {% if tienda.vision %}<div><dt>Visión</dt><dd>{{ tienda.vision }}</dd></div>{% endif %}
+          </dl>
+        {% endif %}
+      </div>
+
+      <dl class="ficha">
+        <div><dt>Qué hacemos</dt><dd>Panadería y pastelería tradicional</dd></div>
+        <div><dt>Inicio de Actividades</dt><dd><time datetime="{{ tienda.inicio_actividades }}">{{ tienda.inicio_actividades_texto }}</time></dd></div>
+        <div><dt>Equipo</dt><dd>{{ tienda.trabajadores }} personas</dd></div>
+      </dl>
+    </section>
+
     <div class="local">
       <div class="local__datos">
         <section class="datos__bloque" aria-labelledby="local-donde">

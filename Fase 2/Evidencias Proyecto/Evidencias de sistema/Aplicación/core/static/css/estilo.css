@@ -441,20 +441,45 @@ main { flex: 1; }
 .datos__bloque .boton { margin-top: 14px; }
 .datos__bloque .despacho__valor {
   margin-bottom: 6px;
-  font: 400 2rem/1 var(--fuente-titulos);
+  font: 400 1.3rem/1.2 var(--fuente-titulos); /* mismo tamaño que los títulos de cada bloque */
+  font-variant-numeric: lining-nums; /* cifras a la misma altura (después de `font`, que reinicia esta propiedad) */
   color: var(--terracota);
 }
 
-.horario { margin: 0; display: grid; gap: 2px; }
-.horario div {
+.horario, .ficha { margin: 0; display: grid; gap: 2px; }
+.horario div, .ficha div {
   display: flex;
   justify-content: space-between;
   gap: 16px;
   padding-block: 6px;
   border-bottom: 1px dotted var(--cafe-claro);
 }
-.horario dt { color: var(--texto-suave); }
-.horario dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.horario dt, .ficha dt { color: var(--texto-suave); }
+.horario dd, .ficha dd { margin: 0; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* La ficha de "¿Quiénes somos?" va alineada a la izquierda, en dos columnas: etiqueta y valor */
+.ficha div { display: grid; grid-template-columns: 8rem minmax(0, 1fr); gap: 16px; }
+.ficha dd { text-align: left; font-variant-numeric: normal; }
+
+.nosotros {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 24px 56px;
+  align-items: start;
+  margin-bottom: 40px;
+  padding-top: 16px;
+  border-top: 2px solid var(--cafe-claro);
+  scroll-margin-top: 88px; /* para que la cabecera fija no tape el título al llegar desde el pie */
+}
+.nosotros h2 { font-size: 1.3rem; margin-bottom: 8px; }
+.nosotros__texto p { max-width: 60ch; margin: 0 0 12px; color: var(--texto-suave); }
+.nosotros__ideas { margin: 20px 0 0; display: grid; gap: 16px; }
+.nosotros__ideas dt { margin-bottom: 4px; font: 400 1.1rem/1.3 var(--fuente-titulos); }
+.nosotros__ideas dd { margin: 0; max-width: 60ch; color: var(--texto-suave); }
+
+@media (max-width: 860px) {
+  .nosotros { grid-template-columns: 1fr; }
+}
 
 .mapa {
   isolation: isolate; /* el mapa no se superpone a la cabecera fija */

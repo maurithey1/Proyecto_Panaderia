@@ -24,6 +24,25 @@ TIENDA = {
     'mapa_url': 'https://www.google.com/maps/search/?api=1&query='
                 + quote_plus(f'{DIRECCION}, {ZONA}'),
 
+    # Datos de "¿Quiénes somos?", según el documento 1.5 (Fase 1)
+    'comuna': 'La Florida',
+    'inicio_actividades': '2022-08-02',
+    'inicio_actividades_texto': '2 de agosto de 2022',
+    'trabajadores': 40,
+    # Misión y visión entregadas por el equipo (la misión sale de los objetivos de la panadería con el proyecto).
+    # Si alguna se deja vacía, la página Local no la muestra.
+    'mision': (
+        'Automatizar nuestros procesos manuales y dar un salto hacia lo digital. '
+        'Mejorar la gestión de los pedidos, tanto en la tienda física como en la digital, '
+        'administrar los insumos de nuestros productos y consolidar una base más fuerte de clientes.'
+    ),
+    'vision': (
+        'Dar un servicio más rápido y efectivo, y mantener la calidad sin perder la esencia '
+        'tradicional de la producción de nuestros productos. Adaptar un marco digital a la estructura '
+        'de nuestras ventas para consolidar una relación cercana con nuestros clientes '
+        'y reforzar su confianza en nosotros.'
+    ),
+
     # TODO: los horarios, el valor del despacho, el teléfono y el correo son de ejemplo.
     # Reemplazar por los datos reales que entregue el cliente.
     'horario_atencion': [
