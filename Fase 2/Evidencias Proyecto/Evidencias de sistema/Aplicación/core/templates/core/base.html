@@ -1,4 +1,5 @@
-{% load static tienda %}<!DOCTYPE html>
+{% load static tienda %}
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
@@ -20,6 +21,8 @@
     <symbol id="i-espiga" viewBox="0 0 24 24"><path d="M12 21V8"/><path d="M12 3v2"/><path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z"/><path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6"/></symbol>
     <symbol id="i-pan" viewBox="0 0 24 24"><path d="M6 10.5C4.5 7 7.5 4 12 4s7.5 3 6 6.5c1.2.6 2 1.7 2 3.2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4.3c0-1.5.8-2.6 2-3.2z"/><path d="M9.5 8.5l1.5 3M13 8l1.5 3"/></symbol>
     <symbol id="i-carrito" viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a1 1 0 0 0 1 .8h8.7a1 1 0 0 0 1-.8L20 8H6"/><circle cx="9" cy="20" r="1.2"/><circle cx="17" cy="20" r="1.2"/></symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></symbol>
+    <symbol id="i-salir" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
     <symbol id="i-mas" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   </svg>
 
@@ -40,12 +43,31 @@
 
       <nav class="cabecera__acciones" aria-label="Cuenta y carrito">
         {% if user.is_authenticated %}
-          <span style="font-size: 0.9rem; font-weight: 500; color: var(--cafe-oscuro);">Hola, {{ user.first_name|default:user.username }}</span>
-          <a class="boton boton--texto" href="{% url 'logout' %}">Cerrar sesión</a>
+          <!-- Menú desplegable con el nombre del usuario y la opción de cerrar sesión -->
+          <div class="usuario-dropdown" id="usuarioDropdown">
+            <button type="button" class="usuario-dropdown__toggle" onclick="toggleUsuarioMenu()" aria-expanded="false">
+              <svg class="icono" aria-hidden="true"><use href="#i-usuario"/></svg>
+              <span>{{ user.first_name|default:user.username }}</span>
+              <span class="usuario-dropdown__flecha">▾</span>
+            </button>
+
+            <div class="usuario-dropdown__menu" id="usuarioMenu">
+              <div class="usuario-dropdown__header">
+                <strong>{{ user.get_full_name|default:user.username }}</strong>
+                <small>{{ user.email|default:"Cliente registrado" }}</small>
+              </div>
+              <hr class="usuario-dropdown__divider">
+              <a href="{% url 'logout' %}" class="usuario-dropdown__item usuario-dropdown__item--danger">
+                <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>
+                <span>Cerrar sesión</span>
+              </a>
+            </div>
+          </div>
         {% else %}
           <a class="boton boton--texto" href="{% url 'login' %}">Iniciar sesión</a>
           <a class="boton boton--contorno boton--registro" href="{% url 'registro' %}">Crear cuenta</a>
         {% endif %}
+
         <a class="carrito" href="{% url 'carrito' %}" aria-label="Carrito de compras">
           <svg class="icono" aria-hidden="true"><use href="#i-carrito"/></svg>
           <span>Carrito</span>
@@ -97,11 +119,27 @@
         <a href="{% url 'terminos_condiciones' %}" class="pie__enlace">Términos y condiciones</a>
         <span class="pie__separador" aria-hidden="true">|</span>
         <a href="{% url 'politicas_privacidad' %}" class="pie__enlace">Políticas de privacidad</a>
-        <span class="pie__separador" aria-hidden="true">|</span>
-        <a href="#" class="pie__enlace">Trabaja con nosotros</a>
       </nav>
     </div>
   </footer>
+  <!-- Script para alternar el menú del usuario -->
+  <script>
+    function toggleUsuarioMenu() {
+      const dropdown = document.getElementById('usuarioDropdown');
+      if (dropdown) {
+        dropdown.classList.toggle('activo');
+      }
+    }
+
+    // Cerrar menú al hacer clic fuera de él
+    window.addEventListener('click', function (e) {
+      const dropdown = document.getElementById('usuarioDropdown');
+      if (dropdown && !dropdown.contains(e.target)) {
+        dropdown.classList.remove('activo');
+      }
+    });
+  </script>
+  
   {% block scripts %}{% endblock %}
 </body>
 </html>

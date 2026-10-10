@@ -163,6 +163,106 @@ h1, h2, h3 {
 
 .cabecera__acciones { display: flex; align-items: center; gap: 10px; }
 
+/* ------------------------------------------
+   MENÚ DESPLEGABLE CLIENTE
+   ------------------------------------------ */
+
+.usuario-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.usuario-dropdown__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  font: 500 0.95rem/1 var(--fuente-texto);
+  color: var(--cafe-oscuro);
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+
+.usuario-dropdown__toggle:hover,
+.usuario-dropdown.activo .usuario-dropdown__toggle {
+  background: var(--crema-2);
+}
+
+.usuario-dropdown__flecha {
+  font-size: 0.75rem;
+  transition: transform 0.2s ease;
+}
+
+.usuario-dropdown.activo .usuario-dropdown__flecha {
+  transform: rotate(180deg);
+}
+
+.usuario-dropdown__menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 200px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: 0 8px 24px rgba(62, 42, 29, 0.12);
+  padding: 8px 0;
+  z-index: 100;
+}
+
+.usuario-dropdown.activo .usuario-dropdown__menu {
+  display: block;
+}
+
+.usuario-dropdown__header {
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.usuario-dropdown__header strong {
+  color: var(--cafe-oscuro);
+  font-size: 0.9rem;
+}
+
+.usuario-dropdown__header small {
+  color: var(--texto-suave);
+  font-size: 0.8rem;
+}
+
+.usuario-dropdown__divider {
+  border: none;
+  border-top: 1px solid var(--borde);
+  margin: 6px 0;
+}
+
+.usuario-dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  text-decoration: none;
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+  transition: background-color 0.15s ease;
+}
+
+.usuario-dropdown__item:hover {
+  background: var(--crema-2);
+}
+
+.usuario-dropdown__item--danger {
+  color: var(--terracota);
+}
+
+/* ------------------------------------------
+   MENÚ DESPLEGABLE CLIENTE
+   ------------------------------------------ */
+
 .carrito {
   display: flex;
   align-items: center;
