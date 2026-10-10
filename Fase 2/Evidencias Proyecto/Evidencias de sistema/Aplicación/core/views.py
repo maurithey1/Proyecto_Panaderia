@@ -1,5 +1,7 @@
 from decimal import Decimal
-
+import json
+import os
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import user_passes_test, login_required
@@ -14,37 +16,100 @@ from .models import (
 )
 
 # ==========================================
-# FUNCIONES DE CLIENTE
+# FUNCIONES AUXILIARES JSON
+# ==========================================
+
+def obtener_datos_json():
+    """
+    Carga el archivo JSON desde la raíz del proyecto y estructura
+    las categorías y productos asignándoles identificadores (pk).
+    """
+    ruta_json = settings.BASE_DIR / 'productos_prueba.json'
+    
+    if not os.path.exists(ruta_json):
+        return [], []
+
+    with open(ruta_json, 'r', encoding='utf-8') as f:
+        data_json = json.load(f)
+
+    categorias = []
+    todos_los_productos = []
+    
+    contador_cat = 1
+    contador_prod = 1
+
+    for cat_data in data_json:
+        # Objeto de categoría compatible con tu template (c.pk y c.nombre)
+        categoria_obj = {
+            'pk': contador_cat,
+            'nombre': cat_data.get('categoria'),
+            'descripcion': cat_data.get('descripcion', '')
+        }
+        categorias.append(categoria_obj)
+
+        # Procesamos los productos de esta categoría
+        for p in cat_data.get('productos', []):
+            if p.get('activo', True):  # Solo productos activos
+                # Aseguramos un pk tanto para 'p.pk' como para 'p.id'
+                p['pk'] = contador_prod
+                p['id'] = contador_prod
+                p['categoria_pk'] = contador_cat
+                # Convertimos precio a Decimal o int para operaciones financieras
+                p['precio'] = Decimal(str(p.get('precio', 0)))
+                todos_los_productos.append(p)
+                contador_prod += 1
+
+        contador_cat += 1
+
+    return categorias, todos_los_productos
+
+def obtener_producto_por_id(producto_id):
+    """Busca un producto específico por su ID dentro del JSON."""
+    _, productos = obtener_datos_json()
+    for p in productos:
+        if p['pk'] == producto_id:
+            return p
+    return None
+
+# ==========================================
+# FUNCIONES AUXILIARES JSON
+# ==========================================
+
+
+# ==========================================
+# FUNCIONES DE CARRITO Y VISTAS DE CLIENTE
 # ==========================================
 
 def inicio(request):
-    """Muestra la página principal de la panadería."""
-    return render(request, 'core/inicio.html')
+    """Muestra los primeros 4 productos destacados."""
+    _, productos = obtener_datos_json()
+    return render(request, 'core/inicio.html', {
+        'productos': productos[:4]
+    })
 
 
 def pedir(request):
-    """Catálogo completo, público. Se puede filtrar con ?categoria=<id>."""
-    categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
-
-    productos = Producto.objects.filter(activo=True).order_by(
-        # Los agotados van al final
-        Case(When(stock__gt=0, then=Value(0)), default=Value(1), output_field=IntegerField()),
-        'nombre',
-    )
-
+    """Vista para el catálogo completo con soporte de filtros por categoría."""
+    categorias, productos = obtener_datos_json()
+    
+    # Capturamos el parámetro GET ?categoria=<id> si el usuario hace clic en un filtro
+    categoria_id_str = request.GET.get('categoria')
     categoria_actual = None
-    valor = request.GET.get('categoria', '')
-    if valor.isdigit():
-        categoria_actual = categorias.filter(pk=int(valor)).first()
-        if categoria_actual:
-            productos = productos.filter(categoria=categoria_actual)
 
-    contexto = {
-        'productos': productos,
+    if categoria_id_str and categoria_id_str.isdigit():
+        cat_id = int(categoria_id_str)
+        # Buscamos la categoría seleccionada
+        categoria_actual = next((c for c in categorias if c['pk'] == cat_id), None)
+        
+        # Filtramos los productos que pertenecen a esa categoría
+        if categoria_actual:
+            productos = [p for p in productos if p.get('categoria_pk') == cat_id]
+
+    return render(request, 'core/pedir.html', {
         'categorias': categorias,
         'categoria_actual': categoria_actual,
-    }
-    return render(request, 'core/pedir.html', contexto)
+        'productos': productos
+    })
 
 
 @require_POST
@@ -259,7 +324,7 @@ def local(request):
 
 
 # ==========================================
-# FUNCIONES DE CLIENTE
+# FUNCIONES DE CARRITO Y VISTAS DE CLIENTE
 # ==========================================
 
 
