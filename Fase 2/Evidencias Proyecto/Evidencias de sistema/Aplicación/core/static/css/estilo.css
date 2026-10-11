@@ -264,6 +264,7 @@ h1, h2, h3 {
    ------------------------------------------ */
 
 .carrito {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -276,7 +277,158 @@ h1, h2, h3 {
   text-decoration: none;
   transition: background-color 0.18s ease;
 }
+
 .carrito:hover { background: var(--crema-2); }
+
+.carrito__insignia {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background-color: var(--terracota);
+  color: var(--papel);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tarjeta__unidad {
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  font-weight: 400;
+}
+
+/* ------------------------------------------
+   NOTIFICACIONES FLOTANTES (TOASTS EMERGENTES)
+   ------------------------------------------ */
+
+.notificaciones-flotantes {
+  position: fixed;
+  top: 80px; /* Queda justo debajo del header fijo */
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 380px;
+  width: calc(100% - 48px);
+  pointer-events: none; /* Permite hacer clic a través del espacio libre */
+}
+
+.notificacion-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: 0 8px 24px rgba(62, 42, 29, 0.15);
+  color: var(--cafe-oscuro);
+  font-size: 0.95rem;
+  font-weight: 500;
+  animation: toastEntrada 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+/* Estado de Éxito (Verde artesanal) */
+.notificacion-toast--success {
+  border-left: 5px solid #527343;
+}
+.notificacion-toast--success .notificacion-toast__icono {
+  background: #e8f3e3;
+  color: #38542a;
+}
+
+/* Estado de Error (Terracota) */
+.notificacion-toast--error {
+  border-left: 5px solid var(--terracota);
+}
+.notificacion-toast--error .notificacion-toast__icono {
+  background: #fbeee6;
+  color: var(--terracota);
+}
+
+/* Estado de Advertencia / Info (Trigo) */
+.notificacion-toast--warning, .notificacion-toast--info {
+  border-left: 5px solid var(--trigo);
+}
+
+.notificacion-toast__contenido {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.notificacion-toast__icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.notificacion-toast__texto {
+  line-height: 1.35;
+}
+
+.notificacion-toast__cerrar {
+  background: transparent;
+  border: none;
+  color: var(--texto-suave);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.notificacion-toast__cerrar:hover {
+  color: var(--cafe-oscuro);
+}
+
+/* Animación de Entrada */
+@keyframes toastEntrada {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Animación de Desvanecimiento (Ocultado automático) */
+.notificacion-toast--ocultando {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.95);
+}
+
+@media (max-width: 520px) {
+  .notificaciones-flotantes {
+    top: 70px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* ------------------------------------------
+   NOTIFICACIONES FLOTANTES (TOASTS EMERGENTES)
+   ------------------------------------------ */
+
+
 
 /* ==========================================
    COMPONENTES GLOBALES: FORMULARIOS Y ALERTAS
@@ -451,7 +603,19 @@ h1, h2, h3 {
    ========================================================== */
 
 .hero {
-  background: var(--crema-2);
+  position: relative;
+  /* Capa superpuesta crema (rgba) + Imagen de fondo */
+  background-image: 
+    linear-gradient(
+      to right, 
+      rgba(251, 245, 234, 0.30) 0%, 
+      rgba(251, 245, 234, 0.40) 50%, 
+      rgba(251, 245, 234, 0.40) 100%
+    ), 
+    url('../images/background_inicio.png');
+  background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
   border-bottom: 1px solid var(--borde);
 }
 
@@ -475,8 +639,9 @@ main { flex: 1; }
 .hero__texto p {
   max-width: 42ch;
   margin: 0 0 30px;
-  color: var(--texto-suave);
+  color: var(--fuente-texto);
   font-size: 1.1rem;
+  text-shadow: var(--cafe-oscuro) 1px 1px 2px;
 }
 
 .hero__figura {
@@ -701,8 +866,15 @@ main { flex: 1; }
 }
 .tarjeta__precio {
   margin: 0;
-  font: 400 1.45rem/1 var(--fuente-titulos);
+  display: inline-flex;
+  align-items: baseline; /* Alinea perfectamente el monto con la unidad */
+  gap: 3px;
+  font-family: var(--fuente-texto); /* Usa Figtree para cifras modernas y legibles */
+  font-size: 1.35rem;
+  font-weight: 700; /* Le da el grosor característico de precio e-commerce */
+  font-variant-numeric: lining-nums tabular-nums; /* Garantiza números rectos y alineados */
   color: var(--terracota);
+  line-height: 1;
 }
 
 .agregar {
@@ -757,6 +929,91 @@ main { flex: 1; }
   border: 1px solid var(--borde);
   border-radius: var(--radio);
 }
+
+
+/* ==========================================
+   CÁPSULA HORIZONTAL DE CONTROL DE CANTIDAD
+   ========================================== */
+.control-cantidad {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 2px;
+  background: var(--cafe);
+  color: var(--crema);
+  border-radius: 999px;
+  padding: 3px 6px;
+  height: 38px;
+  box-shadow: 0 2px 6px rgba(62, 42, 29, 0.15);
+}
+
+/* Evita que los formularios rompan la fila horizontal */
+.control-cantidad form {
+  display: inline-flex !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* Reset total de estilo para los botones internos */
+.control-cantidad__btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  color: var(--crema) !important;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.12s ease;
+}
+
+.control-cantidad__btn .icono {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke: currentColor;
+  stroke-width: 2.2;
+}
+
+.control-cantidad__btn:hover:not(:disabled) {
+  background: rgba(255, 253, 248, 0.22) !important;
+  transform: scale(1.08);
+}
+
+.control-cantidad__btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.control-cantidad__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.control-cantidad__numero {
+  display: inline-block;
+  min-width: 20px;
+  text-align: center;
+  font-family: var(--fuente-texto);
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--crema);
+  user-select: none;
+  padding-inline: 4px;
+}
+
+/* Centrado del control dentro de las celdas de tabla */
+.compra__tabla td {
+  vertical-align: middle;
+}
+
+.compra__tabla .control-cantidad {
+  margin-inline: auto;
+}
+
 .compra__tabla { width: 100%; border-collapse: collapse; text-align: left; }
 .compra__tabla th, .compra__tabla td { padding: 14px 16px; border-bottom: 1px solid var(--borde); }
 .compra__tabla thead th { color: var(--texto-suave); font-size: 0.9rem; }

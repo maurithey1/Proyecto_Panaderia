@@ -108,28 +108,9 @@
     </main>
   </div>
 
-  <script>
-    function toggleCajeroMenu() {
-      const dropdown = document.getElementById('cajeroDropdown');
-      dropdown.classList.toggle('activo');
-    }
 
-    window.addEventListener('click', function(e) {
-      const dropdown = document.getElementById('cajeroDropdown');
-      if (dropdown && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('activo');
-      }
-    });
-
-    // Actualización del reloj en tiempo real
-    function actualizarReloj() {
-      const ahora = new Date();
-      const horas = String(ahora.getHours()).padStart(2, '0');
-      const minutos = String(ahora.getMinutes()).padStart(2, '0');
-      const elementoHora = document.getElementById('horaActual');
-      if (elementoHora) { elementoHora.textContent = `${horas}:${minutos}`; }
-    }
-    setInterval(actualizarReloj, 10000);
-  </script>
+  <script src="{% static 'js/ui_menus.js' %}"></script>
+  <script src="{% static 'js/pos_cajero.js' %}"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

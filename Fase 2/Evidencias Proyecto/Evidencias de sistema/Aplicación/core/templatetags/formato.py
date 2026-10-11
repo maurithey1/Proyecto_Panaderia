@@ -11,3 +11,10 @@ def clp(valor):
     except (TypeError, ValueError):
         return valor
     return '${:,}'.format(entero).replace(',', '.')
+
+@register.filter
+def obt_cantidad_carrito(carrito, producto_id):
+    """Obtiene la cantidad guardada en el carrito de la sesión para un producto."""
+    if not isinstance(carrito, dict):
+        return 0
+    return carrito.get(str(producto_id), 0)

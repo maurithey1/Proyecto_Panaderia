@@ -98,12 +98,19 @@ class Categoria(models.Model):
 
 
 class Producto(models.Model):
+    UNIDADES = (
+        ('unid', 'Unidad'),
+        ('kg', 'Kilogramo'),
+    )
+
     categoria = models.ForeignKey(Categoria, on_delete=models.CASCADE, related_name='productos')
     nombre = models.CharField(max_length=150)
     descripcion = models.TextField(blank=True, null=True)
     precio = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.IntegerField(default=0)
     stock_critico = models.IntegerField(default=10)
+    unidad_medida = models.CharField(max_length=10, choices=UNIDADES, default='unid')
+    unidades_por_kg = models.CharField(max_length=100, blank=True, null=True)
     imagen_url = models.URLField(max_length=500, blank=True, null=True)
     activo = models.BooleanField(default=True)
 

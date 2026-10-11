@@ -72,6 +72,8 @@ class Command(BaseCommand):
                         'precio': prod.get('precio', 0),
                         'stock': prod.get('stock', 0),
                         'stock_critico': prod.get('stock_critico', 5),
+                        'unidad_medida': prod.get('unidad_medida', 'unid'),
+                        'unidades_por_kg': prod.get('unidades_por_kg', ''),
                         'imagen_url': prod.get('imagen_url', ''),
                         'activo': prod.get('activo', True)
                     }

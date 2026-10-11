@@ -13,6 +13,8 @@ from .models import (
     ProveedorInsumo, PuntosFidelizacion, Usuario,
 )
 from .templatetags.tienda import TIENDA
+from django.http import JsonResponse
+from .templatetags.formato import clp
 from .retiro import dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
 
@@ -78,12 +80,49 @@ def pedir(request):
         'categoria_actual': categoria_actual,
     })
 
+def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="success"):
+    """Helper para calcular totales y devolver respuesta JSON estandarizada."""
+    carrito = request.session.get('carrito', {})
+    if not isinstance(carrito, dict):
+        carrito = {}
+
+    cantidades = {}
+    for p_id, cant in carrito.items():
+        try:
+            cantidades[int(p_id)] = int(cant)
+        except (TypeError, ValueError):
+            continue
+
+    cant_unidades_item = cantidades.get(int(producto_id), 0)
+
+    # Calcular total del carrito
+    productos = Producto.objects.filter(pk__in=cantidades.keys(), activo=True)
+    total_monto = sum(p.precio * cantidades[p.pk] for p in productos if p.pk in cantidades)
+    
+    # Subtotal del producto modificado
+    producto_obj = next((p for p in productos if p.pk == int(producto_id)), None)
+    subtotal_item = (producto_obj.precio * cant_unidades_item) if producto_obj else 0
+
+    return JsonResponse({
+        'ok': True,
+        'producto_id': int(producto_id),
+        'cantidad_item': cant_unidades_item,
+        'cant_carrito': len(carrito), # O sum(cantidades.values()) según tu preferencia
+        'subtotal_item_clp': clp(subtotal_item),
+        'total_carrito_clp': clp(total_monto),
+        'mensaje': mensaje,
+        'tipo_mensaje': tipo_mensaje,
+    })
+
 
 @require_POST
 def agregar_al_carrito(request):
-    """Agrega una unidad del producto elegido en el catálogo al carrito de la sesión."""
+    es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     producto_id = _entero_o_none(request.POST.get('producto_id', ''))
+    
     if producto_id is None:
+        if es_ajax:
+            return JsonResponse({'ok': False, 'error': 'Producto no identificado.'}, status=400)
         messages.error(request, 'No se pudo identificar el producto.')
         return redirect('pedir')
 
@@ -96,14 +135,23 @@ def agregar_al_carrito(request):
     cantidad = carrito.get(clave, 0)
     if not isinstance(cantidad, int) or cantidad < 0:
         cantidad = 0
+
     if producto.stock <= cantidad:
-        messages.error(request, f'No hay más stock disponible de {producto.nombre}.')
-        return redirect('carrito')
+        msg = f'No hay más stock disponible de {producto.nombre}.'
+        if es_ajax:
+            return _resumen_carrito_json(request, producto.pk, mensaje=msg, tipo_mensaje='error')
+        messages.error(request, msg)
+        return redirect(request.META.get('HTTP_REFERER') or 'pedir')
 
     carrito[clave] = cantidad + 1
     request.session['carrito'] = carrito
-    messages.success(request, f'{producto.nombre} se agregó al carrito.')
-    return redirect('carrito')
+    msg = f'{producto.nombre} se agregó al carrito.'
+
+    if es_ajax:
+        return _resumen_carrito_json(request, producto.pk, mensaje=msg, tipo_mensaje='success')
+
+    messages.success(request, msg)
+    return redirect(request.META.get('HTTP_REFERER') or 'pedir')
 
 
 def carrito(request):
@@ -169,17 +217,39 @@ def carrito(request):
         ),
     })
 
+@require_POST
+def disminuir_del_carrito(request, producto_id):
+    es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    carrito_sesion = request.session.get('carrito', {})
+    if isinstance(carrito_sesion, dict):
+        clave = str(producto_id)
+        cantidad = carrito_sesion.get(clave, 0)
+        if isinstance(cantidad, int) and cantidad > 1:
+            carrito_sesion[clave] = cantidad - 1
+        else:
+            carrito_sesion.pop(clave, None)
+        request.session['carrito'] = carrito_sesion
+
+    if es_ajax:
+        return _resumen_carrito_json(request, producto_id, mensaje="Cantidad actualizada.")
+
+    return redirect(request.META.get('HTTP_REFERER') or 'carrito')
+
 
 @require_POST
 def quitar_del_carrito(request, producto_id):
-    """Quita un producto del carrito de la sesión."""
+    es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     carrito_sesion = request.session.get('carrito', {})
     if isinstance(carrito_sesion, dict):
         carrito_sesion.pop(str(producto_id), None)
         request.session['carrito'] = carrito_sesion
-    messages.success(request, 'Producto quitado del carrito.')
-    return redirect('carrito')
 
+    msg = 'Producto quitado del carrito.'
+    if es_ajax:
+        return _resumen_carrito_json(request, producto_id, mensaje=msg, tipo_mensaje='info')
+
+    messages.success(request, msg)
+    return redirect(request.META.get('HTTP_REFERER') or 'carrito')
 
 @require_POST
 def finalizar_compra(request):

@@ -14,9 +14,32 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  {# Contenedor global de notificaciones flotantes (Toasts) #}
+  {% if messages %}
+    <div class="notificaciones-flotantes" id="notificaciones-contenedor" aria-live="polite" aria-atomic="true">
+      {% for message in messages %}
+        <div class="notificacion-toast notificacion-toast--{{ message.tags }}">
+          <div class="notificacion-toast__contenido">
+            <span class="notificacion-toast__icono">
+              {% if message.tags == 'success' %}
+                ✓
+              {% elif message.tags == 'error' %}
+                ✕
+              {% else %}
+                ℹ
+              {% endif %}
+            </span>
+            <span class="notificacion-toast__texto">{{ message }}</span>
+          </div>
+          <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()" aria-label="Cerrar notificación">&times;</button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
   {# Datos de la tienda (core/templatetags/tienda.py), disponibles como `tienda` en todas las páginas #}
   {% datos_tienda as tienda %}
-  {# Iconos reutilizables: se usan con <svg class="icono"><use href="#i-..."/></svg> #}
+  {# Iconos reutilizables #}
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <symbol id="i-espiga" viewBox="0 0 24 24"><path d="M12 21V8"/><path d="M12 3v2"/><path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z"/><path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6"/></symbol>
     <symbol id="i-pan" viewBox="0 0 24 24"><path d="M6 10.5C4.5 7 7.5 4 12 4s7.5 3 6 6.5c1.2.6 2 1.7 2 3.2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4.3c0-1.5.8-2.6 2-3.2z"/><path d="M9.5 8.5l1.5 3M13 8l1.5 3"/></symbol>
@@ -43,7 +66,6 @@
 
       <nav class="cabecera__acciones" aria-label="Cuenta y carrito">
         {% if user.is_authenticated %}
-          <!-- Menú desplegable con el nombre del usuario y la opción de cerrar sesión -->
           <div class="usuario-dropdown" id="usuarioDropdown">
             <button type="button" class="usuario-dropdown__toggle" onclick="toggleUsuarioMenu()" aria-expanded="false">
               <svg class="icono" aria-hidden="true"><use href="#i-usuario"/></svg>
@@ -68,9 +90,13 @@
           <a class="boton boton--contorno boton--registro" href="{% url 'registro' %}">Crear cuenta</a>
         {% endif %}
 
+        {# ENLACE AL CARRITO CON INSIGNIA DINÁMICA #}
         <a class="carrito" href="{% url 'carrito' %}" aria-label="Carrito de compras">
           <svg class="icono" aria-hidden="true"><use href="#i-carrito"/></svg>
           <span>Carrito</span>
+          <span class="carrito__insignia" id="contador-carrito" {% if not cant_carrito or cant_carrito == 0 %}style="display: none;"{% endif %}>
+            {{ cant_carrito|default:0 }}
+          </span>
         </a>
       </nav>
     </div>
@@ -122,23 +148,9 @@
       </nav>
     </div>
   </footer>
-  <!-- Script para alternar el menú del usuario -->
-  <script>
-    function toggleUsuarioMenu() {
-      const dropdown = document.getElementById('usuarioDropdown');
-      if (dropdown) {
-        dropdown.classList.toggle('activo');
-      }
-    }
 
-    // Cerrar menú al hacer clic fuera de él
-    window.addEventListener('click', function (e) {
-      const dropdown = document.getElementById('usuarioDropdown');
-      if (dropdown && !dropdown.contains(e.target)) {
-        dropdown.classList.remove('activo');
-      }
-    });
-  </script>
+  <script src="{% static 'js/ui_menus.js' %}"></script>
+  <script src="{% static 'js/carrito_ajax.js' %}"></script>
   
   {% block scripts %}{% endblock %}
 </body>

@@ -16,14 +16,6 @@
       <p>Revisa tus panes antes de confirmar la compra de demostración.</p>
     </header>
 
-    {% if messages %}
-      <ul class="compra__mensajes" aria-label="Notificaciones">
-        {% for message in messages %}
-          <li class="compra__mensaje compra__mensaje--{{ message.tags }}">{{ message }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-
     {% if items %}
       <div class="compra__tabla-contenedor">
         <table class="compra__tabla">
@@ -38,21 +30,51 @@
           </thead>
           <tbody>
             {% for item in items %}
-              <tr>
+              <tr data-producto-fila="{{ item.producto.pk }}">
                 <th scope="row">
                   {{ item.producto.nombre }}
                   {% if item.cantidad > item.producto.stock %}
                     <span class="compra__aviso">Stock disponible: {{ item.producto.stock }}</span>
                   {% endif %}
                 </th>
-                <td>{{ item.cantidad }}</td>
+                <td class="item-cantidad">{{ item.cantidad }} {% if item.producto.unidad_medida == "kg" %}kg{% else %}unid.{% endif %}</td>
                 <td>{{ item.producto.precio|clp }}</td>
-                <td>{{ item.subtotal|clp }}</td>
+                <td class="item-subtotal">{{ item.subtotal|clp }}</td>
                 <td>
-                  <form action="{% url 'carrito_quitar' item.producto.pk %}" method="post">
-                    {% csrf_token %}
-                    <button class="boton boton--contorno compra__quitar" type="submit">Quitar</button>
-                  </form>
+                  <div class="tarjeta__acciones" data-producto-id="{{ item.producto.pk }}">
+                    <div class="control-cantidad">
+                      {% if item.cantidad == 1 %}
+                        <form action="{% url 'carrito_quitar' item.producto.pk %}" method="post">
+                          {% csrf_token %}
+                          <button class="control-cantidad__btn control-cantidad__btn--basura" type="submit" title="Eliminar del carrito" aria-label="Eliminar {{ item.producto.nombre }}">
+                            <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <polyline points="3 6 5 6 21 6"></polyline>
+                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                          </button>
+                        </form>
+                      {% else %}
+                        <form action="{% url 'carrito_disminuir' item.producto.pk %}" method="post">
+                          {% csrf_token %}
+                          <button class="control-cantidad__btn control-cantidad__btn--menos" type="submit" title="Disminuir cantidad" aria-label="Disminuir {{ item.producto.nombre }}">
+                            <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                          </button>
+                        </form>
+                      {% endif %}
+
+                      <span class="control-cantidad__numero">{{ item.cantidad }}</span>
+
+                      <form action="{% url 'carrito_agregar' %}" method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="producto_id" value="{{ item.producto.pk }}">
+                        <button class="control-cantidad__btn control-cantidad__btn--mas" type="submit" title="Aumentar cantidad" aria-label="Aumentar {{ item.producto.nombre }}"{% if item.cantidad >= item.producto.stock %} disabled{% endif %}>
+                          <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+                        </button>
+                      </form>
+                    </div>
+                  </div>
                 </td>
               </tr>
             {% endfor %}

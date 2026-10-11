@@ -1,5 +1,5 @@
 {% load formato %}
-{# `nivel` es el nivel del título del producto: 3 por defecto (bajo un h2 de sección) o 2 si la página no tiene h2 antes #}
+{% with cantidad_en_carrito=request.session.carrito|obt_cantidad_carrito:p.pk %}
 <li class="tarjeta">
   <div class="tarjeta__imagen{% if not p.imagen_url %} tarjeta__imagen--sin-foto{% endif %}">
     {% if p.imagen_url %}
@@ -12,23 +12,82 @@
   <div class="tarjeta__cuerpo">
     <h{{ nivel|default:3 }} class="tarjeta__nombre">{{ p.nombre }}</h{{ nivel|default:3 }}>
     {% if p.descripcion %}<p class="tarjeta__desc">{{ p.descripcion }}</p>{% endif %}
+    
     <p class="tarjeta__stock">
       {% if p.stock <= 0 %}
         <strong>Agotado</strong>
       {% else %}
-        <strong>Stock:</strong> {{ p.stock }} unidad{{ p.stock|pluralize:"es" }}
+        <strong>Stock:</strong> {{ p.stock }} 
+        {% if p.unidad_medida == "kg" %}
+          kg
+        {% else %}
+          unidad{{ p.stock|pluralize:"es" }}
+        {% endif %}
         {% if p.stock <= p.stock_critico %}<span class="tarjeta__aviso">Quedan pocas</span>{% endif %}
       {% endif %}
     </p>
+
+    {% if p.unidades_por_kg %}
+      <p class="tarjeta__equivalencia" style="font-size: 0.82rem; color: var(--texto-suave); margin: 2px 0 0 0;">
+        💡 <em>{{ p.unidades_por_kg }}</em>
+      </p>
+    {% endif %}
+
     <div class="tarjeta__pie">
-      <p class="tarjeta__precio"><data value="{{ p.precio|floatformat:'0u' }}">{{ p.precio|clp }}</data></p>
-      <form action="{% url 'carrito_agregar' %}" method="post">
-        {% csrf_token %}
-        <input type="hidden" name="producto_id" value="{{ p.pk }}">
-        <button class="agregar" type="submit" aria-label="Agregar {{ p.nombre }} al carrito"{% if p.stock <= 0 %} disabled{% endif %}>
-          <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
-        </button>
-      </form>
+      <p class="tarjeta__precio">
+        <data value="{{ p.precio|floatformat:'0u' }}">{{ p.precio|clp }}</data>
+        <small class="tarjeta__unidad">/ {% if p.unidad_medida == "kg" %}kg{% else %}unid.{% endif %}</small>
+      </p>
+
+      <div class="tarjeta__acciones" data-producto-id="{{ p.pk }}">
+        {% if p.stock <= 0 %}
+          <button class="agregar" type="button" disabled aria-label="Agotado">
+            <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+          </button>
+        {% elif cantidad_en_carrito == 0 %}
+          <form action="{% url 'carrito_agregar' %}" method="post" class="form-carrito-ajax">
+            {% csrf_token %}
+            <input type="hidden" name="producto_id" value="{{ p.pk }}">
+            <button class="agregar" type="submit" aria-label="Agregar {{ p.nombre }} al carrito">
+              <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+            </button>
+          </form>
+        {% else %}
+          <div class="control-cantidad">
+            {% if cantidad_en_carrito == 1 %}
+              <form action="{% url 'carrito_quitar' p.pk %}" method="post" class="form-carrito-ajax">
+                {% csrf_token %}
+                <button class="control-cantidad__btn control-cantidad__btn--basura" type="submit" title="Eliminar del carrito">
+                  <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                </button>
+              </form>
+            {% else %}
+              <form action="{% url 'carrito_disminuir' p.pk %}" method="post" class="form-carrito-ajax">
+                {% csrf_token %}
+                <button class="control-cantidad__btn control-cantidad__btn--menos" type="submit" title="Disminuir cantidad">
+                  <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                </button>
+              </form>
+            {% endif %}
+
+            <span class="control-cantidad__numero">{{ cantidad_en_carrito }}</span>
+
+            <form action="{% url 'carrito_agregar' %}" method="post" class="form-carrito-ajax">
+              {% csrf_token %}
+              <input type="hidden" name="producto_id" value="{{ p.pk }}">
+              <button class="control-cantidad__btn control-cantidad__btn--mas" type="submit" title="Aumentar cantidad">
+                <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+              </button>
+            </form>
+          </div>
+        {% endif %}
+      </div>
     </div>
   </div>
 </li>
+{% endwith %}

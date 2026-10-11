@@ -9,6 +9,8 @@
         "precio": 2190,
         "stock": 50,
         "stock_critico": 10,
+        "unidad_medida": "kg",
+        "unidades_por_kg": "Aprox. 4 a 5 panes (2 batidos completos)",
         "imagen_url": "/media/productos/marraqueta.jpg",
         "activo": true
       },
@@ -18,6 +20,8 @@
         "precio": 2190,
         "stock": 45,
         "stock_critico": 10,
+        "unidad_medida": "kg",
+        "unidades_por_kg": "Aprox. 8 a 10 hallullas por kg",
         "imagen_url": "/media/productos/hallulla.jpg",
         "activo": true
       },
@@ -27,6 +31,7 @@
         "precio": 650,
         "stock": 40,
         "stock_critico": 8,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/dobladita.jpg",
         "activo": true
       },
@@ -36,6 +41,7 @@
         "precio": 550,
         "stock": 35,
         "stock_critico": 10,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pan_amasado.jpg",
         "activo": true
       },
@@ -45,6 +51,8 @@
         "precio": 2190,
         "stock": 30,
         "stock_critico": 5,
+        "unidad_medida": "kg",
+        "unidades_por_kg": "Aprox. 6 a 8 unidades por kg",
         "imagen_url": "/media/productos/pan_coliza.jpg",
         "activo": true
       },
@@ -54,6 +62,7 @@
         "precio": 1600,
         "stock": 25,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pan_baguette.jpg",
         "activo": true
       },
@@ -63,6 +72,7 @@
         "precio": 1800,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/ciabatta.jpg",
         "activo": true
       },
@@ -72,6 +82,7 @@
         "precio": 3200,
         "stock": 15,
         "stock_critico": 3,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pan_molde_blanco.jpg",
         "activo": true
       },
@@ -81,6 +92,7 @@
         "precio": 3600,
         "stock": 15,
         "stock_critico": 3,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pan_molde_semillas.jpg",
         "activo": true
       },
@@ -90,6 +102,7 @@
         "precio": 700,
         "stock": 30,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pan_frica.jpg",
         "activo": true
       },
@@ -99,7 +112,8 @@
         "precio": 6500,
         "stock": 10,
         "stock_critico": 10,
-        "imagen_url": "/media/productos/pan_molde_semillas.jpg",
+        "unidad_medida": "unid",
+        "imagen_url": "/media/productos/centeno_niebla_avellana.jpg",
         "activo": true
       },
       {
@@ -108,7 +122,8 @@
         "precio": 5900,
         "stock": 12,
         "stock_critico": 10,
-        "imagen_url": "/media/productos/pan_amasado.jpg",
+        "unidad_medida": "unid",
+        "imagen_url": "/media/productos/hogaza_sol_quillay.jpg",
         "activo": true
       }
     ]
@@ -123,6 +138,7 @@
         "precio": 18990,
         "stock": 5,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/torta_mil_hojas.jpg",
         "activo": true
       },
@@ -132,6 +148,7 @@
         "precio": 16990,
         "stock": 6,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/torta_tres_leches.jpg",
         "activo": true
       },
@@ -141,6 +158,7 @@
         "precio": 7500,
         "stock": 8,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/brazo_de_reina.jpg",
         "activo": true
       },
@@ -150,6 +168,7 @@
         "precio": 12500,
         "stock": 6,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/pie_de_limon.jpg",
         "activo": true
       },
@@ -159,6 +178,7 @@
         "precio": 11900,
         "stock": 5,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/kuchen_manzana.jpg",
         "activo": true
       },
@@ -168,6 +188,7 @@
         "precio": 19990,
         "stock": 4,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/torta_selva_negra.jpg",
         "activo": true
       },
@@ -177,6 +198,7 @@
         "precio": 13500,
         "stock": 5,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/tartaleta_fruta.jpg",
         "activo": true
       },
@@ -186,6 +208,7 @@
         "precio": 17990,
         "stock": 4,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/panqueque_naranja.jpg",
         "activo": true
       },
@@ -195,6 +218,7 @@
         "precio": 18500,
         "stock": 5,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/torta_frutos_rojos.jpg",
         "activo": true
       },
@@ -204,6 +228,7 @@
         "precio": 14990,
         "stock": 6,
         "stock_critico": 2,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/tiramisu_clasico.jpg",
         "activo": true
       }
@@ -219,6 +244,7 @@
         "precio": 1200,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/berlin.jpg",
         "activo": true
       },
@@ -228,6 +254,7 @@
         "precio": 1200,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/berlin_manjar.jpg",
         "activo": true
       },
@@ -237,6 +264,7 @@
         "precio": 900,
         "stock": 25,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/medialuna.jpg",
         "activo": true
       },
@@ -246,6 +274,7 @@
         "precio": 1100,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/alfajor_maicena.jpg",
         "activo": true
       },
@@ -255,6 +284,7 @@
         "precio": 1300,
         "stock": 15,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/palmera_chilena.jpg",
         "activo": true
       }
@@ -270,6 +300,7 @@
         "precio": 2500,
         "stock": 30,
         "stock_critico": 6,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/empanada_pino_horno.jpg",
         "activo": true
       },
@@ -279,6 +310,7 @@
         "precio": 2200,
         "stock": 25,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/empanada_queso.jpg",
         "activo": true
       },
@@ -288,6 +320,7 @@
         "precio": 2400,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/empanada_champinon_queso.jfif",
         "activo": true
       }
@@ -303,6 +336,7 @@
         "precio": 2300,
         "stock": 20,
         "stock_critico": 5,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/chaparrita.jpg",
         "activo": true
       },
@@ -312,6 +346,7 @@
         "precio": 3500,
         "stock": 12,
         "stock_critico": 3,
+        "unidad_medida": "unid",
         "imagen_url": "/media/productos/quiche_verdura.jpg",
         "activo": true
       }
