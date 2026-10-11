@@ -13,6 +13,19 @@ register = template.Library()
 DIRECCION = 'Marigen 9795'
 ZONA = 'La Florida, Región Metropolitana'
 
+# Horario de retiro en tienda (datos de ejemplo hasta que el cliente confirme).
+# Cada tramo: (nombre, días de la semana [0 = lunes ... 6 = domingo], desde, hasta).
+# Lo usan el pie de página, la página Local y el retiro programado del carrito (core/retiro.py).
+RETIRO_TRAMOS = [
+    ('Lunes a sábado', [0, 1, 2, 3, 4, 5], '09:00', '19:30'),
+    ('Domingo', [6], '10:00', '13:30'),
+]
+
+
+def _hora(hhmm):
+    """'09:00' -> '9:00'"""
+    return hhmm[1:] if hhmm.startswith('0') else hhmm
+
 TIENDA = {
     'nombre': 'Los Tres Spa',
 
@@ -50,8 +63,7 @@ TIENDA = {
         ('Domingo', '9:00 a 14:00'),
     ],
     'horario_retiro': [
-        ('Lunes a sábado', '9:00 a 19:30'),
-        ('Domingo', '10:00 a 13:30'),
+        (nombre, f'{_hora(desde)} a {_hora(hasta)}') for nombre, _dias, desde, hasta in RETIRO_TRAMOS
     ],
 
     # Valor único para toda la comuna. El Sprint 2 (despacho y zona de cobertura)

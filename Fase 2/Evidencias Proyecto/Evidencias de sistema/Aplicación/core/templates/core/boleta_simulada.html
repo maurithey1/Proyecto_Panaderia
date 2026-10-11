@@ -18,7 +18,12 @@
         <div><dt>Fecha</dt><dd>{{ pedido.fecha|date:"d/m/Y H:i" }}</dd></div>
         <div><dt>Estado de la demostración</dt><dd>Ejecutada correctamente</dd></div>
         <div><dt>Entrega</dt><dd>{{ pedido.get_tipo_entrega_display }}</dd></div>
-        {% if pedido.direccion_despacho %}
+        {% if pedido.tipo_entrega == 'RETIRO' %}
+          <div><dt>Retiro en</dt><dd>{{ tienda.direccion }}, {{ tienda.comuna }}</dd></div>
+          {% if pedido.direccion_despacho %}
+            <div><dt>Retiro programado</dt><dd>{{ pedido.direccion_despacho|cut:"Retiro programado: " }}</dd></div>
+          {% endif %}
+        {% elif pedido.direccion_despacho %}
           <div><dt>Dirección de despacho</dt><dd>{{ pedido.direccion_despacho }}</dd></div>
         {% endif %}
         <div><dt>Pago</dt><dd>Simulado; no se realizó ningún cobro</dd></div>

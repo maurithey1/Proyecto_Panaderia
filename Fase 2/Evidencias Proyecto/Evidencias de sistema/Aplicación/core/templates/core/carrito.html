@@ -1,7 +1,12 @@
 {% extends "core/base.html" %}
-{% load formato %}
+{% load static l10n formato %}
 
 {% block titulo %}Carrito{% endblock %}
+
+{% block extra_head %}
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+{% endblock %}
 
 {% block contenido %}
 <section class="pagina" aria-labelledby="carrito-titulo">
@@ -73,13 +78,84 @@
             <input type="radio" name="tipo_entrega" value="DESPACHO">
             Despacho a domicilio
           </label>
-          <label class="campo" for="direccion-despacho">Dirección para despacho</label>
-          <input id="direccion-despacho" class="campo__control" type="text" name="direccion_despacho" maxlength="255" autocomplete="street-address">
-          <p class="compra__ayuda">El despacho de esta demostración no calcula costos adicionales.</p>
         </fieldset>
+
+        {# Retiro en tienda: dirección del local y agenda (static/js/retiro_agenda.js y core/retiro.py) #}
+        <div class="retiro" id="retiro-panel">
+          <div class="retiro__local">
+            <strong>{{ tienda.comuna }}</strong>
+            <span>{{ tienda.direccion }}, {{ tienda.comuna }}</span>
+          </div>
+
+          {% if retiro_dias %}
+            <fieldset class="retiro__agenda">
+              <legend>Programa tu retiro</legend>
+              <div class="retiro__campos">
+                <div>
+                  <label class="campo" for="retiro-dia">Día</label>
+                  {# Sin JavaScript queda deshabilitado y se usa el primer día; con JavaScript se habilita #}
+                  <select id="retiro-dia" class="campo__control" disabled>
+                    {% for dia in retiro_dias %}<option value="{{ dia.fecha }}">{{ dia.etiqueta }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="campo" for="retiro-hora">Hora</label>
+                  <select id="retiro-hora" class="campo__control" name="hora_retiro">
+                    {% for hora in retiro_dias.0.horas %}<option value="{{ hora.valor }}">{{ hora.texto }}</option>{% endfor %}
+                  </select>
+                </div>
+              </div>
+              <input type="hidden" name="fecha_retiro" id="retiro-fecha" value="{{ retiro_dias.0.fecha }}">
+              <p class="retiro__resumen" id="retiro-resumen" role="status" aria-live="polite"></p>
+            </fieldset>
+            {{ retiro_dias|json_script:"retiro-datos" }}
+          {% else %}
+            <p class="compra__aviso">Por ahora no hay horas de retiro para programar. Puedes pasar por la tienda en su horario.</p>
+          {% endif %}
+
+          <p class="compra__ayuda">
+            Horario de retiro:
+            {% for dias, horas in tienda.horario_retiro %}{{ dias }} {{ horas }}{% if not forloop.last %} · {% endif %}{% endfor %}.
+            Tu pedido se prepara con al menos una hora de anticipación.
+          </p>
+        </div>
+
+        {# Dirección y mapa: solo se despacha dentro de la zona (static/js/zona_despacho.js y core/zona_despacho.py) #}
+        <div class="zona" id="zona-despacho"
+             data-geojson="{% static 'data/la_florida.geojson' %}"
+             data-lat="{{ tienda.latitud|unlocalize }}" data-lng="{{ tienda.longitud|unlocalize }}"
+             data-direccion-tienda="{{ tienda.direccion }}">
+          <label class="campo" for="direccion-despacho">Dirección para despacho</label>
+          <div class="zona__buscar">
+            <input id="direccion-despacho" class="campo__control" type="text" name="direccion_despacho"
+                   maxlength="255" autocomplete="street-address" value="{{ direccion_guardada }}">
+            <button class="boton boton--contorno" type="button" id="zona-buscar">Buscar dirección</button>
+          </div>
+          <input type="hidden" name="latitud" id="zona-latitud">
+          <input type="hidden" name="longitud" id="zona-longitud">
+          <ul class="zona__resultados" id="zona-resultados" role="listbox" aria-label="Sugerencias de dirección" hidden></ul>
+          <p class="zona__estado" id="zona-estado" role="status" aria-live="polite"></p>
+          <div class="zona__numero" id="zona-numero-bloque" hidden>
+            <label class="campo" for="zona-numero">Número de tu casa o edificio</label>
+            <input id="zona-numero" class="campo__control" type="text" inputmode="numeric"
+                   maxlength="10" autocomplete="off" placeholder="Ej: 360 (o S/N si no tiene)">
+          </div>
+          <div id="zona-mapa" class="mapa mapa--despacho" role="region" aria-label="Mapa de la zona de despacho" hidden></div>
+          <label class="campo" for="detalles-entrega">Detalles de entrega (opcional)</label>
+          <input id="detalles-entrega" class="campo__control" type="text" name="detalles_entrega"
+                 maxlength="100" autocomplete="address-line2" placeholder="Ej: Depto 402, Block B, portón rojo">
+          <p class="compra__ayuda">
+            Despachamos solo dentro de la zona marcada en el mapa, en {{ tienda.despacho_zona }}.
+            Fuera de ella puedes <a href="{% url 'local' %}#local-despacho">retirar en la tienda</a> ({{ tienda.direccion }}).
+            El despacho de esta demostración no calcula costos adicionales.
+          </p>
+          <noscript><p class="compra__aviso">Para pedir despacho a domicilio necesitas activar JavaScript. Si no, elige retiro en tienda.</p></noscript>
+        </div>
         <p class="compra__aviso-legal">
           Esta compra es una demostración: no se realizará ningún cobro ni se emitirá una boleta tributaria.
         </p>
+        {# Explica por qué el botón está bloqueado cuando la dirección no sirve para despachar (static/js/zona_despacho.js) #}
+        <p class="zona__aviso-envio" id="zona-aviso-envio" hidden></p>
         <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock %} disabled{% endif %}>Completar compra de demostración</button>
       </form>
     {% else %}
@@ -87,4 +163,13 @@
     {% endif %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+  {% if items %}
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="{% static 'js/zona_despacho.js' %}"></script>
+    <script src="{% static 'js/retiro_agenda.js' %}"></script>
+  {% endif %}
 {% endblock %}

@@ -2244,3 +2244,106 @@ main { flex: 1; }
   white-space: nowrap;
   border: 0;
 }
+
+
+/* ==========================================================
+   DESPACHO A DOMICILIO: dirección, mapa y validación de la zona
+   (static/js/zona_despacho.js)
+   ========================================================== */
+.zona { display: grid; gap: 12px; }
+.zona[hidden], .zona__resultados[hidden], .zona__numero[hidden] { display: none; }
+.zona__numero { display: grid; gap: 6px; }
+.zona__numero .campo__control { max-width: 260px; }
+/* El campo ocupa todo el ancho (la dirección completa es larga) y el botón va debajo. */
+.zona__buscar { display: grid; gap: 8px; }
+.zona__buscar .boton { justify-self: start; }
+/* Lista de sugerencias de dirección (role="listbox"; ver static/js/zona_despacho.js) */
+.zona__resultados {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  background: var(--papel);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+.zona__resultados li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--borde);
+}
+.zona__resultados li:last-child { border-bottom: 0; }
+.zona__resultados li:hover,
+.zona__resultados li[aria-selected="true"] { background: var(--crema-2); }
+.zona__opcion-detalle { font-size: 0.85rem; color: var(--texto-suave); }
+.zona__estado {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  background: var(--crema-2);
+  border-left: 4px solid var(--borde);
+  border-radius: 6px;
+}
+.zona__estado--ok { border-left-color: #527343; }
+.zona__estado--error { border-left-color: var(--terracota); }
+.zona__retiro { margin-top: 8px; padding: 8px 12px; }
+.mapa--despacho { height: 320px; }
+.mapa-pin--cliente span { background: var(--terracota); }
+
+/* Botones deshabilitados: se ven apagados y no reaccionan al pasar el mouse */
+.boton:disabled,
+.boton:disabled:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+.boton--primario:disabled,
+.boton--primario:disabled:hover { background: var(--cafe); border-color: var(--cafe); color: var(--crema); }
+.boton--contorno:disabled,
+.boton--contorno:disabled:hover { background: transparent; border-color: var(--cafe); color: var(--cafe-oscuro); }
+
+/* Motivo por el que no se puede comprar con despacho (junto al botón de compra) */
+.zona__aviso-envio {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #7a2f12;
+  background: #fbeee6;
+  border-left: 4px solid var(--terracota);
+  border-radius: 6px;
+}
+.zona__aviso-envio[hidden] { display: none; }
+
+
+/* ==========================================================
+   RETIRO EN TIENDA: dirección del local y agenda de retiro
+   (static/js/retiro_agenda.js)
+   ========================================================== */
+.retiro { display: grid; gap: 12px; }
+.retiro[hidden] { display: none; }
+.retiro__local {
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  color: #fff;
+  background: var(--cafe);
+  border-radius: 8px;
+}
+.retiro__local strong { font-size: 1.05rem; }
+.retiro__agenda { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
+.retiro__agenda legend { margin-bottom: 8px; font-weight: 700; }
+.retiro__campos { display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px; }
+.retiro__campos .campo { display: block; margin-bottom: 6px; }
+.retiro__campos .campo__control { width: 100%; }
+.retiro__resumen { margin: 0; font-weight: 500; color: var(--cafe-oscuro); }
+.retiro__resumen:empty { display: none; }
+
+@media (max-width: 520px) {
+  .retiro__campos { grid-template-columns: 1fr; }
+}

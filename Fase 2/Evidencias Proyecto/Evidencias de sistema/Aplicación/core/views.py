@@ -1,3 +1,4 @@
+import re
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
@@ -11,6 +12,9 @@ from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Usuario,
 )
+from .templatetags.tienda import TIENDA
+from .retiro import dias_de_retiro, texto_retiro, validar_retiro
+from .zona_despacho import leer_coordenadas, punto_en_zona
 
 # ==========================================
 # FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
@@ -146,9 +150,20 @@ def carrito(request):
         if len(carrito_normalizado) < len(cantidades):
             messages.warning(request, 'Se quitaron del carrito productos que ya no están disponibles.')
 
+    # Cliente registrado: se le ofrece la dirección que dejó al crear su cuenta.
+    direccion_guardada = ''
+    if request.user.is_authenticated:
+        direccion_guardada = (
+            Cliente.objects.filter(user=request.user)
+            .values_list('direccion', flat=True)
+            .first()
+        ) or ''
+
     return render(request, 'core/carrito.html', {
         'items': items,
         'total': total,
+        'direccion_guardada': direccion_guardada,
+        'retiro_dias': dias_de_retiro(),
         'carrito_tiene_stock': all(
             item['cantidad'] <= item['producto'].stock for item in items
         ),
@@ -183,6 +198,49 @@ def finalizar_compra(request):
     if tipo_entrega == 'DESPACHO' and not direccion:
         messages.error(request, 'Ingresa la dirección para el despacho.')
         return redirect('carrito')
+
+    if tipo_entrega == 'DESPACHO':
+        # La dirección debe traer número (o S/N si no tiene): el repartidor lo necesita.
+        if not re.search(r'\d|\bs\s*/?\s*n\b|\bsin\s+n[uú]mero\b', direccion, re.IGNORECASE):
+            messages.error(request, 'Agrega el número de tu dirección (o S/N si no tiene).')
+            return redirect('carrito')
+
+        # Depto, casa o block van en un campo aparte; se guardan junto a la dirección.
+        detalles = request.POST.get('detalles_entrega', '').strip()
+        if detalles:
+            direccion = f'{direccion} ({detalles})'
+        if len(direccion) > 255:
+            messages.error(request, 'La dirección y los detalles son demasiado largos (máximo 255 caracteres).')
+            return redirect('carrito')
+
+        # Solo se despacha dentro de la zona marcada en el mapa (core/zona_despacho.py).
+        coordenadas = leer_coordenadas(request.POST.get('latitud'), request.POST.get('longitud'))
+        if coordenadas is None:
+            messages.error(
+                request,
+                'No pudimos confirmar tu ubicación en el mapa. Busca tu dirección y confirma '
+                'el punto, o elige retiro en tienda.',
+            )
+            return redirect('carrito')
+        if not punto_en_zona(*coordenadas):
+            messages.error(
+                request,
+                'Tu dirección está fuera de la zona de despacho marcada en el mapa. '
+                f"Puedes retirar tu pedido en la tienda ({TIENDA['direccion']}).",
+            )
+            return redirect('carrito')
+
+    # Retiro programado: el día y la hora salen de core/retiro.py. Sin agenda (otros clientes HTTP) se acepta.
+    texto_del_retiro = ''
+    if tipo_entrega == 'RETIRO':
+        fecha_retiro = request.POST.get('fecha_retiro', '').strip()
+        hora_retiro = request.POST.get('hora_retiro', '').strip()
+        if fecha_retiro or hora_retiro:
+            fecha, hora, error = validar_retiro(fecha_retiro, hora_retiro)
+            if error:
+                messages.error(request, error)
+                return redirect('carrito')
+            texto_del_retiro = f'Retiro programado: {texto_retiro(fecha, hora)}'
 
     cantidades = {}
     for producto_id, cantidad in carrito_sesion.items():
@@ -232,7 +290,7 @@ def finalizar_compra(request):
             estado='PAGADO',
             canal='WEB',
             tipo_entrega=tipo_entrega,
-            direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else '',
+            direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else texto_del_retiro,
             total=total,
         )
         for producto in productos:
