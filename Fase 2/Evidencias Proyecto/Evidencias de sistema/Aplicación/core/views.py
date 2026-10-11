@@ -1,13 +1,10 @@
 from decimal import Decimal
-import json
-import os
-from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import user_passes_test, login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Case, IntegerField, Q, Value, When
+from django.db.models import Case, IntegerField, Q, Sum, Value, When
+from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.views.decorators.http import require_POST
 from .models import (
@@ -16,188 +13,151 @@ from .models import (
 )
 
 # ==========================================
-# FUNCIONES AUXILIARES JSON
+# FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
 # ==========================================
+# Todo sale de la base de datos (modelo Producto). El archivo productos_prueba.json
+# solo sirve para cargar datos iniciales:  python manage.py cargar_productos
 
-def obtener_datos_json():
-    """
-    Carga el archivo JSON desde la raíz del proyecto y estructura
-    las categorías y productos asignándoles identificadores (pk).
-    """
-    ruta_json = settings.BASE_DIR / 'productos_prueba.json'
-    
-    if not os.path.exists(ruta_json):
-        return [], []
-
-    with open(ruta_json, 'r', encoding='utf-8') as f:
-        data_json = json.load(f)
-
-    categorias = []
-    todos_los_productos = []
-    
-    contador_cat = 1
-    contador_prod = 1
-
-    for cat_data in data_json:
-        # Objeto de categoría compatible con tu template (c.pk y c.nombre)
-        categoria_obj = {
-            'pk': contador_cat,
-            'nombre': cat_data.get('categoria'),
-            'descripcion': cat_data.get('descripcion', '')
-        }
-        categorias.append(categoria_obj)
-
-        # Procesamos los productos de esta categoría
-        for p in cat_data.get('productos', []):
-            if p.get('activo', True):  # Solo productos activos
-                # Aseguramos un pk tanto para 'p.pk' como para 'p.id'
-                p['pk'] = contador_prod
-                p['id'] = contador_prod
-                p['categoria_pk'] = contador_cat
-                # Convertimos precio a Decimal o int para operaciones financieras
-                p['precio'] = Decimal(str(p.get('precio', 0)))
-                todos_los_productos.append(p)
-                contador_prod += 1
-
-        contador_cat += 1
-
-    return categorias, todos_los_productos
-
-def obtener_producto_por_id(producto_id):
-    """Busca un producto específico por su ID dentro del JSON."""
-    _, productos = obtener_datos_json()
-    for p in productos:
-        if p['pk'] == producto_id:
-            return p
-    return None
-
-# ==========================================
-# FUNCIONES AUXILIARES JSON
-# ==========================================
+PRODUCTOS_DESTACADOS = 4
 
 
-# ==========================================
-# FUNCIONES DE CARRITO Y VISTAS DE CLIENTE
-# ==========================================
+def _entero_o_none(valor):
+    """Convierte a int sin lanzar error: devuelve None si no es un número válido o es enorme."""
+    try:
+        numero = int(valor)
+    except (TypeError, ValueError):
+        return None
+    return numero if numero.bit_length() <= 63 else None
+
 
 def inicio(request):
-    """Muestra los primeros 4 productos destacados."""
-    _, productos = obtener_datos_json()
-    return render(request, 'core/inicio.html', {
-        'productos': productos[:4]
-    })
+    """Los 4 productos más vendidos (pedidos no cancelados), leídos de la BD."""
+    estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
+
+    productos = (
+        Producto.objects.filter(activo=True)
+        .annotate(
+            vendidos=Coalesce(
+                Sum(
+                    'detallepedido__cantidad',
+                    filter=Q(detallepedido__pedido__estado__in=estados_validos),
+                ),
+                0,
+            )
+        )
+        .order_by('-vendidos', 'nombre')[:PRODUCTOS_DESTACADOS]
+    )
+
+    return render(request, 'core/inicio.html', {'productos': productos})
 
 
 def pedir(request):
-    """Vista para el catálogo completo con soporte de filtros por categoría."""
-    categorias, productos = obtener_datos_json()
-    
-    # Capturamos el parámetro GET ?categoria=<id> si el usuario hace clic en un filtro
-    categoria_id_str = request.GET.get('categoria')
-    categoria_actual = None
+    """Catálogo completo, público. Se puede filtrar con ?categoria=<id>."""
+    categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
 
-    if categoria_id_str and categoria_id_str.isdigit():
-        cat_id = int(categoria_id_str)
-        # Buscamos la categoría seleccionada
-        categoria_actual = next((c for c in categorias if c['pk'] == cat_id), None)
-        
-        # Filtramos los productos que pertenecen a esa categoría
+    productos = Producto.objects.filter(activo=True).order_by(
+        # Los agotados van al final
+        Case(When(stock__gt=0, then=Value(0)), default=Value(1), output_field=IntegerField()),
+        'nombre',
+    )
+
+    categoria_actual = None
+    categoria_id = _entero_o_none(request.GET.get('categoria', ''))
+    if categoria_id is not None:
+        categoria_actual = categorias.filter(pk=categoria_id).first()
         if categoria_actual:
-            productos = [p for p in productos if p.get('categoria_pk') == cat_id]
+            productos = productos.filter(categoria=categoria_actual)
 
     return render(request, 'core/pedir.html', {
+        'productos': productos,
         'categorias': categorias,
         'categoria_actual': categoria_actual,
-        'productos': productos
     })
 
 
 @require_POST
 def agregar_al_carrito(request):
-    """Agrega una unidad del producto indicado desde la tarjeta al carrito de sesión."""
-    producto_id_raw = request.POST.get('producto_id', '')
-    if not producto_id_raw.isdigit():
+    """Agrega una unidad del producto elegido en el catálogo al carrito de la sesión."""
+    producto_id = _entero_o_none(request.POST.get('producto_id', ''))
+    if producto_id is None:
         messages.error(request, 'No se pudo identificar el producto.')
         return redirect('pedir')
 
-    producto_id = int(producto_id_raw)
-    producto = obtener_producto_por_id(producto_id)
+    producto = get_object_or_404(Producto, pk=producto_id, activo=True)
+    carrito = request.session.get('carrito', {})
+    if not isinstance(carrito, dict):
+        carrito = {}
 
-    if not producto:
-        messages.error(request, 'El producto no existe o no está disponible.')
-        return redirect('pedir')
-
-    carrito_sesion = request.session.get('carrito', {})
-    if not isinstance(carrito_sesion, dict):
-        carrito_sesion = {}
-
-    clave = str(producto['pk'])
-    cantidad = carrito_sesion.get(clave, 0)
+    clave = str(producto.pk)
+    cantidad = carrito.get(clave, 0)
     if not isinstance(cantidad, int) or cantidad < 0:
         cantidad = 0
-
-    if producto['stock'] <= cantidad:
-        messages.error(request, f"No hay más stock disponible de {producto['nombre']}.")
+    if producto.stock <= cantidad:
+        messages.error(request, f'No hay más stock disponible de {producto.nombre}.')
         return redirect('carrito')
 
-    carrito_sesion[clave] = cantidad + 1
-    request.session['carrito'] = carrito_sesion
-    messages.success(request, f"{producto['nombre']} se agregó al carrito.")
+    carrito[clave] = cantidad + 1
+    request.session['carrito'] = carrito
+    messages.success(request, f'{producto.nombre} se agregó al carrito.')
     return redirect('carrito')
 
 
 def carrito(request):
-    """Muestra el detalle del carrito leyendo los IDs guardados en sesión."""
+    """Muestra el carrito de la sesión con los datos reales de cada producto."""
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict):
         carrito_sesion = {}
 
-    items = []
-    total = Decimal('0.00')
-    ids_validos = set()
-
-    for str_id, cantidad in carrito_sesion.items():
+    cantidades = {}
+    for producto_id, cantidad in carrito_sesion.items():
         try:
-            p_id = int(str_id)
-            cant = int(cantidad)
+            producto_id = int(producto_id)
+            cantidad = int(cantidad)
         except (TypeError, ValueError):
             continue
+        if producto_id > 0 and cantidad > 0:
+            cantidades[producto_id] = cantidad
 
-        if p_id > 0 and cant > 0:
-            producto = obtener_producto_por_id(p_id)
-            if producto:
-                subtotal = producto['precio'] * cant
-                total += subtotal
-                ids_validos.add(p_id)
-                items.append({
-                    'producto': producto,
-                    'cantidad': cant,
-                    'subtotal': subtotal,
-                })
+    productos = Producto.objects.filter(
+        pk__in=cantidades,
+        activo=True,
+    ).order_by('nombre')
+    items = []
+    ids_validos = set()
+    total = Decimal('0.00')
+    for producto in productos:
+        cantidad = cantidades[producto.pk]
+        subtotal = producto.precio * cantidad
+        total += subtotal
+        ids_validos.add(producto.pk)
+        items.append({
+            'producto': producto,
+            'cantidad': cantidad,
+            'subtotal': subtotal,
+        })
 
-    # Normalizar carrito en la sesión si se removieron productos
     carrito_normalizado = {
-        str(p_id): cant
-        for str_id, cant in carrito_sesion.items()
-        if (p_id := int(str_id) if str_id.isdigit() else 0) in ids_validos
+        str(producto_id): cantidad
+        for producto_id, cantidad in cantidades.items()
+        if producto_id in ids_validos
     }
-
     if carrito_sesion != carrito_normalizado:
         request.session['carrito'] = carrito_normalizado
-        messages.warning(request, 'Se actualizaron productos no disponibles en tu carrito.')
+        if len(carrito_normalizado) < len(cantidades):
+            messages.warning(request, 'Se quitaron del carrito productos que ya no están disponibles.')
 
     return render(request, 'core/carrito.html', {
         'items': items,
         'total': total,
         'carrito_tiene_stock': all(
-            item['cantidad'] <= item['producto']['stock'] for item in items
+            item['cantidad'] <= item['producto'].stock for item in items
         ),
     })
 
 
 @require_POST
 def quitar_del_carrito(request, producto_id):
-    """Elimina un producto del carrito de la sesión."""
+    """Quita un producto del carrito de la sesión."""
     carrito_sesion = request.session.get('carrito', {})
     if isinstance(carrito_sesion, dict):
         carrito_sesion.pop(str(producto_id), None)
@@ -208,7 +168,7 @@ def quitar_del_carrito(request, producto_id):
 
 @require_POST
 def finalizar_compra(request):
-    """Procesa y simula la compra registrando la transacción en la sesión/BD."""
+    """Compra de demostración: crea pedido, detalle y pago simulado, y descuenta el stock."""
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict) or not carrito_sesion:
         messages.error(request, 'Tu carrito está vacío.')
@@ -224,108 +184,105 @@ def finalizar_compra(request):
         messages.error(request, 'Ingresa la dirección para el despacho.')
         return redirect('carrito')
 
-    items_compra = []
-    total = Decimal('0.00')
-
-    for str_id, cantidad in carrito_sesion.items():
+    cantidades = {}
+    for producto_id, cantidad in carrito_sesion.items():
         try:
-            p_id = int(str_id)
-            cant = int(cantidad)
+            producto_id = int(producto_id)
+            cantidad = int(cantidad)
         except (TypeError, ValueError):
-            messages.error(request, 'El carrito contiene un ítem inválido.')
+            messages.error(request, 'El carrito contiene un producto inválido.')
             return redirect('carrito')
+        if producto_id <= 0 or cantidad <= 0:
+            messages.error(request, 'El carrito contiene una cantidad inválida.')
+            return redirect('carrito')
+        cantidades[producto_id] = cantidad
 
-        producto = obtener_producto_por_id(p_id)
-        if not producto:
+    with transaction.atomic():
+        productos = list(
+            Producto.objects.select_for_update()
+            .filter(pk__in=cantidades, activo=True)
+            .order_by('pk')
+        )
+        if len(productos) != len(cantidades):
             messages.error(request, 'Uno o más productos ya no están disponibles.')
             return redirect('carrito')
 
-        if producto['stock'] < cant:
-            messages.error(request, f"Stock insuficiente para: {producto['nombre']}.")
+        faltantes = [
+            producto.nombre
+            for producto in productos
+            if producto.stock < cantidades[producto.pk]
+        ]
+        if faltantes:
+            messages.error(
+                request,
+                'Stock insuficiente para: ' + ', '.join(faltantes) + '. Revisa tu carrito.',
+            )
             return redirect('carrito')
 
-        subtotal = producto['precio'] * cant
-        total += subtotal
-        items_compra.append({
-            'producto': producto,
-            'cantidad': cant,
-            'subtotal': subtotal,
-        })
+        total = sum(
+            (producto.precio * cantidades[producto.pk] for producto in productos),
+            Decimal('0.00'),
+        )
+        cliente = None
+        if request.user.is_authenticated:
+            cliente = Cliente.objects.filter(user=request.user).first()
 
-    # Creación del pedido simulado en la base de datos
-    cliente = None
-    if request.user.is_authenticated:
-        cliente = Cliente.objects.filter(user=request.user).first()
+        pedido = Pedido.objects.create(
+            cliente=cliente,
+            estado='PAGADO',
+            canal='WEB',
+            tipo_entrega=tipo_entrega,
+            direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else '',
+            total=total,
+        )
+        for producto in productos:
+            cantidad = cantidades[producto.pk]
+            subtotal = producto.precio * cantidad
+            DetallePedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=cantidad,
+                precio_unitario=producto.precio,
+                subtotal=subtotal,
+            )
+            producto.stock -= cantidad
+            producto.save(update_fields=['stock'])
 
-    pedido = Pedido.objects.create(
-        cliente=cliente,
-        estado='PAGADO',
-        canal='WEB',
-        tipo_entrega=tipo_entrega,
-        direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else '',
-        total=total,
-    )
+        Pago.objects.create(
+            pedido=pedido,
+            monto=total,
+            metodo='Simulación (sin cobro real)',
+            estado='SIMULADO',
+            codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
+        )
 
-    Pago.objects.create(
-        pedido=pedido,
-        monto=total,
-        metodo='Simulación (sin cobro real)',
-        estado='SIMULADO',
-        codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
-    )
-
-    # Limpiar el carrito de compras
     request.session['carrito'] = {}
-    
-    # Autorizar la visualización de la boleta
     boletas = request.session.get('boletas_simuladas', [])
     if not isinstance(boletas, list):
         boletas = []
     boletas.append(pedido.pk)
-    
-    # Guardar resumen en sesión para renderizado de la demo si no hay modelo DetallePedido asociado a DB
-    resumenes = request.session.get('resumen_pedidos', {})
-    resumenes[str(pedido.pk)] = [
-        {
-            'nombre': item['producto']['nombre'],
-            'cantidad': item['cantidad'],
-            'precio': float(item['producto']['precio']),
-            'subtotal': float(item['subtotal'])
-        }
-        for item in items_compra
-    ]
-    request.session['resumen_pedidos'] = resumenes
     request.session['boletas_simuladas'] = boletas
-
     messages.success(request, 'Compra de demostración completada correctamente.')
     return redirect('boleta_simulada', pedido_id=pedido.pk)
 
 
 def boleta_simulada(request, pedido_id):
-    """Muestra la boleta generada de la compra de prueba."""
+    """Comprobante de la compra de demostración (solo su sesión o su dueño)."""
     boletas = request.session.get('boletas_simuladas', [])
     autorizada = isinstance(boletas, list) and pedido_id in boletas
-
     if not autorizada and request.user.is_authenticated:
         autorizada = Pedido.objects.filter(
             pk=pedido_id,
             cliente__user=request.user,
         ).exists()
-
     if not autorizada:
         raise Http404
 
     pedido = get_object_or_404(
-        Pedido.objects.select_related('pago'),
+        Pedido.objects.prefetch_related('detalles__producto').select_related('pago'),
         pk=pedido_id,
     )
-
-    detalles_sesion = request.session.get('resumen_pedidos', {}).get(str(pedido_id), [])
-
-    return render(request, 'core/boleta_simulada.html', {
-        'pedido': pedido,
-        'detalles_sesion': detalles_sesion,
-    })
+    return render(request, 'core/boleta_simulada.html', {'pedido': pedido})
 
 
 def local(request):
