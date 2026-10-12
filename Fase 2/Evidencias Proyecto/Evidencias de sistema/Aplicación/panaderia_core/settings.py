@@ -144,3 +144,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'core.Usuario'
 
 LOGIN_URL = 'login'  # Redirige a esta URL si el usuario no está autenticado
+
+# ==========================================
+# CONFIGURACIÓN WEBPAY PLUS (TRANSBANK)
+# ==========================================
+# Entorno de pruebas (Sandbox / Integración) o Producción
+WEBPAY_AMBIENTE = os.getenv('WEBPAY_AMBIENTE', 'INTEGRATION')
+WEBPAY_COMMERCE_CODE = os.getenv('WEBPAY_COMMERCE_CODE', '597055555532')
+WEBPAY_API_KEY = os.getenv('WEBPAY_API_KEY', '579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C')

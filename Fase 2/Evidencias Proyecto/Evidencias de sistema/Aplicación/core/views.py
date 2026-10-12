@@ -8,6 +8,11 @@ from django.db.models import Case, IntegerField, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
+from django.conf import settings
+from transbank.webpay.webpay_plus.transaction import Transaction
+from transbank.common.integration_type import IntegrationType
+from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Usuario,
@@ -355,9 +360,12 @@ def finalizar_compra(request):
         if request.user.is_authenticated:
             cliente = Cliente.objects.filter(user=request.user).first()
 
+        metodo_pago = request.POST.get('metodo_pago', 'SIMULADO')
+        es_webpay = (metodo_pago == 'WEBPAY')
+
         pedido = Pedido.objects.create(
             cliente=cliente,
-            estado='PAGADO',
+            estado='PENDIENTE' if es_webpay else 'PAGADO',
             canal='WEB',
             tipo_entrega=tipo_entrega,
             direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else texto_del_retiro,
@@ -376,22 +384,246 @@ def finalizar_compra(request):
             producto.stock -= cantidad
             producto.save(update_fields=['stock'])
 
-        Pago.objects.create(
+        if not es_webpay:
+            # Flujo de Demostración Simulado (sin pasarela real)
+            Pago.objects.create(
+                pedido=pedido,
+                monto=total,
+                metodo='Simulación (sin cobro real)',
+                estado='SIMULADO',
+                codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
+            )
+            request.session['carrito'] = {}
+            boletas = request.session.get('boletas_simuladas', [])
+            if not isinstance(boletas, list):
+                boletas = []
+            boletas.append(pedido.pk)
+            request.session['boletas_simuladas'] = boletas
+            messages.success(request, 'Compra de demostración completada correctamente.')
+            return redirect('boleta_simulada', pedido_id=pedido.pk)
+
+        # Flujo Oficial Transbank Webpay Plus
+        pago = Pago.objects.create(
             pedido=pedido,
             monto=total,
-            metodo='Simulación (sin cobro real)',
-            estado='SIMULADO',
-            codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
+            metodo='Webpay Plus',
+            estado='PENDIENTE',
+            codigo_autorizacion='',
         )
 
-    request.session['carrito'] = {}
-    boletas = request.session.get('boletas_simuladas', [])
-    if not isinstance(boletas, list):
-        boletas = []
-    boletas.append(pedido.pk)
-    request.session['boletas_simuladas'] = boletas
-    messages.success(request, 'Compra de demostración completada correctamente.')
-    return redirect('boleta_simulada', pedido_id=pedido.pk)
+    # Iniciar transacción con Webpay Plus fuera de la transacción atómica
+    buy_order = f"ORD-{pedido.pk}"
+    if not request.session.session_key:
+        request.session.save()
+    session_id = request.session.session_key
+    amount = int(round(float(total)))
+    return_url = request.build_absolute_uri('/carrito/webpay-confirmar/')
+
+    tx = obtener_transaccion_webpay()
+    try:
+        response = tx.create(buy_order, session_id, amount, return_url)
+    except Exception as e:
+        # Si falla la comunicación inicial con Transbank, revertir stock y cancelar pedido
+        with transaction.atomic():
+            for detalle in pedido.detalles.select_related('producto'):
+                detalle.producto.stock += detalle.cantidad
+                detalle.producto.save(update_fields=['stock'])
+            pedido.estado = 'CANCELADO'
+            pedido.save(update_fields=['estado'])
+            pago.estado = 'FALLIDO'
+            pago.save(update_fields=['estado'])
+        messages.error(request, f'No se pudo conectar con Transbank Webpay: {str(e)}')
+        return redirect('carrito')
+
+    token_ws = response.get('token')
+    pago.codigo_autorizacion = token_ws
+    pago.save(update_fields=['codigo_autorizacion'])
+    request.session['webpay_pedido_id'] = pedido.pk
+    request.session['webpay_token'] = token_ws
+
+    # Redirigir al formulario de Webpay Plus
+    return redirect(f"{response['url']}?token_ws={token_ws}")
+
+
+def iniciar_pago_webpay(request, pedido_id=None):
+    """
+    Inicia una transacción en Transbank Webpay Plus para un pedido existente o pendiente.
+    Redirige al cliente al portal de pago seguro de Transbank.
+    """
+    if pedido_id is None:
+        pedido_id = request.POST.get('pedido_id') or request.session.get('webpay_pedido_id')
+
+    pedido = get_object_or_404(Pedido, pk=pedido_id)
+
+    if pedido.estado == 'PAGADO':
+        messages.info(request, 'Este pedido ya se encuentra pagado.')
+        return redirect('boleta_simulada', pedido_id=pedido.pk)
+
+    buy_order = f"ORD-{pedido.pk}"
+    if not request.session.session_key:
+        request.session.save()
+    session_id = request.session.session_key
+    amount = int(round(float(pedido.total)))
+    return_url = request.build_absolute_uri('/carrito/webpay-confirmar/')
+
+    tx = obtener_transaccion_webpay()
+    try:
+        response = tx.create(buy_order, session_id, amount, return_url)
+    except Exception as e:
+        messages.error(request, f'No se pudo conectar con Transbank Webpay: {str(e)}')
+        return redirect('carrito')
+
+    token_ws = response.get('token')
+    request.session['webpay_pedido_id'] = pedido.pk
+    request.session['webpay_token'] = token_ws
+
+    pago, _ = Pago.objects.get_or_create(
+        pedido=pedido,
+        defaults={
+            'monto': pedido.total,
+            'metodo': 'Webpay Plus',
+            'estado': 'PENDIENTE',
+            'codigo_autorizacion': token_ws,
+        }
+    )
+    pago.codigo_autorizacion = token_ws
+    pago.save(update_fields=['codigo_autorizacion'])
+
+    return redirect(f"{response['url']}?token_ws={token_ws}")
+
+
+@csrf_exempt
+def webpay_confirmar(request):
+    """
+    Punto de retorno (return_url) invocado tras el paso por la pasarela de Webpay Plus.
+    Procesa el resultado:
+    - token_ws presente: Transacción completada -> commit()
+    - TBK_TOKEN presente: Transacción cancelada por el usuario en la interfaz de Webpay
+    """
+    token_ws = request.POST.get('token_ws') or request.GET.get('token_ws')
+    tbk_token = request.POST.get('TBK_TOKEN') or request.GET.get('TBK_TOKEN')
+    tbk_orden_compra = request.POST.get('TBK_ORDEN_COMPRA') or request.GET.get('TBK_ORDEN_COMPRA')
+
+    # Caso 1: Pago cancelado por el usuario en Webpay
+    if not token_ws and tbk_token:
+        pedido_id = None
+        if tbk_orden_compra and tbk_orden_compra.startswith('ORD-'):
+            try:
+                pedido_id = int(tbk_orden_compra.replace('ORD-', ''))
+            except ValueError:
+                pass
+        if not pedido_id:
+            pedido_id = request.session.get('webpay_pedido_id')
+
+        if pedido_id:
+            pedido = Pedido.objects.filter(pk=pedido_id, estado='PENDIENTE').first()
+            if pedido:
+                with transaction.atomic():
+                    for detalle in pedido.detalles.select_related('producto'):
+                        detalle.producto.stock += detalle.cantidad
+                        detalle.producto.save(update_fields=['stock'])
+                    pedido.estado = 'CANCELADO'
+                    pedido.save(update_fields=['estado'])
+                    if hasattr(pedido, 'pago'):
+                        pedido.pago.estado = 'CANCELADO'
+                        pedido.pago.save(update_fields=['estado'])
+
+        request.session.pop('webpay_pedido_id', None)
+        messages.warning(request, 'El pago fue cancelado en Webpay. Tus productos se mantienen en el carrito.')
+        return redirect('carrito')
+
+    if not token_ws:
+        messages.error(request, 'No se recibió el token de confirmación de Transbank.')
+        return redirect('carrito')
+
+    # Caso 2: Confirmar transacción con Transbank (commit)
+    tx = obtener_transaccion_webpay()
+    try:
+        response = tx.commit(token_ws)
+    except Exception as e:
+        pedido_id = request.session.get('webpay_pedido_id')
+        if pedido_id:
+            pedido = Pedido.objects.filter(pk=pedido_id, estado='PENDIENTE').first()
+            if pedido:
+                with transaction.atomic():
+                    for detalle in pedido.detalles.select_related('producto'):
+                        detalle.producto.stock += detalle.cantidad
+                        detalle.producto.save(update_fields=['stock'])
+                    pedido.estado = 'CANCELADO'
+                    pedido.save(update_fields=['estado'])
+        request.session.pop('webpay_pedido_id', None)
+        messages.error(request, f'Error al confirmar la transacción con Transbank: {str(e)}')
+        return redirect('carrito')
+
+    buy_order = response.get('buy_order', '')
+    pedido_id = None
+    if buy_order.startswith('ORD-'):
+        try:
+            pedido_id = int(buy_order.replace('ORD-', ''))
+        except ValueError:
+            pass
+    if not pedido_id:
+        pedido_id = request.session.get('webpay_pedido_id')
+
+    pedido = get_object_or_404(Pedido, pk=pedido_id)
+
+    response_code = response.get('response_code')
+    status = response.get('status')
+
+    # Transbank aprueba cuando response_code == 0 y status == 'AUTHORIZED'
+    if response_code == 0 and status == 'AUTHORIZED':
+        tipo_codigo = response.get('payment_type_code', '')
+        tipo_texto = TIPOS_PAGO_WEBPAY.get(tipo_codigo, 'Tarjeta')
+        cod_autorizacion = response.get('authorization_code', '')
+
+        with transaction.atomic():
+            pedido.estado = 'PAGADO'
+            pedido.save(update_fields=['estado'])
+
+            pago, _ = Pago.objects.get_or_create(
+                pedido=pedido,
+                defaults={
+                    'monto': Decimal(str(response.get('amount', pedido.total))),
+                    'metodo': f'Webpay Plus ({tipo_texto})',
+                    'estado': 'APROBADO',
+                    'codigo_autorizacion': cod_autorizacion,
+                }
+            )
+            pago.monto = Decimal(str(response.get('amount', pedido.total)))
+            pago.metodo = f'Webpay Plus ({tipo_texto})'
+            pago.estado = 'APROBADO'
+            pago.codigo_autorizacion = cod_autorizacion
+            pago.save()
+
+        # Limpiar carrito tras confirmación de pago
+        request.session['carrito'] = {}
+        request.session.pop('webpay_pedido_id', None)
+
+        # Autorizar acceso al comprobante
+        boletas = request.session.get('boletas_simuladas', [])
+        if not isinstance(boletas, list):
+            boletas = []
+        boletas.append(pedido.pk)
+        request.session['boletas_simuladas'] = boletas
+
+        messages.success(request, f'¡Pago aprobado con éxito! Código de autorización: {cod_autorizacion}')
+        return redirect('boleta_simulada', pedido_id=pedido.pk)
+    else:
+        # Pago rechazado por Transbank o por el banco emisor
+        with transaction.atomic():
+            for detalle in pedido.detalles.select_related('producto'):
+                detalle.producto.stock += detalle.cantidad
+                detalle.producto.save(update_fields=['stock'])
+            pedido.estado = 'CANCELADO'
+            pedido.save(update_fields=['estado'])
+            if hasattr(pedido, 'pago'):
+                pedido.pago.estado = 'RECHAZADO'
+                pedido.pago.save(update_fields=['estado'])
+
+        request.session.pop('webpay_pedido_id', None)
+        messages.error(request, 'El pago fue rechazado por Webpay o tu banco. Por favor intenta nuevamente.')
+        return redirect('carrito')
+
 
 
 def boleta_simulada(request, pedido_id):
