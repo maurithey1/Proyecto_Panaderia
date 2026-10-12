@@ -142,20 +142,36 @@ class Proveedor(models.Model):
 
 
 class Insumo(models.Model):
-    nombre = models.CharField(max_length=100)
-    tipo_insumo = models.CharField(max_length=50)
-    unidad_medida = models.CharField(max_length=20)
-    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
+    codigo = models.CharField(max_length=20, unique=True, default='', blank=True, verbose_name="ID / Código")
+    nombre = models.CharField(max_length=100, verbose_name="Nombre producto")
+    tipo_insumo = models.CharField(max_length=50, default='Materia Prima', blank=True)
+    unidad_medida = models.CharField(max_length=20, default='Kg', blank=True)
+    stock_sacos = models.IntegerField(default=0, verbose_name="Stock (Bolsa/saco)")
+    kilos_por_saco = models.DecimalField(max_digits=8, decimal_places=2, default=25.00, verbose_name="Kg por saco")
+    total_kg = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Total Kg")
+    proveedor_nombre = models.CharField(max_length=150, default='', blank=True, verbose_name="Nombre Proveedor")
+    precio_saco = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio por saco")
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     stock_actual = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     stock_minimo = models.DecimalField(max_digits=10, decimal_places=2, default=5)
-    proveedores = models.ManyToManyField(Proveedor, through='ProveedorInsumo', related_name='insumos')
+    proveedores = models.ManyToManyField(Proveedor, through='ProveedorInsumo', related_name='insumos', blank=True)
 
     class Meta:
         verbose_name = "Insumo"
         verbose_name_plural = "Insumos"
+        ordering = ['codigo', 'nombre']
+
+    def save(self, *args, **kwargs):
+        # Calcular Total Kg si no se especifica o sincronizar con sacos
+        if self.kilos_por_saco > 0:
+            self.total_kg = self.stock_sacos * self.kilos_por_saco
+            if self.precio_saco > 0:
+                self.precio_unitario = self.precio_saco / self.kilos_por_saco
+        self.stock_actual = self.total_kg
+        super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.nombre} ({self.stock_actual} {self.unidad_medida})"
+        return f"{self.codigo} - {self.nombre} ({self.total_kg} Kg)"
 
 
 class ProveedorInsumo(models.Model):

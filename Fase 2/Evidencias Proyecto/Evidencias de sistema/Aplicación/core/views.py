@@ -9,7 +9,7 @@ from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.views.decorators.http import require_POST
 from .models import (
-    Categoria, Cliente, Cajero, DetallePedido, Pago, Pedido, Producto,
+    Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Usuario,
 )
 from .templatetags.tienda import TIENDA
@@ -465,8 +465,26 @@ def admin_required(view_func):
 def inicio_admin(request):
     """
     Vista principal del Panel de Administración.
-    Muestra indicadores de stock, proyecciones de ventas y precios de insumos.
+    Muestra la gestión de productos/insumos en la parte superior,
+    seguido de indicadores de stock, proyecciones de ventas y precios de materias primas.
     """
+    # Consulta de insumos de materia prima para la tabla CRUD
+    insumos = Insumo.objects.all().order_by('codigo', 'nombre')
+
+    # Calcular próximo ID sugerido (ej: NI007)
+    ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
+    siguiente_id = 'NI001'
+    if ultimo and ultimo.codigo.startswith('NI'):
+        try:
+            num = int(ultimo.codigo.replace('NI', '')) + 1
+            siguiente_id = f'NI{num:03d}'
+        except ValueError:
+            siguiente_id = f'NI{insumos.count() + 1:03d}'
+
+    # Consulta de productos de venta al público para la tabla CRUD
+    todos_los_productos = Producto.objects.select_related('categoria').all().order_by('categoria__nombre', 'nombre')
+    categorias_productos = Categoria.objects.all().order_by('nombre')
+
     # Consulta de productos con stock actual
     productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
     
@@ -474,6 +492,10 @@ def inicio_admin(request):
     tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
 
     contexto = {
+        'insumos': insumos,
+        'siguiente_id': siguiente_id,
+        'todos_los_productos': todos_los_productos,
+        'categorias_productos': categorias_productos,
         'productos_stock': productos_stock,
         'tarifas_proveedores': tarifas_proveedores,
     }
@@ -564,6 +586,277 @@ def eliminar_cajero(request, pk):
     user.save()
     messages.warning(request, f'El cajero "{user.username}" ha sido desactivado del sistema.')
     return redirect('gestion_usuarios')
+
+
+# --------------------------------------------
+# CRUD DE GESTIÓN DE PRODUCTOS / INSUMOS
+# --------------------------------------------
+
+@admin_required
+def gestion_inventario(request):
+    """
+    Redirige al inicio del panel de administración (inicio_admin),
+    donde el CRUD de gestión de productos e insumos se encuentra centralizado.
+    """
+    return redirect('inicio_admin')
+
+
+@admin_required
+@require_POST
+def crear_insumo(request):
+    """Crea un nuevo insumo de materia prima."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    codigo = request.POST.get('codigo', '').strip().upper()
+    nombre = request.POST.get('nombre', '').strip()
+    stock_sacos = request.POST.get('stock_sacos', 0)
+    kilos_por_saco = request.POST.get('kilos_por_saco', 25)
+    total_kg = request.POST.get('total_kg', None)
+    proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
+    precio_saco = request.POST.get('precio_saco', 0)
+
+    if not nombre:
+        messages.error(request, 'El nombre del producto es obligatorio.')
+        return redirect(next_url)
+
+    try:
+        stock_sacos = int(stock_sacos)
+    except (ValueError, TypeError):
+        stock_sacos = 0
+
+    try:
+        kilos_por_saco = Decimal(str(kilos_por_saco).replace(',', '.'))
+    except Exception:
+        kilos_por_saco = Decimal('25.00')
+
+    try:
+        if total_kg:
+            total_kg = Decimal(str(total_kg).replace(',', '.'))
+        else:
+            total_kg = stock_sacos * kilos_por_saco
+    except Exception:
+        total_kg = stock_sacos * kilos_por_saco
+
+    try:
+        precio_saco = Decimal(str(precio_saco).replace(',', '.').replace('$', '').strip())
+    except Exception:
+        precio_saco = Decimal('0.00')
+
+    # Generar código si no se especificó
+    if not codigo:
+        ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
+        if ultimo and ultimo.codigo.startswith('NI'):
+            try:
+                num = int(ultimo.codigo.replace('NI', '')) + 1
+                codigo = f'NI{num:03d}'
+            except ValueError:
+                codigo = f'NI{Insumo.objects.count() + 1:03d}'
+        else:
+            codigo = f'NI{Insumo.objects.count() + 1:03d}'
+
+    if Insumo.objects.filter(codigo=codigo).exists():
+        messages.error(request, f'Ya existe un producto con el ID {codigo}.')
+        return redirect(next_url)
+
+    Insumo.objects.create(
+        codigo=codigo,
+        nombre=nombre,
+        stock_sacos=stock_sacos,
+        kilos_por_saco=kilos_por_saco,
+        total_kg=total_kg,
+        proveedor_nombre=proveedor_nombre,
+        precio_saco=precio_saco,
+        tipo_insumo='Materia Prima',
+        unidad_medida='Kg'
+    )
+    messages.success(request, f'Insumo "{nombre}" ({codigo}) agregado exitosamente.')
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def editar_insumo(request, pk):
+    """Actualiza los datos de un insumo existente."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    insumo = get_object_or_404(Insumo, pk=pk)
+
+    codigo = request.POST.get('codigo', '').strip().upper()
+    nombre = request.POST.get('nombre', '').strip()
+    stock_sacos = request.POST.get('stock_sacos', 0)
+    kilos_por_saco = request.POST.get('kilos_por_saco', insumo.kilos_por_saco)
+    total_kg = request.POST.get('total_kg', None)
+    proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
+    precio_saco = request.POST.get('precio_saco', insumo.precio_saco)
+
+    if not nombre:
+        messages.error(request, 'El nombre del producto no puede estar vacío.')
+        return redirect(next_url)
+
+    if codigo and codigo != insumo.codigo:
+        if Insumo.objects.filter(codigo=codigo).exclude(pk=pk).exists():
+            messages.error(request, f'El código {codigo} ya está en uso por otro producto.')
+            return redirect(next_url)
+        insumo.codigo = codigo
+
+    try:
+        insumo.stock_sacos = int(stock_sacos)
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        insumo.kilos_por_saco = Decimal(str(kilos_por_saco).replace(',', '.'))
+    except Exception:
+        pass
+
+    try:
+        if total_kg:
+            insumo.total_kg = Decimal(str(total_kg).replace(',', '.'))
+        else:
+            insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
+    except Exception:
+        insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
+
+    try:
+        insumo.precio_saco = Decimal(str(precio_saco).replace(',', '.').replace('$', '').strip())
+    except Exception:
+        pass
+
+    insumo.nombre = nombre
+    insumo.proveedor_nombre = proveedor_nombre
+    insumo.save()
+
+    messages.success(request, f'Insumo "{insumo.nombre}" ({insumo.codigo}) actualizado correctamente.')
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def eliminar_insumo(request, pk):
+    """Elimina un insumo del catálogo de productos/inventario."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    insumo = get_object_or_404(Insumo, pk=pk)
+    nombre = insumo.nombre
+    codigo = insumo.codigo
+    insumo.delete()
+    messages.warning(request, f'El insumo "{nombre}" ({codigo}) ha sido eliminado.')
+    return redirect(next_url)
+
+
+# --------------------------------------------
+# CRUD DE PRODUCTOS DE VENTA AL PÚBLICO
+# --------------------------------------------
+
+@admin_required
+@require_POST
+def crear_producto(request):
+    """Crea un nuevo producto para el catálogo de venta de la panadería."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    nombre = request.POST.get('nombre', '').strip()
+    categoria_id = request.POST.get('categoria_id')
+    precio = request.POST.get('precio', 0)
+    stock = request.POST.get('stock', 0)
+    stock_critico = request.POST.get('stock_critico', 10)
+    unidad_medida = request.POST.get('unidad_medida', 'unid')
+    descripcion = request.POST.get('descripcion', '').strip()
+
+    if not nombre or not categoria_id:
+        messages.error(request, 'El nombre y la categoría del producto son obligatorios.')
+        return redirect(next_url)
+
+    categoria = get_object_or_404(Categoria, pk=categoria_id)
+
+    try:
+        precio = Decimal(str(precio).replace(',', '.').replace('$', '').strip())
+    except Exception:
+        precio = Decimal('0.00')
+
+    try:
+        stock = int(stock)
+    except (ValueError, TypeError):
+        stock = 0
+
+    try:
+        stock_critico = int(stock_critico)
+    except (ValueError, TypeError):
+        stock_critico = 10
+
+    Producto.objects.create(
+        nombre=nombre,
+        categoria=categoria,
+        precio=precio,
+        stock=stock,
+        stock_critico=stock_critico,
+        unidad_medida=unidad_medida,
+        descripcion=descripcion,
+        activo=True
+    )
+    messages.success(request, f'Producto "{nombre}" agregado exitosamente al catálogo.')
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def editar_producto(request, pk):
+    """Actualiza la información de un producto de venta existente."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    producto = get_object_or_404(Producto, pk=pk)
+
+    nombre = request.POST.get('nombre', '').strip()
+    categoria_id = request.POST.get('categoria_id')
+    precio = request.POST.get('precio', producto.precio)
+    stock = request.POST.get('stock', producto.stock)
+    stock_critico = request.POST.get('stock_critico', producto.stock_critico)
+    unidad_medida = request.POST.get('unidad_medida', producto.unidad_medida)
+    descripcion = request.POST.get('descripcion', '').strip()
+    activo = request.POST.get('activo') in ['1', 'true', 'on', True]
+
+    if not nombre:
+        messages.error(request, 'El nombre del producto no puede quedar vacío.')
+        return redirect(next_url)
+
+    if categoria_id:
+        producto.categoria = get_object_or_404(Categoria, pk=categoria_id)
+
+    try:
+        producto.precio = Decimal(str(precio).replace(',', '.').replace('$', '').strip())
+    except Exception:
+        pass
+
+    try:
+        producto.stock = int(stock)
+    except (ValueError, TypeError):
+        pass
+
+    try:
+        producto.stock_critico = int(stock_critico)
+    except (ValueError, TypeError):
+        pass
+
+    producto.nombre = nombre
+    producto.unidad_medida = unidad_medida
+    producto.descripcion = descripcion
+    producto.activo = activo
+    producto.save()
+
+    messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def eliminar_producto(request, pk):
+    """Elimina o desactiva un producto de venta."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    producto = get_object_or_404(Producto, pk=pk)
+    nombre = producto.nombre
+
+    if producto.detallepedido_set.exists():
+        producto.activo = False
+        producto.save()
+        messages.warning(request, f'El producto "{nombre}" tiene ventas asociadas y ha sido marcado como inactivo.')
+    else:
+        producto.delete()
+        messages.warning(request, f'El producto "{nombre}" ha sido eliminado del catálogo.')
+    return redirect(next_url)
 
 # ==========================================
 # FUNCIONES DE ADMINISTRADOR

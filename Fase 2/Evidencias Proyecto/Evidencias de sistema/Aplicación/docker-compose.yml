@@ -22,7 +22,13 @@ services:
     build: .
     container_name: panaderia_web
     restart: always
-    command: python manage.py runserver 0.0.0.0:8000
+    # Ejecuta migraciones, carga datos iniciales, configura administrador e inicia el servidor
+    command: >
+      sh -c "python manage.py makemigrations &&
+             python manage.py migrate &&
+             python manage.py cargar_productos &&
+             python manage.py crear_admin &&
+             python manage.py runserver 0.0.0.0:8000"
     volumes:
       - .:/app
     ports:
