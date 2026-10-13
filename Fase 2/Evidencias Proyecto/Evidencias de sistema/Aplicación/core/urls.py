@@ -12,6 +12,7 @@ urlpatterns = [
     path('carrito/webpay-iniciar/<int:pedido_id>/', views.iniciar_pago_webpay, name='iniciar_pago_webpay'),
     path('carrito/webpay-confirmar/', views.webpay_confirmar, name='webpay_confirmar'),
     path('boleta-demo/<int:pedido_id>/', views.boleta_simulada, name='boleta_simulada'),
+    path('producto/<int:pk>/', views.producto_detalle, name='producto_detalle'),
     path('local/', views.local, name='local'),
     path('panel-admin/', views.inicio_admin, name='inicio_admin'),
     path('panel-admin/usuarios/', views.gestion_usuarios, name='gestion_usuarios'),

@@ -12,17 +12,20 @@
     </header>
 
     {% comment %}
-      Busca en todo el catálogo, sin importar la categoría en que esté el cliente.
+      Busca por nombre dentro de los filtros activos (turno y categoría).
       Con JavaScript busca mientras se escribe (static/js/busqueda_catalogo.js); sin él, con el botón.
     {% endcomment %}
     <form class="buscador" role="search" action="{% url 'pedir' %}" method="get">
       <label class="sr-only" for="buscar-producto">Buscar productos por nombre</label>
+      {# Los filtros activos viajan con la búsqueda: se busca dentro del turno y la categoría elegidos #}
+      {% if categoria_actual %}<input type="hidden" name="categoria" value="{{ categoria_actual.pk }}">{% endif %}
+      {% if turno_actual %}<input type="hidden" name="turno" value="{{ turno_actual.pk }}">{% endif %}
       <div class="buscador__caja">
         <input class="entrada buscador__campo" id="buscar-producto" type="search" name="q"
                value="{{ busqueda }}" maxlength="80" autocomplete="off" enterkeyhint="search"
                placeholder="Buscar por nombre, por ejemplo: marraqueta">
         {# Con JavaScript limpia sin recargar y solo se ve si hay texto; sin él, es un enlace al catálogo completo #}
-        <a class="buscador__limpiar" href="{% url 'pedir' %}" data-limpiar aria-label="Limpiar búsqueda"{% if not busqueda %} hidden{% endif %}>Limpiar</a>
+        <a class="buscador__limpiar" href="{% url 'pedir' %}{{ filtros_qs }}" data-limpiar aria-label="Limpiar búsqueda"{% if not busqueda %} hidden{% endif %}>Limpiar</a>
       </div>
       {# El botón solo hace falta sin JavaScript: con él la búsqueda es automática #}
       <noscript><button class="boton boton--primario" type="submit">Buscar</button></noscript>
@@ -35,8 +38,11 @@
     </div>
   </div>
 </section>
+
+{% include "core/_producto_modal.html" %}
 {% endblock %}
 
 {% block scripts %}
+  <script src="{% static 'js/producto_modal.js' %}"></script>
   <script src="{% static 'js/busqueda_catalogo.js' %}"></script>
 {% endblock %}

@@ -147,7 +147,7 @@
               <td class="crud-col-acciones">
                 <button type="button" 
                         class="crud-btn-accion crud-btn-editar"
-                        onclick="abrirModalEditarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}', '{{ prod.categoria.pk }}', '{{ prod.precio|floatformat:0 }}', '{{ prod.stock }}', '{{ prod.stock_critico }}', '{{ prod.unidad_medida }}', '{{ prod.descripcion|escapejs }}', '{{ prod.activo|yesno:'true,false' }}')">
+                        onclick="abrirModalEditarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}', '{{ prod.categoria.pk }}', '{{ prod.precio|floatformat:0 }}', '{{ prod.stock }}', '{{ prod.stock_critico }}', '{{ prod.unidad_medida }}', '{{ prod.descripcion|escapejs }}', '{{ prod.activo|yesno:'true,false' }}', '{{ prod.disponibilidad_formulario|escapejs }}')">
                   Editar
                 </button>
                 <button type="button" 
@@ -353,6 +353,7 @@
           <label for="prod_stock_critico">Stock Crítico (Alerta):</label>
           <input type="number" id="prod_stock_critico" name="stock_critico" min="0" value="10" class="crud-input">
         </div>
+        {% include "core/_disponibilidad_producto.html" with prefijo="prod" %}
         <div class="crud-form-grupo">
           <label for="prod_desc">Descripción (Opcional):</label>
           <textarea id="prod_desc" name="descripcion" rows="2" class="crud-input" placeholder="Breve detalle artesanal del producto..."></textarea>
@@ -420,6 +421,7 @@
             </label>
           </div>
         </div>
+        {% include "core/_disponibilidad_producto.html" with prefijo="edit_prod" %}
         <div class="crud-form-grupo">
           <label for="edit_prod_desc">Descripción:</label>
           <textarea id="edit_prod_desc" name="descripcion" rows="2" class="crud-input"></textarea>
@@ -755,6 +757,34 @@
     background: var(--papel, #fffdf8);
   }
 
+  /* Disponibilidad (turno) en el formulario de producto */
+  .crud-turnos { margin: 0; padding: 12px 14px; border: 1px solid #e6d5bc; border-radius: 10px; display: grid; gap: 12px; background: #fffdf8; }
+  .crud-turnos legend { padding: 0 6px; font-weight: 700; font-size: 0.95rem; }
+  .crud-turnos__modo { display: grid; gap: 8px; }
+  .crud-opcion { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1.5px solid #e6d5bc; border-radius: 10px; background: #fff; cursor: pointer; font-weight: 400; transition: border-color .15s, box-shadow .15s; }
+  .crud-opcion:has(input:checked) { border-color: #7b4b2a; box-shadow: 0 0 0 3px rgba(123, 75, 42, .12); }
+  .crud-opcion input { width: 18px; height: 18px; accent-color: #7b4b2a; }
+  .crud-opcion small, .crud-turnos small { color: #6e5848; font-weight: 400; }
+  .crud-turnos__aviso { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff2d9; border-left: 4px solid #e3b25b; color: #663b18; font-size: 0.88rem; line-height: 1.4; }
+  .crud-turnos__resumen { margin: 0; color: #6e5848; font-size: 0.88rem; }
+  .crud-turno__detalle { display: grid; gap: 12px; padding: 12px; border: 1.5px dashed #c8a27a; border-radius: 10px; background: #fff; }
+  .crud-turno__detalle[hidden], .crud-turnos__aviso[hidden] { display: none; }
+  .crud-turno__horas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .crud-turno__horas label, .crud-turno__detalle > label { display: grid; gap: 4px; font-size: 0.85rem; font-weight: 600; }
+  .crud-turno__horas input[type="time"] { width: 100%; }
+  .crud-turno__dias { display: flex; flex-wrap: wrap; gap: 6px; }
+  .crud-dia { position: relative; cursor: pointer; }
+  .crud-dia input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .crud-dia span:not(.sr-only) {
+    display: grid; place-items: center; width: 38px; height: 38px;
+    border: 1.5px solid #e6d5bc; border-radius: 50%;
+    font-weight: 700; font-size: 0.9rem; color: #6e5848; background: #fffdf8;
+    transition: background-color .12s, color .12s, border-color .12s;
+  }
+  .crud-dia input:checked + span { background: #7b4b2a; border-color: #7b4b2a; color: #fffdf8; }
+  .crud-dia input:focus-visible + span { outline: 3px solid #e3b25b; outline-offset: 2px; }
+  @media (max-width: 480px) { .crud-turno__horas { grid-template-columns: 1fr; } }
+
   .crud-form-grupo {
     display: flex;
     flex-direction: column;
@@ -949,7 +979,71 @@
     document.getElementById('modalAgregarProducto').style.display = 'none';
   }
 
-  function abrirModalEditarProducto(pk, nombre, categoriaId, precio, stock, stockCritico, unidad, desc, activo) {
+  // ---- Disponibilidad (turno) en el formulario de producto ----
+  const NOMBRES_DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+  function textoDeDias(indices) {
+    if (indices.length === 7) { return 'todos los días'; }
+    if (indices.length === 0) { return 'ningún día'; }
+    const tramos = [];
+    let actual = [];
+    indices.forEach(function (dia) {
+      if (actual.length && dia === actual[actual.length - 1] + 1) { actual.push(dia); }
+      else { if (actual.length) { tramos.push(actual); } actual = [dia]; }
+    });
+    if (actual.length) { tramos.push(actual); }
+    return tramos.map(function (tramo) {
+      if (tramo.length === 1) { return NOMBRES_DIAS[tramo[0]]; }
+      if (tramo.length === 2) { return NOMBRES_DIAS[tramo[0]] + ' y ' + NOMBRES_DIAS[tramo[1]]; }
+      return NOMBRES_DIAS[tramo[0]] + ' a ' + NOMBRES_DIAS[tramo[tramo.length - 1]];
+    }).join(', ');
+  }
+
+  // Muestra el cuadro de horas solo con "Solo en un horario" y mantiene el resumen al día.
+  function sincronizarDisponibilidad(zona) {
+    const modo = zona.querySelector('input[name="disponibilidad"]:checked').value;
+    zona.querySelector('[data-horario]').hidden = (modo !== 'horario');
+    const desde = zona.querySelector('input[name="turno_desde"]').value;
+    const hasta = zona.querySelector('input[name="turno_hasta"]').value;
+    const dias = Array.from(zona.querySelectorAll('input[name="turno_dias"]:checked')).map(function (c) { return Number(c.value); });
+    zona.querySelector('[data-resumen]').textContent =
+      'Se venderá de ' + (desde || '--:--') + ' a ' + (hasta || '--:--') + ' · ' + textoDeDias(dias) + '.';
+  }
+
+  // Rellena la disponibilidad según el producto: vacío = todo el día; objeto = su turno.
+  function cargarDisponibilidad(zona, datos) {
+    const marcar = function (valor) { zona.querySelector('input[name="disponibilidad"][value="' + valor + '"]').checked = true; };
+    const aviso = zona.querySelector('[data-varios]');
+    aviso.hidden = true;
+    zona.querySelector('input[name="turno_nombre"]').value = '';
+    zona.querySelector('input[name="turno_desde"]').value = '';
+    zona.querySelector('input[name="turno_hasta"]').value = '';
+    zona.querySelectorAll('input[name="turno_dias"]').forEach(function (c) { c.checked = true; });
+
+    if (!datos) {
+      marcar('todo_el_dia');
+    } else if (datos.varios) {
+      marcar('mantener');  // se conservan: este formulario solo edita un turno
+      aviso.textContent = 'Este producto tiene varios turnos (' + datos.lista + '). Se conservan tal como están; ' +
+                          'para cambiarlos usa /admin/ → Productos. Si eliges una opción de arriba, se reemplazan.';
+      aviso.hidden = false;
+    } else {
+      marcar('horario');
+      zona.querySelector('input[name="turno_nombre"]').value = datos.nombre || '';
+      zona.querySelector('input[name="turno_desde"]').value = datos.desde;
+      zona.querySelector('input[name="turno_hasta"]').value = datos.hasta;
+      zona.querySelectorAll('input[name="turno_dias"]').forEach(function (c) { c.checked = datos.dias.includes(Number(c.value)); });
+    }
+    sincronizarDisponibilidad(zona);
+  }
+
+  document.addEventListener('change', function (evento) {
+    const zona = evento.target.closest ? evento.target.closest('[data-disponibilidad]') : null;
+    if (zona) { sincronizarDisponibilidad(zona); }
+  });
+  document.querySelectorAll('[data-disponibilidad]').forEach(sincronizarDisponibilidad);
+
+  function abrirModalEditarProducto(pk, nombre, categoriaId, precio, stock, stockCritico, unidad, desc, activo, disponibilidad) {
     const form = document.getElementById('formEditarProducto');
     form.action = `/panel-admin/productos/editar/${pk}/`;
 
@@ -961,6 +1055,7 @@
     document.getElementById('edit_prod_unidad').value = unidad || 'unid';
     document.getElementById('edit_prod_desc').value = desc || '';
     document.getElementById('edit_prod_activo').checked = (activo === 'true' || activo === true);
+    cargarDisponibilidad(document.getElementById('edit_prod_disponibilidad'), disponibilidad ? JSON.parse(disponibilidad) : null);
 
     document.getElementById('modalEditarProducto').style.display = 'flex';
   }

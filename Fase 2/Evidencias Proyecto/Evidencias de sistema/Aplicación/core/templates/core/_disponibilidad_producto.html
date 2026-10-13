@@ -1,0 +1,53 @@
+{% comment %}
+  Disponibilidad de un producto, para los formularios de crear y editar del panel del admin.
+  Por defecto el producto se vende todo el día; si se elige "Solo en un horario", aparece un
+  único formulario de turno: desde, hasta y los días de la semana (y un nombre opcional).
+  Parámetro: prefijo, para que los ids sean únicos en cada formulario.
+  Lo procesa _guardar_disponibilidad_del_producto en views.py; el JS está en _tabla_crud_insumos.html.
+{% endcomment %}
+<fieldset class="crud-turnos" id="{{ prefijo }}_disponibilidad" data-disponibilidad>
+  <legend>Disponibilidad</legend>
+
+  <div class="crud-turnos__modo" role="radiogroup" aria-label="¿Cuándo se vende este producto?">
+    <label class="crud-opcion">
+      <input type="radio" name="disponibilidad" value="todo_el_dia" checked>
+      <span><strong>Todo el día</strong> <small>(en cualquier horario)</small></span>
+    </label>
+    <label class="crud-opcion">
+      <input type="radio" name="disponibilidad" value="horario">
+      <span><strong>Solo en un horario</strong> <small>(definir turno)</small></span>
+    </label>
+    {# Opción interna: la usa el JS para conservar los turnos de un producto que tiene varios #}
+    <input type="radio" name="disponibilidad" value="mantener" hidden>
+  </div>
+
+  <p class="crud-turnos__aviso" data-varios hidden></p>
+
+  <div class="crud-turno__detalle" data-horario hidden>
+    <label for="{{ prefijo }}_turno_nombre">Nombre del turno <small>(opcional)</small>
+      <input type="text" class="crud-input" id="{{ prefijo }}_turno_nombre" name="turno_nombre"
+             maxlength="50" placeholder="Ej: Fin de semana" autocomplete="off">
+    </label>
+
+    <div class="crud-turno__horas">
+      <label for="{{ prefijo }}_turno_desde">Desde
+        <input type="time" class="crud-input" id="{{ prefijo }}_turno_desde" name="turno_desde" step="900">
+      </label>
+      <label for="{{ prefijo }}_turno_hasta">Hasta
+        <input type="time" class="crud-input" id="{{ prefijo }}_turno_hasta" name="turno_hasta" step="900">
+      </label>
+    </div>
+
+    <div class="crud-turno__dias" role="group" aria-label="Días de la semana en que se vende">
+      {% for letra, nombre in dias_semana %}
+        <label class="crud-dia" title="{{ nombre }}">
+          <input type="checkbox" name="turno_dias" value="{{ forloop.counter0 }}" checked>
+          <span>{{ letra }}</span>
+          <span class="sr-only">{{ nombre }}</span>
+        </label>
+      {% endfor %}
+    </div>
+
+    <p class="crud-turnos__resumen" data-resumen></p>
+  </div>
+</fieldset>

@@ -1,13 +1,14 @@
 import re
 import time
 import unicodedata
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Case, F, IntegerField, Q, Sum, Value, When
+from django.db.models import Case, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
@@ -19,12 +20,13 @@ from transbank.common.integration_type import IntegrationType
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Usuario,
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario,
 )
 from .templatetags.tienda import TIENDA
 from django.http import JsonResponse
 from .templatetags.formato import clp
-from .retiro import dias_de_retiro, texto_retiro, validar_retiro
+from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
+from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
 
 # ==========================================
@@ -45,6 +47,11 @@ def _entero_o_none(valor):
     return numero if numero.bit_length() <= 63 else None
 
 
+def _turnos_activos():
+    """Precarga los turnos activos de cada producto (para mostrar cuándo se vende)."""
+    return Prefetch('turnos', queryset=Turno.objects.filter(activo=True))
+
+
 def inicio(request):
     """Los 4 productos más vendidos (pedidos no cancelados), leídos de la BD."""
     _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
@@ -52,6 +59,7 @@ def inicio(request):
 
     productos = (
         Producto.objects.filter(activo=True)
+        .prefetch_related(_turnos_activos())
         .annotate(
             vendidos=Coalesce(
                 Sum(
@@ -126,15 +134,29 @@ def _buscar_productos(productos, busqueda):
 
 
 def pedir(request):
-    """Catálogo completo, público. Se puede filtrar con ?categoria=<id> y buscar por nombre con ?q=."""
+    """Catálogo completo, público. Filtros combinables: ?categoria=<id>, ?turno=<id> y búsqueda ?q=."""
     _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
     categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
 
-    productos = Producto.objects.filter(activo=True).order_by(
+    productos = Producto.objects.filter(activo=True).prefetch_related(_turnos_activos()).order_by(
         # Los agotados van al final
         Case(When(stock__gt=0, then=Value(0)), default=Value(1), output_field=IntegerField()),
         'nombre',
     )
+
+    # Turnos de venta (los administra el admin). "Ahora" se calcula con la hora de Chile.
+    turnos = list(Turno.objects.filter(activo=True, productos__activo=True).distinct())
+    ahora_cl = ahora_en_chile()
+    turnos_ahora = [t.pk for t in turnos if t.rige_en(ahora_cl)]  # pueden regir varios a la vez
+    turno_actual = None
+    turno_id = _entero_o_none(request.GET.get('turno', ''))
+    if turno_id is not None:
+        turno_actual = next((t for t in turnos if t.pk == turno_id), None)
+    if turno_actual:
+        # Lo que se vende en ese turno, más lo que no tiene turnos activos (se vende todo el día).
+        sin_turnos = Producto.objects.exclude(turnos__activo=True).values('pk')
+        en_el_turno = Producto.objects.filter(turnos=turno_actual).values('pk')
+        productos = productos.filter(Q(pk__in=sin_turnos) | Q(pk__in=en_el_turno))
 
     categoria_actual = None
     categoria_id = _entero_o_none(request.GET.get('categoria', ''))
@@ -142,6 +164,14 @@ def pedir(request):
         categoria_actual = categorias.filter(pk=categoria_id).first()
         if categoria_actual:
             productos = productos.filter(categoria=categoria_actual)
+
+    # Los filtros activos como query string, para que los enlaces y "Limpiar" los conserven.
+    parametros = []
+    if categoria_actual:
+        parametros.append(f'categoria={categoria_actual.pk}')
+    if turno_actual:
+        parametros.append(f'turno={turno_actual.pk}')
+    filtros_qs = ('?' + '&'.join(parametros)) if parametros else ''
 
     # Búsqueda por nombre o categoría: sin importar mayúsculas ni tildes (ver _buscar_productos).
     busqueda = request.GET.get('q', '').strip()[:BUSQUEDA_MAX_LARGO]
@@ -155,6 +185,10 @@ def pedir(request):
         'productos': productos,
         'categorias': categorias,
         'categoria_actual': categoria_actual,
+        'turnos': turnos,
+        'turno_actual': turno_actual,
+        'turnos_ahora': turnos_ahora,
+        'filtros_qs': filtros_qs,
         'busqueda': busqueda,
     })
 
@@ -253,7 +287,7 @@ def carrito(request):
     productos = Producto.objects.filter(
         pk__in=cantidades,
         activo=True,
-    ).order_by('nombre')
+    ).prefetch_related(_turnos_activos()).order_by('nombre')
     items = []
     ids_validos = set()
     total = Decimal('0.00')
@@ -287,11 +321,29 @@ def carrito(request):
             .first()
         ) or ''
 
+    # Los productos con turnos solo se venden dentro de ellos: la agenda ofrece únicamente las horas
+    # (de retiro o de entrega) que sirven para todos los productos del carrito.
+    turnos_por_producto = []
+    restricciones = []
+    for item in items:
+        turnos = list(item['producto'].turnos.all())
+        if turnos:
+            turnos_por_producto.append(turnos)
+            restricciones.append({
+                'nombre': item['producto'].nombre,
+                'turnos': '; '.join(turno.descripcion for turno in turnos),
+            })
+    agenda = dias_de_retiro(turnos_por_producto=turnos_por_producto)
+    # ¿No queda ninguna hora por culpa de los productos (y no porque la tienda esté cerrada)?
+    sin_horas_por_productos = bool(turnos_por_producto) and not agenda and bool(dias_de_retiro())
+
     return render(request, 'core/carrito.html', {
         'items': items,
         'total': total,
         'direccion_guardada': direccion_guardada,
-        'retiro_dias': dias_de_retiro(),
+        'retiro_dias': agenda,
+        'restricciones': restricciones,
+        'sin_horas_por_productos': sin_horas_por_productos,
         'carrito_tiene_stock': all(
             item['cantidad'] <= item['producto'].stock for item in items
         ),
@@ -381,18 +433,6 @@ def finalizar_compra(request):
             )
             return redirect('carrito')
 
-    # Retiro programado: el día y la hora salen de core/retiro.py. Sin agenda (otros clientes HTTP) se acepta.
-    texto_del_retiro = ''
-    if tipo_entrega == 'RETIRO':
-        fecha_retiro = request.POST.get('fecha_retiro', '').strip()
-        hora_retiro = request.POST.get('hora_retiro', '').strip()
-        if fecha_retiro or hora_retiro:
-            fecha, hora, error = validar_retiro(fecha_retiro, hora_retiro)
-            if error:
-                messages.error(request, error)
-                return redirect('carrito')
-            texto_del_retiro = f'Retiro programado: {texto_retiro(fecha, hora)}'
-
     cantidades = {}
     for producto_id, cantidad in carrito_sesion.items():
         try:
@@ -405,6 +445,43 @@ def finalizar_compra(request):
             messages.error(request, 'El carrito contiene una cantidad inválida.')
             return redirect('carrito')
         cantidades[producto_id] = cantidad
+
+    # Agenda: día y hora de retiro o de entrega (core/retiro.py). Cada producto con turnos solo se vende
+    # dentro de ellos, así que la hora elegida debe caber en los turnos de todos los del carrito.
+    productos_del_carrito = list(
+        Producto.objects.filter(pk__in=cantidades, activo=True).prefetch_related(_turnos_activos())
+    )
+    turnos_por_producto = [turnos for turnos in (list(p.turnos.all()) for p in productos_del_carrito) if turnos]
+    etiqueta_agenda = 'Entrega programada' if tipo_entrega == 'DESPACHO' else 'Retiro programado'
+    texto_agenda = ''
+    fecha_elegida = request.POST.get('fecha_retiro', '').strip()
+    hora_elegida = request.POST.get('hora_retiro', '').strip()
+    if fecha_elegida or hora_elegida:
+        fecha, hora, error = validar_retiro(fecha_elegida, hora_elegida, turnos_por_producto=turnos_por_producto)
+        if error:
+            messages.error(request, error)
+            return redirect('carrito')
+        texto_agenda = f'{etiqueta_agenda}: {texto_retiro(fecha, hora)}'
+    else:
+        # Sin agenda (otro cliente HTTP): los productos con turnos deben poder venderse ahora.
+        momento = ahora_en_chile()
+        fuera_de_turno = [p for p in productos_del_carrito if not esta_disponible(list(p.turnos.all()), momento)]
+        if fuera_de_turno:
+            nombres = ', '.join(p.nombre for p in fuera_de_turno)
+            messages.error(request, f'Ahora no se vende: {nombres}. Elige un día y una hora de la agenda.')
+            return redirect('carrito')
+
+    if tipo_entrega == 'DESPACHO':
+        direccion_final = f'{direccion} · {texto_agenda}' if texto_agenda else direccion
+        if len(direccion_final) > 255:
+            messages.error(
+                request,
+                'La dirección y los detalles son demasiado largos para sumarles la hora de entrega '
+                '(máximo 255 caracteres). Acórtalos.',
+            )
+            return redirect('carrito')
+    else:
+        direccion_final = texto_agenda
 
     with transaction.atomic():
         productos = list(
@@ -444,7 +521,7 @@ def finalizar_compra(request):
             estado='PENDIENTE' if es_webpay else 'PAGADO',
             canal='WEB',
             tipo_entrega=tipo_entrega,
-            direccion_despacho=direccion if tipo_entrega == 'DESPACHO' else texto_del_retiro,
+            direccion_despacho=direccion_final,
             total=total,
         )
         for producto in productos:
@@ -788,6 +865,24 @@ def boleta_simulada(request, pedido_id):
     return render(request, 'core/boleta_simulada.html', {'pedido': pedido})
 
 
+def producto_detalle(request, pk):
+    """Información del producto y cuándo se vende. Con ?parcial=1 devuelve solo el contenido del modal
+    del catálogo (static/js/producto_modal.js); sin él, la página completa (para quien no usa JavaScript)."""
+    producto = get_object_or_404(
+        Producto.objects.select_related('categoria').prefetch_related(_turnos_activos()),
+        pk=pk, activo=True,
+    )
+    turnos = list(producto.turnos.all())  # solo los activos (ver _turnos_activos)
+    disponible_ahora, vuelve = resumen_de_disponibilidad(turnos, ahora_en_chile())
+    plantilla = 'core/_producto_detalle.html' if request.GET.get('parcial') == '1' else 'core/producto.html'
+    return render(request, plantilla, {
+        'p': producto,
+        'turnos_del_producto': turnos,
+        'disponible_ahora': disponible_ahora,
+        'vuelve': vuelve,
+    })
+
+
 def local(request):
     """Información de la tienda: dirección, horarios, despacho y mapa de cobertura.
     Los datos salen de core/templatetags/tienda.py."""
@@ -857,7 +952,10 @@ def inicio_admin(request):
             siguiente_id = f'NI{insumos.count() + 1:03d}'
 
     # Consulta de productos de venta al público para la tabla CRUD
-    todos_los_productos = Producto.objects.select_related('categoria').all().order_by('categoria__nombre', 'nombre')
+    todos_los_productos = (
+        Producto.objects.select_related('categoria').prefetch_related('turnos')
+        .order_by('categoria__nombre', 'nombre')
+    )
     categorias_productos = Categoria.objects.all().order_by('nombre')
 
     # Consulta de productos con stock actual
@@ -871,6 +969,8 @@ def inicio_admin(request):
         'siguiente_id': siguiente_id,
         'todos_los_productos': todos_los_productos,
         'categorias_productos': categorias_productos,
+        'turnos_disponibles': Turno.objects.filter(activo=True),
+        'dias_semana': list(zip('LMXJVSD', [d.capitalize() for d in Turno.NOMBRES_DIAS])),
         'productos_stock': productos_stock,
         'tarifas_proveedores': tarifas_proveedores,
     }
@@ -1120,6 +1220,83 @@ def eliminar_insumo(request, pk):
 # CRUD DE PRODUCTOS DE VENTA AL PÚBLICO
 # --------------------------------------------
 
+def _hora_o_none(texto):
+    """'09:30' (o '09:30:00') -> time; None si no es una hora válida."""
+    for formato in ('%H:%M', '%H:%M:%S'):
+        try:
+            return datetime.strptime((texto or '').strip(), formato).time()
+        except ValueError:
+            continue
+    return None
+
+
+def _dias_del_formulario(request, campo):
+    """Índices de día (0 = lunes ... 6 = domingo) marcados en las casillas `campo`."""
+    indices = (_entero_o_none(v) for v in request.POST.getlist(campo))
+    return {i for i in indices if i is not None and 0 <= i <= 6}
+
+
+def _guardar_disponibilidad_del_producto(request, producto):
+    """Aplica la "Disponibilidad" del formulario del panel: todo el día o un horario propio.
+
+    - todo_el_dia: el producto no tiene turnos (se vende a cualquier hora).
+    - horario: el admin define desde, hasta y los días (y un nombre, opcional). Se reutiliza un turno
+      igual si ya existe; si no, se crea uno nuevo. Nunca se modifica un turno que usan otros productos.
+    - mantener (o sin el campo): no se toca, p. ej. un producto con varios turnos cargados en /admin/.
+    """
+    modo = request.POST.get('disponibilidad', 'mantener')
+    if modo == 'todo_el_dia':
+        producto.turnos.clear()
+        return
+    if modo != 'horario':
+        return
+
+    nombre = request.POST.get('turno_nombre', '').strip()[:50]
+    desde = _hora_o_none(request.POST.get('turno_desde'))
+    hasta = _hora_o_none(request.POST.get('turno_hasta'))
+    dias = _dias_del_formulario(request, 'turno_dias')
+    if desde is None or hasta is None:
+        messages.error(request, 'Disponibilidad: indica la hora desde y hasta. No se cambió.')
+        return
+
+    dias_por_campo = {campo: (i in dias) for i, campo in enumerate(Turno.CAMPOS_DIAS)}
+    candidato = Turno(nombre=nombre, hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
+    try:
+        candidato.clean()
+    except ValidationError as error:
+        messages.error(request, f'Disponibilidad: {error.messages[0]} No se cambió.')
+        return
+
+    # ¿Ya hay un turno con exactamente ese horario y esos días (y ese nombre, si se puso uno)?
+    iguales = Turno.objects.filter(hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
+    if nombre:
+        iguales = iguales.filter(nombre__iexact=nombre)
+    turno = iguales.first()
+
+    if turno is None:
+        if nombre and Turno.objects.filter(nombre__iexact=nombre).exists():
+            messages.error(
+                request,
+                f'Ya existe un turno llamado "{nombre}" con otro horario o días. '
+                'Usa otro nombre o déjalo en blanco. No se cambió.',
+            )
+            return
+        # Sin nombre, el turno se llama como su horario: "10:00 a 13:00 (sábado y domingo)".
+        base = nombre or f'{candidato.horario_texto} ({candidato.dias_texto})'[:50]
+        candidato.nombre = base
+        sufijo = 2
+        while Turno.objects.filter(nombre__iexact=candidato.nombre).exists():
+            candidato.nombre = f'{base[:45]} #{sufijo}'
+            sufijo += 1
+        candidato.save()
+        turno = candidato
+
+    if not turno.activo:
+        turno.activo = True
+        turno.save(update_fields=['activo'])
+    producto.turnos.set([turno])
+
+
 @admin_required
 @require_POST
 def crear_producto(request):
@@ -1154,7 +1331,7 @@ def crear_producto(request):
     except (ValueError, TypeError):
         stock_critico = 10
 
-    Producto.objects.create(
+    producto = Producto.objects.create(
         nombre=nombre,
         categoria=categoria,
         precio=precio,
@@ -1164,6 +1341,7 @@ def crear_producto(request):
         descripcion=descripcion,
         activo=True
     )
+    _guardar_disponibilidad_del_producto(request, producto)
     messages.success(request, f'Producto "{nombre}" agregado exitosamente al catálogo.')
     return redirect(next_url)
 
@@ -1211,6 +1389,7 @@ def editar_producto(request, pk):
     producto.descripcion = descripcion
     producto.activo = activo
     producto.save()
+    _guardar_disponibilidad_del_producto(request, producto)
 
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
     return redirect(next_url)

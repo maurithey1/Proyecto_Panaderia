@@ -19,11 +19,17 @@
   var peticion = null;
   var ultimaBusqueda = campo.value.trim();
 
+  // Arma la dirección con lo que lleva el formulario: la búsqueda más los filtros activos
+  // (campos ocultos "turno" y "categoria"), para buscar dentro del turno y la categoría elegidos.
   function direccion(texto, parcial) {
-    var partes = [];
-    if (texto) { partes.push('q=' + encodeURIComponent(texto)); }
-    if (parcial) { partes.push('parcial=1'); }
-    return form.getAttribute('action') + (partes.length ? '?' + partes.join('&') : '');
+    var parametros = new URLSearchParams();
+    new FormData(form).forEach(function (valor, nombre) {
+      if (nombre !== 'q' && valor !== '') { parametros.append(nombre, valor); }
+    });
+    if (texto) { parametros.set('q', texto); }
+    if (parcial) { parametros.set('parcial', '1'); }
+    var consulta = parametros.toString();
+    return form.getAttribute('action') + (consulta ? '?' + consulta : '');
   }
 
   function anunciar() {

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     Usuario, Cliente, Cajero, Administrador, PuntosFidelizacion,
-    Categoria, Producto, Proveedor, Insumo, ProveedorInsumo,
+    Categoria, Producto, Turno, Proveedor, Insumo, ProveedorInsumo,
     Receta, IngredienteReceta, ProduccionDiaria,
     Carrito, ItemCarrito, Pedido, DetallePedido, Pago,
     Caja, CierreCaja
@@ -60,12 +60,25 @@ class CategoriaAdmin(admin.ModelAdmin):
     list_display = ('nombre', 'descripcion')
     search_fields = ('nombre',)
 
+@admin.register(Turno)
+class TurnoAdmin(admin.ModelAdmin):
+    list_display = ('nombre', 'hora_inicio', 'hora_fin', 'dias_texto', 'activo')
+    list_editable = ('activo',)
+    list_filter = ('activo',)
+    fieldsets = (
+        (None, {'fields': ('nombre', ('hora_inicio', 'hora_fin'), 'activo')}),
+        ('Días en que rige', {
+            'fields': (('lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'),),
+        }),
+    )
+
 @admin.register(Producto)
 class ProductoAdmin(admin.ModelAdmin):
     list_display = ('nombre', 'categoria', 'precio', 'stock', 'stock_critico', 'activo')
-    list_filter = ('categoria', 'activo')
+    list_filter = ('categoria', 'activo', 'turnos')
     search_fields = ('nombre', 'descripcion')
     list_editable = ('precio', 'stock', 'activo')
+    filter_horizontal = ('turnos',)
 
 
 # ==========================================

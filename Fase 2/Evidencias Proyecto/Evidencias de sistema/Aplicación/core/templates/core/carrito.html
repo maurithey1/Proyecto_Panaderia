@@ -116,38 +116,12 @@
           </label>
         </fieldset>
 
-        {# Retiro en tienda: dirección del local y agenda (static/js/retiro_agenda.js y core/retiro.py) #}
+        {# Retiro en tienda: dirección del local y horario (static/js/retiro_agenda.js) #}
         <div class="retiro" id="retiro-panel">
           <div class="retiro__local">
             <strong>{{ tienda.comuna }}</strong>
             <span>{{ tienda.direccion }}, {{ tienda.comuna }}</span>
           </div>
-
-          {% if retiro_dias %}
-            <fieldset class="retiro__agenda">
-              <legend>Programa tu retiro</legend>
-              <div class="retiro__campos">
-                <div>
-                  <label class="campo" for="retiro-dia">Día</label>
-                  {# Sin JavaScript queda deshabilitado y se usa el primer día; con JavaScript se habilita #}
-                  <select id="retiro-dia" class="campo__control" disabled>
-                    {% for dia in retiro_dias %}<option value="{{ dia.fecha }}">{{ dia.etiqueta }}</option>{% endfor %}
-                  </select>
-                </div>
-                <div>
-                  <label class="campo" for="retiro-hora">Hora</label>
-                  <select id="retiro-hora" class="campo__control" name="hora_retiro">
-                    {% for hora in retiro_dias.0.horas %}<option value="{{ hora.valor }}">{{ hora.texto }}</option>{% endfor %}
-                  </select>
-                </div>
-              </div>
-              <input type="hidden" name="fecha_retiro" id="retiro-fecha" value="{{ retiro_dias.0.fecha }}">
-              <p class="retiro__resumen" id="retiro-resumen" role="status" aria-live="polite"></p>
-            </fieldset>
-            {{ retiro_dias|json_script:"retiro-datos" }}
-          {% else %}
-            <p class="compra__aviso">Por ahora no hay horas de retiro para programar. Puedes pasar por la tienda en su horario.</p>
-          {% endif %}
 
           <p class="compra__ayuda">
             Horario de retiro:
@@ -187,12 +161,58 @@
           </p>
           <noscript><p class="compra__aviso">Para pedir despacho a domicilio necesitas activar JavaScript. Si no, elige retiro en tienda.</p></noscript>
         </div>
+        {% comment %}
+          Agenda: día y hora de retiro o de entrega. Solo ofrece las horas en que se venden todos los
+          productos del carrito (core/retiro.py, static/js/retiro_agenda.js).
+        {% endcomment %}
+        <div class="retiro agenda" id="agenda-panel">
+          {% if restricciones %}
+            <div class="agenda__restricciones" role="note">
+              <p><strong>Algunos productos se venden solo en ciertos horarios.</strong> Las horas que ves ya lo consideran:</p>
+              <ul>
+                {% for r in restricciones %}<li><strong>{{ r.nombre }}</strong>: {{ r.turnos }}</li>{% endfor %}
+              </ul>
+            </div>
+          {% endif %}
+
+          {% if retiro_dias %}
+            <fieldset class="retiro__agenda">
+              <legend id="agenda-leyenda">Programa tu retiro</legend>
+              <div class="retiro__campos">
+                <div>
+                  <label class="campo" for="retiro-dia">Día</label>
+                  {# Sin JavaScript queda deshabilitado y se usa el primer día; con JavaScript se habilita #}
+                  <select id="retiro-dia" class="campo__control" disabled>
+                    {% for dia in retiro_dias %}<option value="{{ dia.fecha }}">{{ dia.etiqueta }}</option>{% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label class="campo" for="retiro-hora">Hora</label>
+                  <select id="retiro-hora" class="campo__control" name="hora_retiro">
+                    {% for hora in retiro_dias.0.horas %}<option value="{{ hora.valor }}">{{ hora.texto }}</option>{% endfor %}
+                  </select>
+                </div>
+              </div>
+              <input type="hidden" name="fecha_retiro" id="retiro-fecha" value="{{ retiro_dias.0.fecha }}">
+              <p class="retiro__resumen" id="retiro-resumen" role="status" aria-live="polite"></p>
+            </fieldset>
+            {{ retiro_dias|json_script:"retiro-datos" }}
+          {% elif sin_horas_por_productos %}
+            <p class="compra__aviso compra__aviso--bloqueo" role="alert">
+              No hay un horario en los próximos días en que se vendan todos los productos de tu carrito a la vez.
+              Compra por separado o quita alguno.
+            </p>
+          {% else %}
+            <p class="compra__aviso">Por ahora no hay horas para programar. Puedes pasar por la tienda en su horario.</p>
+          {% endif %}
+        </div>
+
         <p class="compra__aviso-legal">
           Esta compra es una demostración: no se realizará ningún cobro ni se emitirá una boleta tributaria.
         </p>
         {# Explica por qué el botón está bloqueado cuando la dirección no sirve para despachar (static/js/zona_despacho.js) #}
         <p class="zona__aviso-envio" id="zona-aviso-envio" hidden></p>
-        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock %} disabled{% endif %}>Pagar con Webpay / Confirmar Pedido</button>
+        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock or sin_horas_por_productos %} disabled{% endif %}>Pagar con Webpay / Confirmar Pedido</button>
       </form>
     {% else %}
       <p class="vacio">Tu carrito está vacío. <a href="{% url 'pedir' %}">Ver productos</a></p>

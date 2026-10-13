@@ -1,0 +1,10 @@
+{% comment %}
+  Ventana con la información de un producto. La abre static/js/producto_modal.js al tocar una tarjeta.
+  Es un <dialog> nativo: atrapa el foco, se cierra con Esc y devuelve el foco a la tarjeta.
+{% endcomment %}
+<dialog class="modal-producto" id="producto-modal" aria-label="Información del producto">
+  <button type="button" class="modal-producto__cerrar" data-cerrar aria-label="Cerrar">&times;</button>
+  <div class="modal-producto__contenido" id="producto-modal-contenido">
+    <p class="modal-producto__cargando">Cargando…</p>
+  </div>
+</dialog>

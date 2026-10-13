@@ -1,3 +1,4 @@
+import json
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
@@ -97,6 +98,117 @@ class Categoria(models.Model):
         return self.nombre
 
 
+class Turno(models.Model):
+    """Franja de venta (p. ej. "Mañana, 09:00 a 14:00") y los días de la semana en que rige.
+
+    Un producto sin turnos se vende todo el día; con turnos, solo en esas franjas.
+    """
+    # El índice coincide con date.weekday(): lunes = 0 ... domingo = 6.
+    CAMPOS_DIAS = ('lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo')
+    NOMBRES_DIAS = ('lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo')
+
+    nombre = models.CharField(max_length=50, unique=True)
+    hora_inicio = models.TimeField(verbose_name='Desde')
+    hora_fin = models.TimeField(verbose_name='Hasta')
+    lunes = models.BooleanField(default=True)
+    martes = models.BooleanField(default=True)
+    miercoles = models.BooleanField('Miércoles', default=True)
+    jueves = models.BooleanField(default=True)
+    viernes = models.BooleanField(default=True)
+    sabado = models.BooleanField('Sábado', default=True)
+    domingo = models.BooleanField(default=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Turno de venta"
+        verbose_name_plural = "Turnos de venta"
+        ordering = ['hora_inicio', 'nombre']
+
+    def __str__(self):
+        if self.nombre_es_horario:
+            return self.nombre
+        return f"{self.nombre} ({self.horario_texto})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.hora_inicio is not None and self.hora_inicio == self.hora_fin:
+            raise ValidationError('La hora de inicio y la de término no pueden ser iguales.')
+        if not any(getattr(self, campo) for campo in self.CAMPOS_DIAS):
+            raise ValidationError('Marca al menos un día de la semana.')
+
+    def dias_activos(self):
+        """Índices de los días en que rige (lunes = 0)."""
+        return [i for i, campo in enumerate(self.CAMPOS_DIAS) if getattr(self, campo)]
+
+    def rige_en(self, momento):
+        """True si un datetime (en hora de Chile) cae dentro del turno: día y hora."""
+        if momento.weekday() not in self.dias_activos():
+            return False
+        hora = momento.time().replace(tzinfo=None)
+        if self.hora_inicio <= self.hora_fin:
+            return self.hora_inicio <= hora < self.hora_fin
+        # Cruza la medianoche (p. ej. 20:00 a 02:00).
+        return hora >= self.hora_inicio or hora < self.hora_fin
+
+    @property
+    def dias_formulario(self):
+        """Los siete días con su letra y si rigen, para dibujar las casillas del formulario."""
+        letras = ('L', 'M', 'X', 'J', 'V', 'S', 'D')
+        return [
+            {
+                'indice': i,
+                'letra': letras[i],
+                'nombre': self.NOMBRES_DIAS[i].capitalize(),
+                'marcado': bool(getattr(self, campo)),
+            }
+            for i, campo in enumerate(self.CAMPOS_DIAS)
+        ]
+
+    @property
+    def horario_texto(self):
+        return f"{self.hora_inicio:%H:%M} a {self.hora_fin:%H:%M}"
+
+    @property
+    def dias_texto(self):
+        """'lunes a sábado', 'sábado y domingo', 'todos los días'..."""
+        dias = self.dias_activos()
+        if len(dias) == 7:
+            return 'todos los días'
+        tramos, actual = [], []
+        for dia in dias:
+            if actual and dia == actual[-1] + 1:
+                actual.append(dia)
+            else:
+                if actual:
+                    tramos.append(actual)
+                actual = [dia]
+        if actual:
+            tramos.append(actual)
+        nombres = self.NOMBRES_DIAS
+        partes = []
+        for tramo in tramos:
+            if len(tramo) == 1:
+                partes.append(nombres[tramo[0]])
+            elif len(tramo) == 2:
+                partes.append(f"{nombres[tramo[0]]} y {nombres[tramo[1]]}")
+            else:
+                partes.append(f"{nombres[tramo[0]]} a {nombres[tramo[-1]]}")
+        return ', '.join(partes)
+
+    @property
+    def nombre_es_horario(self):
+        """True si el nombre es el propio horario (los turnos creados desde el formulario de producto
+        sin ponerles nombre), para no repetir las horas al mostrarlo."""
+        return self.nombre.startswith(self.horario_texto)
+
+    @property
+    def descripcion(self):
+        """Texto para mostrar al cliente: 'Tarde, 14:00 a 19:30, lunes a sábado'."""
+        if self.nombre_es_horario:
+            return self.nombre
+        return f"{self.nombre}, {self.horario_texto}, {self.dias_texto}"
+
+
 class Producto(models.Model):
     UNIDADES = (
         ('unid', 'Unidad'),
@@ -113,6 +225,10 @@ class Producto(models.Model):
     unidades_por_kg = models.CharField(max_length=100, blank=True, null=True)
     imagen_url = models.URLField(max_length=500, blank=True, null=True)
     activo = models.BooleanField(default=True)
+    turnos = models.ManyToManyField(
+        Turno, blank=True, related_name='productos', verbose_name='Turnos de venta',
+        help_text='Sin turnos, el producto se vende todo el día.',
+    )
 
     class Meta:
         verbose_name = "Producto"
@@ -120,6 +236,27 @@ class Producto(models.Model):
 
     def __str__(self):
         return f"{self.nombre} (${self.precio})"
+
+    @property
+    def disponibilidad_formulario(self):
+        """JSON con la disponibilidad del producto, para rellenar el formulario de edición del panel.
+
+        Sin turnos: todo el día (cadena vacía). Con un turno: sus horas y días. Con varios (cargados
+        desde /admin/), el formulario los respeta y no los edita.
+        """
+        turnos = list(self.turnos.all())
+        if not turnos:
+            return ''
+        if len(turnos) > 1:
+            return json.dumps({'varios': True, 'lista': '; '.join(t.descripcion for t in turnos)})
+        turno = turnos[0]
+        return json.dumps({
+            'varios': False,
+            'nombre': '' if turno.nombre_es_horario else turno.nombre,
+            'desde': f"{turno.hora_inicio:%H:%M}",
+            'hasta': f"{turno.hora_fin:%H:%M}",
+            'dias': turno.dias_activos(),
+        })
 
 
 # ==========================================

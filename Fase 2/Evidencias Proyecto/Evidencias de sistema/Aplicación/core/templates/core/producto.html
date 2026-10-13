@@ -1,0 +1,12 @@
+{% extends "core/base.html" %}
+
+{% block titulo %}{{ p.nombre }}{% endblock %}
+
+{% block contenido %}
+<section class="pagina">
+  <div class="contenedor">
+    <p><a href="{% url 'pedir' %}">← Volver al catálogo</a></p>
+    {% include "core/_producto_detalle.html" %}
+  </div>
+</section>
+{% endblock %}

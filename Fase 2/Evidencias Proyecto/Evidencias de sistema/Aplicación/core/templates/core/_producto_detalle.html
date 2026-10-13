@@ -1,0 +1,68 @@
+{% load formato %}
+{% comment %}
+  Información de un producto y su disponibilidad. Es el contenido del modal del catálogo
+  (lo pide static/js/producto_modal.js con ?parcial=1) y de la página /producto/<id>/.
+{% endcomment %}
+{% with cantidad_en_carrito=request.session.carrito|obt_cantidad_carrito:p.pk %}
+<article class="detalle" aria-labelledby="detalle-titulo-{{ p.pk }}">
+  <div class="detalle__imagen{% if not p.imagen_url %} detalle__imagen--sin-foto{% endif %}">
+    {% if p.imagen_url %}
+      <img src="{{ p.imagen_url }}" alt="{{ p.nombre }}">
+    {% else %}
+      <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+    {% endif %}
+  </div>
+
+  <div class="detalle__cuerpo">
+    <p class="detalle__categoria">{{ p.categoria.nombre }}</p>
+    <h2 class="detalle__titulo" id="detalle-titulo-{{ p.pk }}">{{ p.nombre }}</h2>
+    {% if p.descripcion %}<p class="detalle__descripcion">{{ p.descripcion }}</p>{% endif %}
+    {% if p.unidades_por_kg %}<p class="detalle__equivalencia">💡 <em>{{ p.unidades_por_kg }}</em></p>{% endif %}
+
+    <p class="detalle__stock">
+      {% if p.stock <= 0 %}
+        <strong>Agotado</strong>
+      {% else %}
+        <strong>Stock:</strong> {{ p.stock }}
+        {% if p.unidad_medida == "kg" %}kg{% else %}unidad{{ p.stock|pluralize:"es" }}{% endif %}
+        {% if p.stock <= p.stock_critico %}<span class="tarjeta__aviso">Quedan pocas</span>{% endif %}
+      {% endif %}
+    </p>
+
+    <section class="detalle__disponibilidad" aria-labelledby="detalle-disponibilidad-{{ p.pk }}">
+      <h3 id="detalle-disponibilidad-{{ p.pk }}">Disponibilidad</h3>
+      {% if turnos_del_producto %}
+        {% if disponible_ahora %}
+          <p class="detalle__estado detalle__estado--si">Disponible ahora</p>
+        {% else %}
+          <p class="detalle__estado detalle__estado--no">
+            No disponible ahora{% if vuelve %} · vuelve {{ vuelve }}{% endif %}
+          </p>
+        {% endif %}
+        <ul class="detalle__turnos">
+          {% for t in turnos_del_producto %}
+            <li>
+              {% if t.nombre_es_horario %}
+                {{ t.nombre }}
+              {% else %}
+                <strong>{{ t.nombre }}</strong>
+                <span>{{ t.horario_texto }} · {{ t.dias_texto }}</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="detalle__todo-el-dia">Se vende todos los días, en el horario de la tienda.</p>
+      {% endif %}
+    </section>
+
+    <div class="detalle__pie">
+      <p class="detalle__precio">
+        <data value="{{ p.precio|floatformat:'0u' }}">{{ p.precio|clp }}</data>
+        <small>/ {% if p.unidad_medida == "kg" %}kg{% else %}unid.{% endif %}</small>
+      </p>
+      {% include "core/_acciones_producto.html" %}
+    </div>
+  </div>
+</article>
+{% endwith %}

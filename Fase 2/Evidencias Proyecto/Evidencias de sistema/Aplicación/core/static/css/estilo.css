@@ -753,6 +753,9 @@ main { flex: 1; }
 .buscador__limpiar:hover { background: var(--crema-2); color: var(--cafe-hover); }
 .buscador__limpiar[hidden] { display: none; }
 .buscador__resultado { margin: 0 0 16px; color: var(--texto-suave); }
+
+/* Detalle del turno elegido por URL (?turno=) */
+.turno__detalle { margin: 0 0 16px; color: var(--texto-suave); font-size: 0.92rem; }
 #resultados { transition: opacity 0.15s ease; }
 #resultados[aria-busy="true"] { opacity: 0.55; }
 
@@ -2671,3 +2674,104 @@ main { flex: 1; }
 @media (max-width: 520px) {
   .retiro__campos { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------------------
+   Modal de producto (core/_producto_modal.html, static/js/producto_modal.js)
+   --------------------------------------------------------------------------- */
+.tarjeta { cursor: pointer; }
+.tarjeta__acciones { cursor: auto; }
+.tarjeta__abrir { color: inherit; text-decoration: none; }
+.tarjeta__abrir:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tarjeta__abrir:focus-visible { outline: 3px solid var(--trigo); outline-offset: 3px; border-radius: 4px; }
+
+/* Con el modal abierto la página de atrás no se desplaza (sin JavaScript: reacciona al atributo open). */
+body:has(dialog.modal-producto[open]) { overflow: hidden; }
+
+.modal-producto {
+  width: min(92vw, 760px);
+  max-height: 90vh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio);
+  background: var(--papel);
+  color: var(--cafe-oscuro);
+  box-shadow: 0 24px 60px rgba(62, 42, 29, 0.35);
+  overflow: auto;
+}
+.modal-producto::backdrop { background: rgba(62, 42, 29, 0.55); }
+.modal-producto__cerrar {
+  position: sticky;
+  top: 8px;
+  float: right;
+  z-index: 2;
+  width: 40px;
+  height: 40px;
+  margin: 8px 8px 0 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 253, 248, 0.92);
+  color: var(--cafe-oscuro);
+  font-size: 1.7rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(62, 42, 29, 0.25);
+}
+.modal-producto__cerrar:hover { background: var(--crema-2); }
+.modal-producto__cerrar:focus-visible { outline: 3px solid var(--trigo); outline-offset: 2px; }
+.modal-producto__cargando { margin: 0; padding: 48px 24px; text-align: center; color: var(--texto-suave); }
+
+/* Contenido: imagen a la izquierda y datos a la derecha (apilado en pantallas angostas) */
+.detalle { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); }
+.detalle__imagen {
+  position: relative;
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--crema-2);
+  color: var(--cafe);
+}
+/* La foto llena el recuadro y se recorta; nunca lo desborda ni empuja el texto. */
+.detalle__imagen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.detalle__imagen .icono { width: 4rem; height: 4rem; stroke-width: 1.4; }
+.detalle__cuerpo { display: flex; flex-direction: column; gap: 10px; padding: 28px 24px 24px; }
+.detalle__categoria { margin: 0; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--terracota); }
+.detalle__titulo { margin: 0; font-size: clamp(1.4rem, 3vw, 1.8rem); line-height: 1.15; }
+.detalle__descripcion { margin: 0; line-height: 1.5; }
+.detalle__equivalencia { margin: 0; font-size: 0.88rem; color: var(--texto-suave); }
+.detalle__stock { margin: 0; font-size: 0.92rem; }
+
+.detalle__disponibilidad { margin-top: 4px; padding: 14px; background: var(--crema); border: 1px solid var(--borde); border-radius: 10px; }
+.detalle__disponibilidad h3 { margin: 0 0 8px; font-size: 0.95rem; }
+.detalle__estado { display: inline-block; margin: 0 0 8px; padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; }
+.detalle__estado--si { color: #1f4d2b; background: #dff0e1; }
+.detalle__estado--no { color: #663b18; background: #fff2d9; }
+.detalle__turnos { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 0.92rem; }
+.detalle__turnos li { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.detalle__turnos span { color: var(--texto-suave); }
+.detalle__todo-el-dia { margin: 0; font-size: 0.92rem; }
+
+.detalle__pie { margin-top: auto; padding-top: 6px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.detalle__precio { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--terracota); }
+.detalle__precio small { font-size: 0.85rem; font-weight: 400; color: var(--texto-suave); }
+
+@media (max-width: 600px) {
+  .detalle { grid-template-columns: 1fr; }
+  .detalle__imagen { min-height: 0; aspect-ratio: 4 / 3; }
+  .detalle__cuerpo { padding: 20px 18px 20px; }
+}
+
+/* Agenda del carrito: avisos de productos con turnos */
+.agenda__restricciones {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  color: #663b18;
+  background: #fff2d9;
+  border-left: 4px solid var(--trigo);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+.agenda__restricciones p { margin: 0 0 6px; }
+.agenda__restricciones ul { margin: 0; padding-left: 18px; }
+.compra__aviso--bloqueo { padding: 12px 14px; color: #7a2e12; background: #fbe3d8; border-left: 4px solid var(--terracota); border-radius: 6px; }

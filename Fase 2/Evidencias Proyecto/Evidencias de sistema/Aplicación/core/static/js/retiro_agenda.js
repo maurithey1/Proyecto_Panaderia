@@ -1,14 +1,18 @@
-/* Retiro en tienda: elegir el día y la hora de retiro (las franjas las calcula el servidor en core/retiro.py).
-   Sin JavaScript el formulario igual envía la primera franja disponible de hoy. */
+/* Agenda del carrito: elegir el día y la hora de retiro o de entrega. Las franjas las calcula el servidor
+   (core/retiro.py) y ya vienen filtradas por los turnos de los productos del carrito.
+   Sin JavaScript el formulario igual envía la primera franja disponible. */
 (function () {
-  var panel = document.getElementById('retiro-panel');
-  if (!panel) { return; }
+  var local = document.getElementById('retiro-panel');    // tarjeta del local: solo con retiro
+  var agenda = document.getElementById('agenda-panel');   // día y hora: con retiro y con despacho
+  var base = local || agenda;
+  if (!base) { return; }
 
-  var form = panel.closest('form');
+  var form = base.closest('form');
   var selectorDia = document.getElementById('retiro-dia');
   var selectorHora = document.getElementById('retiro-hora');
   var campoFecha = document.getElementById('retiro-fecha');
   var resumen = document.getElementById('retiro-resumen');
+  var leyenda = document.getElementById('agenda-leyenda');
   var datosEl = document.getElementById('retiro-datos');
   var dias = [];
 
@@ -34,7 +38,8 @@
     if (!resumen) { return; }
     var dia = diaActual();
     var hora = selectorHora && selectorHora.options[selectorHora.selectedIndex];
-    resumen.textContent = (dia && hora) ? 'Retiras ' + dia.etiqueta.charAt(0).toLowerCase() + dia.etiqueta.slice(1) +
+    var verbo = esRetiro() ? 'Retiras ' : 'Recibes ';
+    resumen.textContent = (dia && hora) ? verbo + dia.etiqueta.charAt(0).toLowerCase() + dia.etiqueta.slice(1) +
       ', de ' + hora.textContent + '.' : '';
   }
 
@@ -56,11 +61,13 @@
   }
 
   function alternar() {
-    panel.hidden = !esRetiro();
+    if (local) { local.hidden = !esRetiro(); }   // la tarjeta del local solo tiene sentido con retiro
+    if (leyenda) { leyenda.textContent = esRetiro() ? 'Programa tu retiro' : 'Programa tu entrega'; }
+    actualizarResumen();
   }
 
   if (selectorDia && dias.length) {
-    selectorDia.disabled = false; // viene deshabilitado para que, sin JavaScript, solo se use el día de hoy
+    selectorDia.disabled = false; // viene deshabilitado para que, sin JavaScript, solo se use el primer día
     selectorDia.addEventListener('change', llenarHoras);
     llenarHoras();
   }
@@ -70,5 +77,4 @@
     radio.addEventListener('change', alternar);
   });
   alternar();
-  actualizarResumen();
 })();
