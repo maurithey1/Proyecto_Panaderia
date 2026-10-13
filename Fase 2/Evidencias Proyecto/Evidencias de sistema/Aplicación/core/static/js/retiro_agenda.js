@@ -1,25 +1,31 @@
 /* Agenda del carrito: elegir el día y la hora de retiro o de entrega. Las franjas las calcula el servidor
    (core/retiro.py) y ya vienen filtradas por los turnos de los productos del carrito.
-   Sin JavaScript el formulario igual envía la primera franja disponible. */
+   Sin JavaScript el formulario igual envía la primera franja disponible.
+
+   Cuando el carrito cambia (static/js/carrito_estado.js) el bloque de la agenda se reemplaza por el que
+   calculó el servidor y se vuelve a iniciar con window.reiniciarAgenda(). */
 (function () {
   var local = document.getElementById('retiro-panel');    // tarjeta del local: solo con retiro
-  var agenda = document.getElementById('agenda-panel');   // día y hora: con retiro y con despacho
-  var base = local || agenda;
+  var base = local || document.getElementById('agenda-panel');
   if (!base) { return; }
 
   var form = base.closest('form');
-  var selectorDia = document.getElementById('retiro-dia');
-  var selectorHora = document.getElementById('retiro-hora');
-  var campoFecha = document.getElementById('retiro-fecha');
-  var resumen = document.getElementById('retiro-resumen');
-  var leyenda = document.getElementById('agenda-leyenda');
-  var datosEl = document.getElementById('retiro-datos');
+  var selectorDia, selectorHora, campoFecha, resumen, leyenda;
   var dias = [];
 
-  try {
-    dias = datosEl ? JSON.parse(datosEl.textContent) : [];
-  } catch (e) {
-    dias = [];
+  // Toma los elementos actuales (el bloque de la agenda se reemplaza cuando cambia el carrito).
+  function capturar() {
+    selectorDia = document.getElementById('retiro-dia');
+    selectorHora = document.getElementById('retiro-hora');
+    campoFecha = document.getElementById('retiro-fecha');
+    resumen = document.getElementById('retiro-resumen');
+    leyenda = document.getElementById('agenda-leyenda');
+    var datosEl = document.getElementById('retiro-datos');
+    try {
+      dias = datosEl ? JSON.parse(datosEl.textContent) : [];
+    } catch (e) {
+      dias = [];
+    }
   }
 
   function esRetiro() {
@@ -43,10 +49,12 @@
       ', de ' + hora.textContent + '.' : '';
   }
 
-  function llenarHoras() {
+  // Llena las horas del día elegido. Se conserva la hora que estaba elegida solo si ese día la ofrece;
+  // si no, queda la primera (asignar un valor inexistente deja el selector vacío y el envío fallaría).
+  function llenarHoras(horaPreferida) {
     var dia = diaActual();
     if (!dia || !selectorHora) { return; }
-    var anterior = selectorHora.value;
+    var deseada = (typeof horaPreferida === 'string' && horaPreferida) ? horaPreferida : selectorHora.value;
     selectorHora.textContent = '';
     dia.horas.forEach(function (h) {
       var opcion = document.createElement('option');
@@ -54,8 +62,8 @@
       opcion.textContent = h.texto;
       selectorHora.appendChild(opcion);
     });
-    // Si la hora que estaba elegida existe ese día, se conserva.
-    if (anterior) { selectorHora.value = anterior; }
+    var existe = dia.horas.some(function (h) { return h.valor === deseada; });
+    selectorHora.value = existe ? deseada : dia.horas[0].valor;
     if (campoFecha) { campoFecha.value = dia.fecha; }
     actualizarResumen();
   }
@@ -66,15 +74,24 @@
     actualizarResumen();
   }
 
-  if (selectorDia && dias.length) {
-    selectorDia.disabled = false; // viene deshabilitado para que, sin JavaScript, solo se use el primer día
-    selectorDia.addEventListener('change', llenarHoras);
-    llenarHoras();
+  // `conservar` ({fecha, hora}) mantiene lo que el cliente había elegido, si todavía se ofrece.
+  function iniciar(conservar) {
+    capturar();
+    if (selectorDia && dias.length) {
+      selectorDia.disabled = false; // viene deshabilitado para que, sin JavaScript, solo se use el primer día
+      selectorDia.addEventListener('change', function () { llenarHoras(); });
+      if (selectorHora) { selectorHora.addEventListener('change', actualizarResumen); }
+      var fecha = conservar && conservar.fecha;
+      if (fecha && dias.some(function (d) { return d.fecha === fecha; })) { selectorDia.value = fecha; }
+      llenarHoras(conservar && conservar.hora);
+    }
+    alternar();
   }
-  if (selectorHora) { selectorHora.addEventListener('change', actualizarResumen); }
 
   form.querySelectorAll('input[name="tipo_entrega"]').forEach(function (radio) {
     radio.addEventListener('change', alternar);
   });
-  alternar();
+
+  window.reiniciarAgenda = iniciar;
+  iniciar();
 })();

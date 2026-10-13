@@ -3,13 +3,18 @@ from datetime import datetime, time, timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.conf import settings
 from django.contrib.messages import get_messages
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.db.models import F
 from django.test import TestCase
 from django.urls import reverse
 from django.utils.html import escapejs
 from django.utils import timezone
 
+from . import pedidos
+from .views import DisponibilidadInvalida
 from .disponibilidad import esta_disponible, proxima_disponibilidad, texto_proxima
 from .disponibilidad import resumen as resumen_de_disponibilidad
 from .models import Categoria, DetallePedido, Pago, Pedido, Producto, Turno, Usuario
@@ -1243,10 +1248,10 @@ class PanelDisponibilidadTests(TestCase):
         hora_rara = self._editar(producto, disponibilidad='horario', turno_desde='25:99', turno_hasta='11:00',
                                  turno_dias=['0'])
 
-        self.assertIn('indica la hora', self._mensajes(sin_horas))
+        self.assertIn('Indica la hora', self._mensajes(sin_horas))
         self.assertIn('no pueden ser iguales', self._mensajes(misma_hora))
         self.assertIn('al menos un día', self._mensajes(sin_dias))
-        self.assertIn('indica la hora', self._mensajes(hora_rara))
+        self.assertIn('Indica la hora', self._mensajes(hora_rara))
         self.assertEqual(list(producto.turnos.all()), [actual])
         self.assertEqual(Turno.objects.count(), 1)
 
@@ -1424,6 +1429,45 @@ class ProductoDetalleTests(TestCase):
         respuesta = self._detalle()
 
         self.assertContains(respuesta, 'Agotado')
+
+    def test_agotado_no_dice_disponible_ahora_aunque_este_en_su_horario(self):
+        Producto.objects.filter(pk=self.producto.pk).update(stock=0)
+
+        dentro = self._detalle(momento=SABADO_10H_TURNOS)    # sábado 10:00, dentro del turno
+        fuera = self._detalle(momento=LUNES_16H_TURNOS)      # lunes 16:00, fuera del turno
+
+        for respuesta in (dentro, fuera):
+            self.assertContains(respuesta, 'Agotado')
+            self.assertNotContains(respuesta, 'Disponible ahora')
+            self.assertNotContains(respuesta, 'No disponible ahora')
+            self.assertContains(respuesta, 'Cuando vuelva a haber stock, se vende en estos horarios')
+            self.assertContains(respuesta, '10:00 a 19:30 · jueves a sábado')
+
+    def test_agotado_sin_turnos_tampoco_afirma_que_se_vende(self):
+        Producto.objects.filter(pk=self.producto.pk).update(stock=0)
+        self.producto.turnos.clear()
+
+        respuesta = self._detalle()
+
+        self.assertContains(respuesta, 'Cuando vuelva a haber stock, se vende todos los días')
+        self.assertNotContains(respuesta, 'Disponible ahora')
+
+    def test_con_stock_sigue_diciendo_disponible_ahora(self):
+        respuesta = self._detalle(momento=SABADO_10H_TURNOS)
+
+        self.assertContains(respuesta, 'Disponible ahora')
+        self.assertNotContains(respuesta, 'Cuando vuelva a haber stock')
+
+    def test_la_pagina_tiene_un_h1_y_el_modal_no(self):
+        pagina = self._detalle(parcial=False).content.decode()
+        modal = self._detalle(parcial=True).content.decode()
+
+        self.assertEqual(pagina.count('<h1'), 1)
+        self.assertRegex(pagina, r'<h1 class="detalle__titulo"[^>]*>Torta Selva Negra</h1>')
+        self.assertIn('<h2 id="detalle-disponibilidad-', pagina)   # los niveles bajan en uno
+        self.assertEqual(modal.count('<h1'), 0)                   # en el modal el h1 es el de /pedir/
+        self.assertRegex(modal, r'<h2 class="detalle__titulo"[^>]*>Torta Selva Negra</h2>')
+        self.assertIn('<h3 id="detalle-disponibilidad-', modal)
 
     def test_las_tarjetas_enlazan_al_detalle_y_traen_el_modal(self):
         for direccion in (reverse('pedir'), reverse('inicio')):
@@ -1704,3 +1748,743 @@ class CompraConTurnosTests(TestCase):
         self._comprar(momento=a_las_3, tipo_entrega='RETIRO')
 
         self.assertEqual(Pedido.objects.count(), 1)
+
+
+TOKEN_REAL = 'a1' * 32    # los tokens reales de Transbank tienen 64 caracteres
+
+
+class ConciliacionWebpayTests(TestCase):
+    """Un pago Webpay y el stock del pedido deben quedar consistentes, llegue cuando llegue la respuesta."""
+
+    def setUp(self):
+        cache.clear()   # la limpieza recuerda las consultas fallidas por un minuto
+        categoria = Categoria.objects.create(nombre='Panes')
+        self.producto = Producto.objects.create(
+            categoria=categoria, nombre='Hogaza', precio=Decimal('1000.00'), stock=10, activo=True,
+        )
+
+    # --- ayudas -------------------------------------------------------------------------------
+    def _reservar(self, cantidad=3, token=TOKEN_REAL):
+        """Lo que deja finalizar_compra al enviar al cliente a Webpay: pedido PENDIENTE y stock reservado."""
+        Producto.objects.filter(pk=self.producto.pk).update(stock=F('stock') - cantidad)
+        pedido = Pedido.objects.create(
+            estado='PENDIENTE', canal='WEB', tipo_entrega='RETIRO', total=Decimal('1000.00') * cantidad,
+        )
+        DetallePedido.objects.create(
+            pedido=pedido, producto=self.producto, cantidad=cantidad,
+            precio_unitario=self.producto.precio, subtotal=Decimal('1000.00') * cantidad,
+        )
+        Pago.objects.create(
+            pedido=pedido, monto=pedido.total, metodo='Webpay Plus', estado='PENDIENTE', codigo_autorizacion=token,
+        )
+        return pedido
+
+    def _envejecer(self, pedido, minutos=25):
+        Pedido.objects.filter(pk=pedido.pk).update(fecha=timezone.now() - timedelta(minutes=minutos))
+
+    def _stock(self):
+        return Producto.objects.get(pk=self.producto.pk).stock
+
+    def _autorizada(self, pedido, monto=None):
+        return {
+            'buy_order': f'ORD-{pedido.pk}', 'response_code': 0, 'status': 'AUTHORIZED',
+            'amount': monto if monto is not None else int(pedido.total),
+            'payment_type_code': 'VD', 'authorization_code': '1415',
+        }
+
+    def _transbank(self, status=None, commit=None, status_error=None, refund_error=None):
+        """Un Transbank simulado. Devuelve el mock para poder revisar qué se le pidió."""
+        tx = mock.MagicMock()
+        tx.status.return_value = status if status is not None else {'status': 'INITIALIZED'}
+        if status_error:
+            tx.status.side_effect = status_error
+        if commit is not None:
+            tx.commit.return_value = commit
+        if refund_error:
+            tx.refund.side_effect = refund_error
+        parche = mock.patch('core.views.obtener_transaccion_webpay', return_value=tx)
+        parche.start()
+        self.addCleanup(parche.stop)
+        return tx
+
+    def _expirar(self):
+        """Lo que pasa cuando alguien entra al sitio después del plazo."""
+        return self.client.get(reverse('carrito'))
+
+    def _retorno(self, token=TOKEN_REAL):
+        return self.client.get(reverse('webpay_confirmar'), {'token_ws': token})
+
+    def _mensajes(self, respuesta):
+        return ' '.join(str(m) for m in get_messages(respuesta.wsgi_request))
+
+    # --- el caso reportado ------------------------------------------------------------------------
+    def test_una_autorizacion_tardia_vuelve_a_reservar_el_stock(self):
+        pedido = self._reservar(3)
+        self.assertEqual(self._stock(), 7)
+        tx = self._transbank(status={'status': 'INITIALIZED'})
+        self._envejecer(pedido)
+        self._expirar()
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))   # expiró y devolvió el stock
+
+        tx.commit.return_value = self._autorizada(pedido)
+        respuesta = self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertRedirects(respuesta, reverse('boleta_simulada', args=[pedido.pk]), fetch_redirect_response=False)
+        self.assertEqual(pedido.estado, 'PAGADO')
+        self.assertEqual(self._stock(), 7)                  # el stock vuelve a quedar reservado
+        self.assertEqual(pedido.pago.estado, 'APROBADO')
+        self.assertEqual(pedido.pago.codigo_autorizacion, '1415')
+
+    def test_una_autorizacion_tardia_sin_stock_se_reembolsa(self):
+        pedido = self._reservar(3)
+        tx = self._transbank(status={'status': 'INITIALIZED'})
+        self._envejecer(pedido)
+        self._expirar()
+        Producto.objects.filter(pk=self.producto.pk).update(stock=1)   # otra persona compró lo que quedaba
+        tx.commit.return_value = self._autorizada(pedido)
+
+        respuesta = self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        tx.refund.assert_called_once_with(TOKEN_REAL, 3000)
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(self._stock(), 1)                  # no se descuenta lo que no hay
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSADO')
+        self.assertIn('Te devolvimos el pago', self._mensajes(respuesta))
+
+    def test_si_el_reembolso_falla_queda_pendiente_y_se_avisa(self):
+        pedido = self._reservar(3)
+        tx = self._transbank(status={'status': 'INITIALIZED'}, refund_error=Exception('sin conexión'))
+        self._envejecer(pedido)
+        self._expirar()
+        Producto.objects.filter(pk=self.producto.pk).update(stock=0)
+        tx.commit.return_value = self._autorizada(pedido)
+
+        respuesta = self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSO_PENDIENTE')
+        self.assertEqual(pedido.pago.codigo_autorizacion, TOKEN_REAL)   # para resolverlo a mano
+        self.assertIn(f'N° {pedido.pk}', self._mensajes(respuesta))
+
+    # --- el retorno -------------------------------------------------------------------------------
+    def test_un_pago_normal_deja_el_pedido_pagado_con_el_stock_reservado(self):
+        pedido = self._reservar(3)
+        self._transbank(commit=self._autorizada(pedido))
+
+        respuesta = self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertRedirects(respuesta, reverse('boleta_simulada', args=[pedido.pk]), fetch_redirect_response=False)
+        self.assertEqual((pedido.estado, self._stock()), ('PAGADO', 7))
+
+    def test_repetir_el_retorno_no_repite_sus_efectos(self):
+        pedido = self._reservar(3)
+        self._transbank(commit=self._autorizada(pedido))
+
+        self._retorno()
+        self._retorno()
+        self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('PAGADO', 7))
+
+    def test_un_monto_distinto_al_del_pedido_no_se_acepta(self):
+        pedido = self._reservar(3)
+        tx = self._transbank(commit=self._autorizada(pedido, monto=1000))
+
+        self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(self._stock(), 10)                 # el stock reservado se libera
+        tx.refund.assert_called_once_with(TOKEN_REAL, 1000)
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSADO')
+
+    def test_un_rechazo_repetido_no_devuelve_el_stock_dos_veces(self):
+        pedido = self._reservar(3)
+        self._transbank(commit={'buy_order': f'ORD-{pedido.pk}', 'response_code': -1, 'status': 'FAILED'})
+
+        self._retorno()
+        self._retorno()
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))
+        self.assertEqual(pedido.pago.estado, 'RECHAZADO')
+
+    # --- la limpieza consulta antes de cancelar ----------------------------------------------------
+    def test_la_limpieza_consulta_el_estado_real_en_transbank(self):
+        pedido = self._reservar(3)
+        tx = self._transbank(status={'status': 'INITIALIZED'})
+        self._envejecer(pedido)
+
+        self._expirar()
+
+        tx.status.assert_called_once_with(TOKEN_REAL)
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock(), pedido.pago.estado), ('CANCELADO', 10, 'EXPIRADO'))
+
+    def test_si_el_pago_se_autorizo_la_limpieza_lo_concilia_en_vez_de_cancelarlo(self):
+        pedido = self._reservar(3)
+        self._transbank(status=self._autorizada(pedido))   # pagó y cerró la ventana sin volver al sitio
+        self._envejecer(pedido)
+
+        self._expirar()
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('PAGADO', 7))   # el stock no se devuelve
+        self.assertEqual(pedido.pago.estado, 'APROBADO')
+
+    def test_si_transbank_dice_que_fallo_se_cancela(self):
+        pedido = self._reservar(3)
+        self._transbank(status={'status': 'FAILED', 'response_code': -1})
+        self._envejecer(pedido)
+
+        self._expirar()
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))
+
+    def test_si_no_se_puede_consultar_el_pedido_no_se_cancela(self):
+        pedido = self._reservar(3)
+        tx = self._transbank(status_error=Exception('sin conexión'))
+        self._envejecer(pedido)
+
+        self._expirar()
+        self._expirar()   # dentro del minuto: no se vuelve a insistir
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('PENDIENTE', 7))
+        self.assertEqual(tx.status.call_count, 1)
+
+    def test_si_transbank_no_responde_en_un_dia_se_libera_igual(self):
+        pedido = self._reservar(3)
+        self._transbank(status_error=Exception('sin conexión'))
+        self._envejecer(pedido, minutos=25 * 60)
+
+        self._expirar()
+
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))
+
+    def test_un_pedido_reciente_no_se_consulta(self):
+        pedido = self._reservar(3)
+        tx = self._transbank()
+        self._envejecer(pedido, minutos=5)
+
+        self._expirar()
+
+        tx.status.assert_not_called()
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+
+    def test_sin_token_de_transbank_se_cancela_sin_consultar(self):
+        pedido = self._reservar(3, token='')
+        tx = self._transbank()
+        self._envejecer(pedido)
+
+        self._expirar()
+
+        tx.status.assert_not_called()
+        pedido.refresh_from_db()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))
+
+    def test_una_visita_no_consulta_mas_de_tres_pedidos(self):
+        pedidos_pendientes = [self._reservar(1, token=f'{i:02d}' * 32) for i in range(5)]
+        tx = self._transbank(status={'status': 'INITIALIZED'})
+        for pedido in pedidos_pendientes:
+            self._envejecer(pedido)
+
+        self._expirar()
+
+        self.assertEqual(tx.status.call_count, 3)
+        self.assertEqual(Pedido.objects.filter(estado='PENDIENTE').count(), 2)
+
+    # --- otras transiciones -----------------------------------------------------------------------
+    def test_no_se_puede_iniciar_el_pago_de_un_pedido_cancelado(self):
+        pedido = self._reservar(3)
+        tx = self._transbank()
+        pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+
+        respuesta = self.client.get(reverse('iniciar_pago_webpay', args=[pedido.pk]))
+
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        tx.create.assert_not_called()
+
+    def test_si_falla_crear_el_pago_se_libera_el_stock_sin_mostrar_el_error_tecnico(self):
+        tx = self._transbank()
+        tx.create.side_effect = Exception('detalle interno secreto')
+        self.client.post(reverse('carrito_agregar'), {'producto_id': self.producto.pk})
+
+        respuesta = self.client.post(
+            reverse('finalizar_compra'), {'tipo_entrega': 'RETIRO', 'metodo_pago': 'WEBPAY'},
+        )
+
+        pedido = Pedido.objects.get()
+        self.assertEqual((pedido.estado, self._stock()), ('CANCELADO', 10))
+        self.assertEqual(pedido.pago.estado, 'FALLIDO')
+        mensajes = self._mensajes(respuesta)
+        self.assertIn('No pudimos conectar con Transbank', mensajes)
+        self.assertNotIn('secreto', mensajes)
+
+    def test_cancelar_un_pedido_no_pendiente_no_hace_nada(self):
+        pedido = self._reservar(3)
+        pedidos.aprobar_pago(pedido.pk, 3000, 'Webpay Plus (Débito)', '1415')
+
+        cancelado = pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+
+        pedido.refresh_from_db()
+        self.assertFalse(cancelado)
+        self.assertEqual((pedido.estado, self._stock()), ('PAGADO', 7))
+
+
+class ProductoYDisponibilidadAtomicosTests(TestCase):
+    """Un producto y su disponibilidad se guardan juntos o no se guarda nada."""
+
+    def setUp(self):
+        self.admin = Usuario.objects.create_user('admin-atomico', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(self.admin)
+        self.categoria = Categoria.objects.create(nombre='Panadería')
+
+    def _crear(self, **disponibilidad):
+        datos = {'nombre': 'Quiche nueva', 'categoria_id': self.categoria.pk, 'precio': '3500', 'stock': '5'}
+        datos.update(disponibilidad)
+        return self.client.post(reverse('crear_producto'), datos)
+
+    def _producto(self):
+        return Producto.objects.create(
+            categoria=self.categoria, nombre='Pan', precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+
+    def _editar(self, producto, **extra):
+        datos = {'nombre': 'Pan renombrado', 'categoria_id': self.categoria.pk, 'precio': '9999', 'stock': '77',
+                 'activo': ''}
+        datos.update(extra)
+        return self.client.post(reverse('editar_producto', args=[producto.pk]), datos)
+
+    def _mensajes(self, respuesta):
+        return [str(m) for m in get_messages(respuesta.wsgi_request)]
+
+    # --- crear ------------------------------------------------------------------------------------
+    def test_un_horario_invalido_no_crea_el_producto(self):
+        casos = {
+            'misma hora': dict(turno_desde='10:00', turno_hasta='10:00', turno_dias=['0']),
+            'sin horas': dict(turno_dias=['0']),
+            'hora inexistente': dict(turno_desde='25:99', turno_hasta='11:00', turno_dias=['0']),
+            'sin días': dict(turno_desde='10:00', turno_hasta='11:00'),
+        }
+        for nombre, datos in casos.items():
+            with self.subTest(caso=nombre):
+                self.client.logout()                       # sesión nueva: los avisos no se acumulan
+                self.client.force_login(self.admin)
+                respuesta = self._crear(disponibilidad='horario', **datos)
+
+                mensajes = self._mensajes(respuesta)
+                self.assertFalse(Producto.objects.exists())
+                self.assertFalse(Turno.objects.exists())
+                self.assertEqual(len(mensajes), 1)                      # solo el error, no un "agregado"
+                self.assertIn('No se creó el producto', mensajes[0])
+
+    def test_un_nombre_de_turno_repetido_con_otro_horario_no_crea_el_producto(self):
+        Turno.objects.create(nombre='Tarde', hora_inicio=time(14, 0), hora_fin=time(19, 0))
+
+        respuesta = self._crear(disponibilidad='horario', turno_nombre='tarde', turno_desde='10:00',
+                                turno_hasta='11:00', turno_dias=['0'])
+
+        self.assertFalse(Producto.objects.exists())
+        self.assertEqual(Turno.objects.count(), 1)
+        self.assertIn('Ya existe un turno llamado', self._mensajes(respuesta)[0])
+
+    def test_un_horario_valido_crea_el_producto_con_su_turno(self):
+        respuesta = self._crear(disponibilidad='horario', turno_desde='10:00', turno_hasta='13:00',
+                                turno_dias=['5', '6'])
+
+        producto = Producto.objects.get(nombre='Quiche nueva')
+        self.assertEqual(producto.turnos.get().dias_texto, 'sábado y domingo')
+        self.assertIn('agregado exitosamente', self._mensajes(respuesta)[0])
+
+    def test_todo_el_dia_crea_el_producto_sin_turnos(self):
+        respuesta = self._crear(disponibilidad='todo_el_dia')
+
+        self.assertEqual(Producto.objects.get(nombre='Quiche nueva').turnos.count(), 0)
+        self.assertEqual(len(self._mensajes(respuesta)), 1)
+
+    def test_si_algo_falla_al_aplicar_la_disponibilidad_no_queda_el_producto(self):
+        with mock.patch('core.views._aplicar_disponibilidad', side_effect=DisponibilidadInvalida('falló')):
+            respuesta = self._crear(disponibilidad='horario', turno_desde='10:00', turno_hasta='13:00',
+                                    turno_dias=['0'])
+
+        self.assertFalse(Producto.objects.exists())         # la transacción deshizo la creación
+        self.assertIn('No se creó el producto', self._mensajes(respuesta)[0])
+
+    # --- editar -----------------------------------------------------------------------------------
+    def test_un_horario_invalido_no_cambia_nada_del_producto(self):
+        producto = self._producto()
+        turno = Turno.objects.create(nombre='Tarde', hora_inicio=time(14, 0), hora_fin=time(19, 0))
+        producto.turnos.set([turno])
+
+        respuesta = self._editar(producto, disponibilidad='horario', turno_desde='10:00', turno_hasta='10:00',
+                                 turno_dias=['0'])
+
+        producto.refresh_from_db()
+        self.assertEqual((producto.nombre, producto.precio, producto.stock, producto.activo),
+                         ('Pan', Decimal('1000.00'), 5, True))   # ni el nombre, ni el precio, ni el estado
+        self.assertEqual(list(producto.turnos.all()), [turno])
+        mensajes = self._mensajes(respuesta)
+        self.assertEqual(len(mensajes), 1)
+        self.assertIn('No se guardó ningún cambio', mensajes[0])
+
+    def test_si_algo_falla_al_aplicar_al_editar_se_deshace_todo(self):
+        producto = self._producto()
+
+        with mock.patch('core.views._aplicar_disponibilidad', side_effect=DisponibilidadInvalida('falló')):
+            self._editar(producto, disponibilidad='horario', turno_desde='10:00', turno_hasta='13:00',
+                         turno_dias=['0'])
+
+        producto.refresh_from_db()
+        self.assertEqual((producto.nombre, producto.precio, producto.stock), ('Pan', Decimal('1000.00'), 5))
+
+    def test_editar_con_un_horario_valido_cambia_todo_junto(self):
+        producto = self._producto()
+
+        self._editar(producto, activo='true', disponibilidad='horario', turno_desde='10:00', turno_hasta='13:00',
+                     turno_dias=['5', '6'])
+
+        producto.refresh_from_db()
+        self.assertEqual((producto.nombre, producto.precio, producto.stock), ('Pan renombrado', Decimal('9999'), 77))
+        self.assertEqual(producto.turnos.get().horario_texto, '10:00 a 13:00')
+
+
+class TurnosDesactivadosTests(TestCase):
+    """Configurar un producto no debe cambiar la disponibilidad de otro por reactivar un turno compartido."""
+
+    LUNES_16H = datetime(2026, 10, 12, 16, 0, tzinfo=ZONA_HORARIA)
+    TODOS_LOS_DIAS = [str(i) for i in range(7)]
+
+    def setUp(self):
+        self.admin = Usuario.objects.create_user('admin-turnos-4', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(self.admin)
+        self.categoria = Categoria.objects.create(nombre='Panadería')
+        self.a = self._producto('A')
+        self.b = self._producto('B')
+
+    def _producto(self, nombre):
+        return Producto.objects.create(
+            categoria=self.categoria, nombre=nombre, precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+
+    def _turno_desactivado(self, nombre='Viejo', **campos):
+        datos = dict(nombre=nombre, hora_inicio=time(10, 0), hora_fin=time(13, 0), activo=False)
+        datos.update(campos)
+        return Turno.objects.create(**datos)
+
+    def _configurar_a(self, **extra):
+        datos = {'nombre': 'A', 'categoria_id': self.categoria.pk, 'precio': '1000', 'stock': '5',
+                 'activo': 'true', 'disponibilidad': 'horario', 'turno_desde': '10:00', 'turno_hasta': '13:00',
+                 'turno_dias': self.TODOS_LOS_DIAS}
+        datos.update(extra)
+        return self.client.post(reverse('editar_producto', args=[self.a.pk]), datos)
+
+    def _b_disponible_el_lunes_16h(self):
+        # Como el catálogo: solo cuentan los turnos activos.
+        return esta_disponible(list(self.b.turnos.filter(activo=True)), self.LUNES_16H)
+
+    def _mensajes(self, respuesta):
+        return [str(m) for m in get_messages(respuesta.wsgi_request)]
+
+    def test_configurar_a_no_cambia_la_disponibilidad_de_b(self):
+        """El caso reportado: B estaba disponible y dejaba de estarlo sin haberlo editado."""
+        viejo = self._turno_desactivado()
+        self.b.turnos.set([viejo])
+        self.assertTrue(self._b_disponible_el_lunes_16h())
+
+        self._configurar_a()
+
+        viejo.refresh_from_db()
+        self.assertFalse(viejo.activo)                       # el turno de B sigue desactivado
+        self.assertTrue(self._b_disponible_el_lunes_16h())   # y B sigue vendiéndose todo el día
+
+    def test_a_recibe_un_turno_propio_cuando_el_igual_esta_desactivado_y_en_uso(self):
+        viejo = self._turno_desactivado(nombre='10:00 a 13:00 (todos los días)')
+        self.b.turnos.set([viejo])
+
+        self._configurar_a()
+
+        nuevo = self.a.turnos.get()
+        self.assertNotEqual(nuevo.pk, viejo.pk)
+        self.assertTrue(nuevo.activo)
+        self.assertEqual(nuevo.nombre, '10:00 a 13:00 (todos los días) #2')   # no choca con el nombre existente
+        self.assertEqual(list(self.b.turnos.all()), [viejo])
+
+    def test_un_turno_desactivado_y_sin_uso_se_reutiliza(self):
+        viejo = self._turno_desactivado()
+
+        self._configurar_a(turno_nombre='Viejo')
+
+        viejo.refresh_from_db()
+        self.assertTrue(viejo.activo)
+        self.assertEqual(self.a.turnos.get(), viejo)
+        self.assertEqual(Turno.objects.count(), 1)           # no se duplicó
+
+    def test_con_el_nombre_de_un_turno_desactivado_en_uso_avisa_y_no_cambia_nada(self):
+        viejo = self._turno_desactivado()
+        self.b.turnos.set([viejo])
+
+        respuesta = self._configurar_a(turno_nombre='Viejo')
+
+        viejo.refresh_from_db()
+        self.assertFalse(viejo.activo)
+        self.assertEqual(self.a.turnos.count(), 0)
+        self.assertEqual(Turno.objects.count(), 1)
+        mensaje = self._mensajes(respuesta)[0]
+        self.assertIn('turno desactivado llamado "Viejo" que usan otros productos', mensaje)
+        self.assertIn('No se guardó ningún cambio', mensaje)
+
+    def test_un_turno_activo_igual_se_sigue_compartiendo(self):
+        activo = Turno.objects.create(nombre='Mañanas', hora_inicio=time(10, 0), hora_fin=time(13, 0))
+        self.b.turnos.set([activo])
+
+        self._configurar_a()
+
+        self.assertEqual(self.a.turnos.get(), activo)
+        self.assertEqual(Turno.objects.count(), 1)
+
+    def test_si_hay_uno_activo_y_otro_desactivado_se_elige_el_activo(self):
+        self._turno_desactivado(nombre='Viejo')
+        activo = Turno.objects.create(nombre='Vigente', hora_inicio=time(10, 0), hora_fin=time(13, 0))
+        self.b.turnos.set([Turno.objects.get(nombre='Viejo')])
+
+        self._configurar_a()
+
+        self.assertEqual(self.a.turnos.get(), activo)
+        self.assertFalse(Turno.objects.get(nombre='Viejo').activo)
+
+
+class TurnosQueCruzanLaMedianocheTests(TestCase):
+    """Un turno que cruza la medianoche pertenece al día en que EMPIEZA: su madrugada es del día anterior.
+
+    Estas pruebas usan turnos de UN solo día; con los siete días activos el error no se nota.
+    """
+
+    LUNES, MARTES, DOMINGO = 12, 13, 11   # octubre de 2026
+
+    def _momento(self, dia, hora, minuto=0):
+        return datetime(2026, 10, dia, hora, minuto, tzinfo=ZONA_HORARIA)
+
+    def _solo_lunes(self):
+        return _turno_sin_guardar('Lunes noche', time(18, 0), time(12, 0), dias=(0,))     # 18:00 a 12:00
+
+    def _solo_domingo(self):
+        return _turno_sin_guardar('Domingo noche', time(22, 0), time(2, 0), dias=(6,))    # 22:00 a 02:00
+
+    # --- el modelo --------------------------------------------------------------------------------
+    def test_el_caso_reportado_turno_solo_lunes_de_18_a_12(self):
+        turno = self._solo_lunes()
+
+        self.assertFalse(turno.rige_en(self._momento(self.LUNES, 10)))    # lunes por la mañana: NO (es del domingo)
+        self.assertTrue(turno.rige_en(self._momento(self.LUNES, 18)))     # empieza el lunes a las 18:00
+        self.assertTrue(turno.rige_en(self._momento(self.LUNES, 23, 59)))
+        self.assertTrue(turno.rige_en(self._momento(self.MARTES, 0, 0)))  # sigue de madrugada
+        self.assertTrue(turno.rige_en(self._momento(self.MARTES, 10)))    # martes por la mañana: SÍ (viene del lunes)
+        self.assertFalse(turno.rige_en(self._momento(self.MARTES, 12)))   # el término no cuenta
+        self.assertFalse(turno.rige_en(self._momento(self.MARTES, 20)))   # martes por la noche: NO (no empieza ese día)
+
+    def test_la_madrugada_del_lunes_pertenece_al_turno_del_domingo(self):
+        turno = self._solo_domingo()
+
+        self.assertTrue(turno.rige_en(self._momento(self.DOMINGO, 23)))
+        self.assertFalse(turno.rige_en(self._momento(self.DOMINGO, 1)))   # domingo de madrugada: viene del sábado
+        self.assertTrue(turno.rige_en(self._momento(self.LUNES, 1)))      # la semana da la vuelta: domingo -> lunes
+        self.assertFalse(turno.rige_en(self._momento(self.LUNES, 3)))
+
+    def test_un_turno_que_no_cruza_la_medianoche_no_cambia(self):
+        turno = _turno_sin_guardar('Mañana', time(9, 0), time(14, 0), dias=(0,))
+
+        self.assertTrue(turno.rige_en(self._momento(self.LUNES, 10)))
+        self.assertFalse(turno.rige_en(self._momento(self.MARTES, 10)))
+        self.assertFalse(turno.rige_en(self._momento(self.LUNES, 14)))
+        self.assertFalse(turno.cruza_medianoche)
+        self.assertTrue(self._solo_lunes().cruza_medianoche)
+
+    def test_con_los_siete_dias_el_resultado_es_el_de_siempre(self):
+        todos = _turno_sin_guardar('Noche', time(18, 0), time(12, 0))
+
+        for dia, hora in ((self.LUNES, 10), (self.LUNES, 20), (self.MARTES, 3), (self.MARTES, 14)):
+            with self.subTest(dia=dia, hora=hora):
+                self.assertEqual(todos.rige_en(self._momento(dia, hora)), hora < 12 or hora >= 18)
+
+    # --- la agenda --------------------------------------------------------------------------------
+    def test_la_agenda_ofrece_la_madrugada_en_el_dia_siguiente(self):
+        turno = self._solo_lunes()
+        ahora_ = datetime(2026, 10, 5, 8, 0, tzinfo=ZONA_HORARIA)   # una semana antes: no cuenta la anticipación
+
+        lunes = franjas_del_dia(datetime(2026, 10, 12).date(), ahora_, [[turno]])
+        martes = franjas_del_dia(datetime(2026, 10, 13).date(), ahora_, [[turno]])
+
+        self.assertEqual(lunes, ['18:00', '18:30', '19:00'])                  # la tarde, hasta que cierra la tienda
+        self.assertEqual(martes[0], '09:00')                                   # la mañana del martes SÍ
+        self.assertEqual(martes[-1], '11:30')                                  # y termina a las 12:00
+        self.assertNotIn('18:00', martes)                                      # la tarde del martes NO
+
+    def test_la_mañana_del_lunes_no_se_ofrece(self):
+        turno = self._solo_lunes()
+        ahora_ = datetime(2026, 10, 5, 8, 0, tzinfo=ZONA_HORARIA)
+
+        lunes = franjas_del_dia(datetime(2026, 10, 12).date(), ahora_, [[turno]])
+
+        self.assertNotIn('10:00', lunes)
+        self.assertNotIn('09:00', lunes)
+
+    def test_los_dias_ofrecidos_incluyen_el_dia_de_la_madrugada(self):
+        turno = self._solo_lunes()
+        ahora_ = datetime(2026, 10, 12, 8, 0, tzinfo=ZONA_HORARIA)   # lunes temprano
+
+        dias = dias_de_retiro(ahora_, [[turno]])
+
+        self.assertEqual([d['fecha'] for d in dias][:3], ['2026-10-12', '2026-10-13', '2026-10-19'])
+
+    def test_validar_acepta_la_madrugada_del_dia_siguiente_y_rechaza_la_del_mismo_dia(self):
+        turno = self._solo_lunes()
+        ahora_ = datetime(2026, 10, 12, 8, 0, tzinfo=ZONA_HORARIA)   # lunes temprano: ambos días están en la ventana
+
+        _, _, martes = validar_retiro('2026-10-13', '10:00', ahora_, [[turno]])
+        _, _, lunes = validar_retiro('2026-10-12', '10:00', ahora_, [[turno]])
+
+        self.assertIsNone(martes)
+        self.assertIn('no está disponible para todos los productos', lunes)
+
+    # --- la disponibilidad que ve el cliente ----------------------------------------------------------
+    def test_el_producto_esta_disponible_el_martes_por_la_mañana_con_un_turno_de_lunes(self):
+        turno = self._solo_lunes()
+
+        self.assertTrue(esta_disponible([turno], self._momento(self.MARTES, 10)))
+        self.assertFalse(esta_disponible([turno], self._momento(self.LUNES, 10)))
+        # y la próxima apertura desde el martes por la tarde es el lunes siguiente a las 18:00
+        proxima = proxima_disponibilidad([turno], self._momento(self.MARTES, 15))
+        self.assertEqual(proxima, self._momento(19, 18))
+
+    def test_el_modal_avisa_que_termina_al_dia_siguiente(self):
+        categoria = Categoria.objects.create(nombre='Panadería')
+        producto = Producto.objects.create(
+            categoria=categoria, nombre='Pan de noche', precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+        turno = Turno.objects.create(
+            nombre='Noche', hora_inicio=time(18, 0), hora_fin=time(12, 0),
+            martes=False, miercoles=False, jueves=False, viernes=False, sabado=False, domingo=False,
+        )
+        producto.turnos.set([turno])
+
+        respuesta = self.client.get(reverse('producto_detalle', args=[producto.pk]), {'parcial': '1'})
+
+        self.assertContains(respuesta, 'termina a las 12:00 del día siguiente')
+
+
+class CarritoSeMantieneAlDiaTests(TestCase):
+    """El carrito entrega al navegador lo que necesita para recalcularse tras cada cambio."""
+
+    def setUp(self):
+        categoria = Categoria.objects.create(nombre='Salados')
+        self.quiche = Producto.objects.create(
+            categoria=categoria, nombre='Quiche', precio=Decimal('3500.00'), stock=5, activo=True,
+        )
+        self.alfajor = Producto.objects.create(
+            categoria=categoria, nombre='Alfajor', precio=Decimal('1100.00'), stock=5, activo=True,
+        )
+        # Sin ningún horario en común: la quiche es de lunes a sábado y el alfajor solo de domingo
+        # después de que la tienda cierra, así que ninguna franja sirve para los dos.
+        self.quiche.turnos.set([Turno.objects.create(
+            nombre='Almuerzo', hora_inicio=time(12, 0), hora_fin=time(15, 0), domingo=False,
+        )])
+        self.alfajor.turnos.set([Turno.objects.create(
+            nombre='Domingo tarde', hora_inicio=time(16, 0), hora_fin=time(18, 0),
+            lunes=False, martes=False, miercoles=False, jueves=False, viernes=False, sabado=False,
+        )])
+
+    def _agregar(self, *productos):
+        for producto in productos:
+            self.client.post(reverse('carrito_agregar'), {'producto_id': producto.pk})
+
+    def _boton(self, html):
+        inicio = html.index('<button class="boton boton--primario" type="submit"')
+        return html[inicio:html.index('</button>', inicio)]
+
+    def test_con_productos_incompatibles_el_boton_va_bloqueado_y_marcado_por_el_servidor(self):
+        self._agregar(self.quiche, self.alfajor)
+
+        html = self.client.get(reverse('carrito')).content.decode()
+
+        boton = self._boton(html)
+        self.assertIn('disabled', boton)
+        self.assertIn('data-bloqueo-servidor="1"', boton)   # lo lee zona_despacho.js cada vez
+        self.assertIn('en que se vendan todos los productos de tu carrito a la vez', html)
+
+    def test_al_quitar_el_incompatible_el_servidor_ya_no_bloquea(self):
+        self._agregar(self.quiche, self.alfajor)
+        self.client.post(reverse('carrito_quitar', args=[self.alfajor.pk]))
+
+        html = self.client.get(reverse('carrito')).content.decode()
+
+        boton = self._boton(html)
+        self.assertNotIn('disabled', boton)
+        self.assertNotIn('data-bloqueo-servidor', boton)
+        self.assertNotIn('en que se vendan todos los productos de tu carrito a la vez', html)
+
+    def test_la_pagina_carga_el_script_que_mantiene_el_carrito_al_dia(self):
+        self._agregar(self.quiche)
+
+        html = self.client.get(reverse('carrito')).content.decode()
+
+        self.assertIn('carrito_estado.js', html)
+        self.assertIn('id="agenda-panel"', html)              # lo que se reemplaza
+        self.assertIn('compra__tabla-contenedor', html)
+
+    def test_cada_cambio_avisa_al_navegador_con_un_evento(self):
+        js = (settings.BASE_DIR / 'core/static/js/carrito_ajax.js').read_text(encoding='utf-8')
+
+        self.assertIn("new CustomEvent('carrito:cambio'", js)
+
+
+class AvisoDeBusquedaFallidaTests(TestCase):
+    """Si una búsqueda en vivo falla, la página debe poder avisarlo y ofrecer reintentar."""
+
+    def setUp(self):
+        categoria = Categoria.objects.create(nombre='Panadería')
+        Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+
+    def _js(self):
+        return (settings.BASE_DIR / 'core/static/js/busqueda_catalogo.js').read_text(encoding='utf-8')
+
+    def test_la_pagina_trae_el_aviso_oculto_con_su_boton_de_reintentar(self):
+        html = self.client.get(reverse('pedir')).content.decode()
+
+        aviso = html[html.index('id="buscador-aviso"'):]
+        aviso = aviso[:aviso.index('</div>')]
+        self.assertIn('role="alert"', aviso)
+        self.assertIn('hidden', aviso)                     # oculto mientras todo funciona
+        self.assertIn('data-reintentar', aviso)
+        self.assertIn('Reintentar', aviso)
+
+    def test_el_aviso_no_viaja_en_la_respuesta_parcial(self):
+        # La zona que se reemplaza al buscar no debe duplicar el aviso, que vive fuera de ella.
+        respuesta = self.client.get(reverse('pedir'), {'q': 'marraq', 'parcial': '1'})
+
+        self.assertNotContains(respuesta, 'buscador-aviso')
+
+    def test_el_script_distingue_lo_mostrado_de_lo_intentado(self):
+        js = self._js()
+
+        self.assertIn('var mostrada', js)                  # la búsqueda a la que corresponden los resultados
+        self.assertIn("setAttribute('data-desactualizado', 'true')", js)
+        self.assertIn('buscar(true)', js)                  # reintentar repite aunque el texto sea el mismo
+        self.assertIn("addEventListener('online'", js)     # y reintenta solo al volver la conexión
+
+    def test_los_resultados_desactualizados_se_ven_apagados(self):
+        css = (settings.BASE_DIR / 'core/static/css/estilo.css').read_text(encoding='utf-8')
+
+        self.assertIn('#resultados[data-desactualizado="true"]', css)
+        self.assertIn('.buscador__aviso', css)

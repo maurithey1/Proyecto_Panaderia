@@ -1006,8 +1006,11 @@
     const desde = zona.querySelector('input[name="turno_desde"]').value;
     const hasta = zona.querySelector('input[name="turno_hasta"]').value;
     const dias = Array.from(zona.querySelectorAll('input[name="turno_dias"]:checked')).map(function (c) { return Number(c.value); });
-    zona.querySelector('[data-resumen]').textContent =
-      'Se venderá de ' + (desde || '--:--') + ' a ' + (hasta || '--:--') + ' · ' + textoDeDias(dias) + '.';
+    // Si el término es anterior al inicio, el turno cruza la medianoche y termina al día siguiente.
+    const cruza = desde && hasta && hasta < desde;
+    zona.querySelector('[data-resumen]').textContent = cruza
+      ? 'Se venderá desde las ' + desde + ' hasta las ' + hasta + ' del día siguiente · empieza ' + textoDeDias(dias) + '.'
+      : 'Se venderá de ' + (desde || '--:--') + ' a ' + (hasta || '--:--') + ' · ' + textoDeDias(dias) + '.';
   }
 
   // Rellena la disponibilidad según el producto: vacío = todo el día; objeto = su turno.
