@@ -1,4 +1,6 @@
-from django.urls import path
+from django.urls import path, include
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib.auth import views as auth_views
 from . import views
 
@@ -28,6 +30,8 @@ urlpatterns = [
     path('panel-admin/productos/crear/', views.crear_producto, name='crear_producto'),
     path('panel-admin/productos/editar/<int:pk>/', views.editar_producto, name='editar_producto'),
     path('panel-admin/productos/eliminar/<int:pk>/', views.eliminar_producto, name='eliminar_producto'),
+    path('panel-admin/productos/produccion/<int:pk>/', views.registrar_produccion, name='registrar_produccion'),
+    path('panel-admin/categorias/crear/', views.crear_categoria, name='crear_categoria'),
     path('pos/', views.inicio_cajero, name='inicio_cajero'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),

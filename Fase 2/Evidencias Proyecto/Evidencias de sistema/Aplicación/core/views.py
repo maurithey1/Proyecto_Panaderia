@@ -21,7 +21,7 @@ from transbank.common.integration_type import IntegrationType
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria
 )
 from .templatetags.tienda import TIENDA
 from django.http import JsonResponse
@@ -957,43 +957,16 @@ def admin_required(view_func):
 @admin_required
 def inicio_admin(request):
     """
-    Vista principal del Panel de Administración.
-    Muestra la gestión de productos/insumos en la parte superior,
-    seguido de indicadores de stock, proyecciones de ventas y precios de materias primas.
+    Vista principal del Panel de Administración (Dashboard).
+    Muestra resúmenes de ventas, gráficos e indicadores clave.
     """
-    # Consulta de insumos de materia prima para la tabla CRUD
-    insumos = Insumo.objects.all().order_by('codigo', 'nombre')
-
-    # Calcular próximo ID sugerido (ej: NI007)
-    ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
-    siguiente_id = 'NI001'
-    if ultimo and ultimo.codigo.startswith('NI'):
-        try:
-            num = int(ultimo.codigo.replace('NI', '')) + 1
-            siguiente_id = f'NI{num:03d}'
-        except ValueError:
-            siguiente_id = f'NI{insumos.count() + 1:03d}'
-
-    # Consulta de productos de venta al público para la tabla CRUD
-    todos_los_productos = (
-        Producto.objects.select_related('categoria').prefetch_related('turnos')
-        .order_by('categoria__nombre', 'nombre')
-    )
-    categorias_productos = Categoria.objects.all().order_by('nombre')
-
-    # Consulta de productos con stock actual
+    # Productos activos para el resumen de stock del dashboard
     productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
     
-    # Consulta de insumos/materias primas y sus precios de proveedores
+    # Tarifas de proveedores para la tarjeta de comparativo de materias primas
     tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
 
     contexto = {
-        'insumos': insumos,
-        'siguiente_id': siguiente_id,
-        'todos_los_productos': todos_los_productos,
-        'categorias_productos': categorias_productos,
-        'turnos_disponibles': Turno.objects.filter(activo=True),
-        'dias_semana': list(zip('LMXJVSD', [d.capitalize() for d in Turno.NOMBRES_DIAS])),
         'productos_stock': productos_stock,
         'tarifas_proveedores': tarifas_proveedores,
     }
@@ -1120,10 +1093,33 @@ def eliminar_personal(request, pk):
 @admin_required
 def gestion_inventario(request):
     """
-    Redirige al inicio del panel de administración (inicio_admin),
-    donde el CRUD de gestión de productos e insumos se encuentra centralizado.
+    Vista independiente para la gestión de insumos, materias primas y productos.
     """
-    return redirect('inicio_admin')
+    insumos = Insumo.objects.all().order_by('codigo', 'nombre')
+
+    # Calcular próximo ID sugerido (ej: NI007)
+    ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
+    siguiente_id = 'NI001'
+    if ultimo and ultimo.codigo.startswith('NI'):
+        try:
+            num = int(ultimo.codigo.replace('NI', '')) + 1
+            siguiente_id = f'NI{num:03d}'
+        except ValueError:
+            siguiente_id = f'NI{insumos.count() + 1:03d}'
+
+    todos_los_productos = (
+        Producto.objects.select_related('categoria').prefetch_related('turnos')
+        .order_by('categoria__nombre', 'nombre')
+    )
+    categorias_productos = Categoria.objects.all().order_by('nombre')
+
+    contexto = {
+        'insumos': insumos,
+        'siguiente_id': siguiente_id,
+        'todos_los_productos': todos_los_productos,
+        'categorias_productos': categorias_productos,
+    }
+    return render(request, 'core/tabla_crud_insumos.html', contexto)
 
 
 @admin_required
@@ -1351,7 +1347,7 @@ def _guardar_disponibilidad_del_producto(request, producto):
 @require_POST
 def crear_producto(request):
     """Crea un nuevo producto para el catálogo de venta de la panadería."""
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     nombre = request.POST.get('nombre', '').strip()
     categoria_id = request.POST.get('categoria_id')
     precio = request.POST.get('precio', 0)
@@ -1359,6 +1355,7 @@ def crear_producto(request):
     stock_critico = request.POST.get('stock_critico', 10)
     unidad_medida = request.POST.get('unidad_medida', 'unid')
     descripcion = request.POST.get('descripcion', '').strip()
+    imagen_url = request.POST.get('imagen_url', '').strip()  # Captura la imagen
 
     if not nombre or not categoria_id:
         messages.error(request, 'El nombre y la categoría del producto son obligatorios.')
@@ -1389,6 +1386,7 @@ def crear_producto(request):
         stock_critico=stock_critico,
         unidad_medida=unidad_medida,
         descripcion=descripcion,
+        imagen_url=imagen_url,
         activo=True
     )
     _guardar_disponibilidad_del_producto(request, producto)
@@ -1400,7 +1398,7 @@ def crear_producto(request):
 @require_POST
 def editar_producto(request, pk):
     """Actualiza la información de un producto de venta existente."""
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     producto = get_object_or_404(Producto, pk=pk)
 
     nombre = request.POST.get('nombre', '').strip()
@@ -1410,6 +1408,7 @@ def editar_producto(request, pk):
     stock_critico = request.POST.get('stock_critico', producto.stock_critico)
     unidad_medida = request.POST.get('unidad_medida', producto.unidad_medida)
     descripcion = request.POST.get('descripcion', '').strip()
+    imagen_url = request.POST.get('imagen_url', '').strip()  # Captura la imagen
     activo = request.POST.get('activo') in ['1', 'true', 'on', True]
 
     if not nombre:
@@ -1437,11 +1436,39 @@ def editar_producto(request, pk):
     producto.nombre = nombre
     producto.unidad_medida = unidad_medida
     producto.descripcion = descripcion
+    producto.imagen_url = imagen_url
     producto.activo = activo
     producto.save()
     _guardar_disponibilidad_del_producto(request, producto)
 
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
+    return redirect(next_url)
+
+@admin_required
+@require_POST
+def registrar_produccion(request, pk):
+    """
+    HU-EP003-001: Registra la producción diaria/hornada horneada.
+    Suma la cantidad al stock del producto y registra el historial en ProduccionDiaria.
+    """
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
+    producto = get_object_or_404(Producto, pk=pk)
+    cantidad = _entero_o_none(request.POST.get('cantidad', 0))
+
+    if cantidad and cantidad > 0:
+        with transaction.atomic():
+            producto.stock += cantidad
+            producto.save(update_fields=['stock'])
+
+            ProduccionDiaria.objects.create(
+                producto=producto,
+                cantidad=cantidad,
+                responsable=request.user
+            )
+        messages.success(request, f'¡Hornada registrada! Se sumaron +{cantidad} un. a "{producto.nombre}". Stock actualizado: {producto.stock}.')
+    else:
+        messages.error(request, 'Por favor, ingresa una cantidad horneada válida mayor a 0.')
+
     return redirect(next_url)
 
 
@@ -1460,6 +1487,32 @@ def eliminar_producto(request, pk):
     else:
         producto.delete()
         messages.warning(request, f'El producto "{nombre}" ha sido eliminado del catálogo.')
+    return redirect(next_url)
+
+# core/views.py
+
+@admin_required
+@require_POST
+def crear_categoria(request):
+    """Crea una nueva categoría de productos desde el panel de administración."""
+    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
+    nombre = request.POST.get('nombre', '').strip()
+    descripcion = request.POST.get('descripcion', '').strip()
+
+    if not nombre:
+        messages.error(request, 'El nombre de la categoría es obligatorio.')
+        return redirect(next_url)
+
+    categoria, creada = Categoria.objects.get_or_create(
+        nombre__iexact=nombre,
+        defaults={'nombre': nombre, 'descripcion': descripcion}
+    )
+
+    if creada:
+        messages.success(request, f'Categoría "{categoria.nombre}" creada exitosamente.')
+    else:
+        messages.warning(request, f'La categoría "{nombre}" ya existía en el catálogo.')
+
     return redirect(next_url)
 
 # ==========================================
