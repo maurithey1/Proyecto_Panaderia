@@ -1,5 +1,6 @@
 import re
 import time
+import unicodedata
 from datetime import timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
@@ -66,8 +67,66 @@ def inicio(request):
     return render(request, 'core/inicio.html', {'productos': productos})
 
 
+BUSQUEDA_MAX_LARGO = 80
+BUSQUEDA_MAX_PALABRAS = 6
+
+
+def _sin_tildes(texto):
+    """Minúsculas y sin tildes ('Berlinés' -> 'berlines'), para buscar como escribe la gente."""
+    descompuesto = unicodedata.normalize('NFD', texto)
+    return ''.join(c for c in descompuesto if unicodedata.category(c) != 'Mn').casefold()
+
+
+def _palabras(texto):
+    """Palabras de un texto sin tildes ni mayúsculas: 'Pan de Molde' -> ['pan', 'de', 'molde']."""
+    return re.findall(r'[a-z0-9]+', _sin_tildes(texto))
+
+
+def _posicion_de(palabra_buscada, palabras):
+    """Índice de la primera palabra que EMPIEZA con lo buscado, o None.
+
+    Se compara por inicio de palabra: 'pan' calza con 'pan' y 'panadería', pero no con
+    'empanada'. También acepta el plural sencillo ('panes' -> 'pan').
+    """
+    formas = {palabra_buscada}
+    for sufijo in ('es', 's'):
+        if palabra_buscada.endswith(sufijo) and len(palabra_buscada) - len(sufijo) >= 3:
+            formas.add(palabra_buscada[:-len(sufijo)])
+    for indice, palabra in enumerate(palabras):
+        if any(palabra.startswith(forma) for forma in formas):
+            return indice
+    return None
+
+
+def _buscar_productos(productos, busqueda):
+    """Productos que calzan con la búsqueda, del más al menos relevante.
+
+    Una palabra buscada calza si es el inicio de una palabra del nombre o de la categoría.
+    Orden: los agotados al final; luego los de la categoría que calza (buscar "pan" muestra toda
+    la categoría de panes); luego los que tienen la palabra antes en el nombre; luego por nombre.
+    """
+    terminos = _palabras(busqueda)[:BUSQUEDA_MAX_PALABRAS]
+    if not terminos:
+        return []
+
+    encontrados = []
+    for producto in productos.select_related('categoria'):
+        en_nombre = _palabras(producto.nombre)
+        en_categoria = _palabras(producto.categoria.nombre)
+        if not all(_posicion_de(t, en_nombre + en_categoria) is not None for t in terminos):
+            continue
+        calza_categoria = all(_posicion_de(t, en_categoria) is not None for t in terminos)
+        posiciones = [_posicion_de(t, en_nombre) for t in terminos]
+        mejor_posicion = min((p for p in posiciones if p is not None), default=99)
+        encontrados.append((
+            (producto.stock <= 0, 0 if calza_categoria else 1, mejor_posicion, producto.nombre.casefold()),
+            producto,
+        ))
+    return [producto for _, producto in sorted(encontrados, key=lambda par: par[0])]
+
+
 def pedir(request):
-    """Catálogo completo, público. Se puede filtrar con ?categoria=<id>."""
+    """Catálogo completo, público. Se puede filtrar con ?categoria=<id> y buscar por nombre con ?q=."""
     _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
     categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
 
@@ -84,10 +143,19 @@ def pedir(request):
         if categoria_actual:
             productos = productos.filter(categoria=categoria_actual)
 
-    return render(request, 'core/pedir.html', {
+    # Búsqueda por nombre o categoría: sin importar mayúsculas ni tildes (ver _buscar_productos).
+    busqueda = request.GET.get('q', '').strip()[:BUSQUEDA_MAX_LARGO]
+    if busqueda:
+        productos = _buscar_productos(productos, busqueda)
+
+    # La búsqueda en vivo (static/js/busqueda_catalogo.js) pide solo la zona de resultados. Va en
+    # una URL distinta (?parcial=1) para que el navegador no guarde el fragmento como si fuera la página.
+    plantilla = 'core/_resultados_busqueda.html' if request.GET.get('parcial') == '1' else 'core/pedir.html'
+    return render(request, plantilla, {
         'productos': productos,
         'categorias': categorias,
         'categoria_actual': categoria_actual,
+        'busqueda': busqueda,
     })
 
 def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="success"):

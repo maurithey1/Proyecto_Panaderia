@@ -1,4 +1,5 @@
 {% extends "core/base.html" %}
+{% load static %}
 
 {% block titulo %}Pedir{% endblock %}
 
@@ -10,30 +11,32 @@
       <p>Elige lo que quieras llevar. Puedes ver todo el catálogo sin crear una cuenta.</p>
     </header>
 
-    {% if categorias %}
-      <nav aria-label="Categorías">
-        <ul class="filtros">
-          <li><a href="{% url 'pedir' %}"{% if not categoria_actual %} aria-current="page"{% endif %}>Todos</a></li>
-          {% for c in categorias %}
-            <li><a href="{% url 'pedir' %}?categoria={{ c.pk }}"{% if categoria_actual.pk == c.pk %} aria-current="page"{% endif %}>{{ c.nombre }}</a></li>
-          {% endfor %}
-        </ul>
-      </nav>
-    {% endif %}
+    {% comment %}
+      Busca en todo el catálogo, sin importar la categoría en que esté el cliente.
+      Con JavaScript busca mientras se escribe (static/js/busqueda_catalogo.js); sin él, con el botón.
+    {% endcomment %}
+    <form class="buscador" role="search" action="{% url 'pedir' %}" method="get">
+      <label class="sr-only" for="buscar-producto">Buscar productos por nombre</label>
+      <div class="buscador__caja">
+        <input class="entrada buscador__campo" id="buscar-producto" type="search" name="q"
+               value="{{ busqueda }}" maxlength="80" autocomplete="off" enterkeyhint="search"
+               placeholder="Buscar por nombre, por ejemplo: marraqueta">
+        {# Con JavaScript limpia sin recargar y solo se ve si hay texto; sin él, es un enlace al catálogo completo #}
+        <a class="buscador__limpiar" href="{% url 'pedir' %}" data-limpiar aria-label="Limpiar búsqueda"{% if not busqueda %} hidden{% endif %}>Limpiar</a>
+      </div>
+      {# El botón solo hace falta sin JavaScript: con él la búsqueda es automática #}
+      <noscript><button class="boton boton--primario" type="submit">Buscar</button></noscript>
+    </form>
+    {# Anuncia la cantidad de resultados a lectores de pantalla cuando la búsqueda se actualiza sola #}
+    <p class="sr-only" id="buscador-estado" role="status" aria-live="polite"></p>
 
-    {% if productos %}
-      <ul class="productos">
-        {% for p in productos %}
-          {# Aquí no hay h2 antes de los productos, así que sus títulos son h2 (no h3) #}
-          {% include "core/_tarjeta_producto.html" with nivel=2 %}
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="vacio">
-        Todavía no hay productos disponibles.
-        {% if categoria_actual %}<a href="{% url 'pedir' %}">Ver todos los productos</a>{% endif %}
-      </p>
-    {% endif %}
+    <div id="resultados" aria-busy="false">
+      {% include "core/_resultados_busqueda.html" %}
+    </div>
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/busqueda_catalogo.js' %}"></script>
 {% endblock %}

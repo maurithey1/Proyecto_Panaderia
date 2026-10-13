@@ -645,3 +645,236 @@ class WebpayPagoAbandonadoTests(TestCase):
         nuevo = Pedido.objects.exclude(pk=pedido.pk).get()
         self.assertEqual(nuevo.estado, 'PAGADO')
         self.assertEqual(self._stock(), 5)
+
+
+class BusquedaDeProductosTests(TestCase):
+    """Buscar productos por nombre o categoría en el catálogo (/pedir/?q=)."""
+
+    def setUp(self):
+        panaderia = Categoria.objects.create(nombre='Panadería')
+        empanadas = Categoria.objects.create(nombre='Empanadas')
+        self.dulces = Categoria.objects.create(nombre='Dulces')
+        pasteleria = Categoria.objects.create(nombre='Pastelería')
+
+        def crear(nombre, categoria, stock=5, activo=True):
+            return Producto.objects.create(
+                categoria=categoria, nombre=nombre, precio=Decimal('1000.00'), stock=stock, activo=activo,
+            )
+
+        crear('Marraqueta (Pan Batido)', panaderia)
+        crear('Hallulla Especial', panaderia)
+        crear('Pan Amasado Tradicional', panaderia)
+        crear('Pan Antiguo', panaderia, activo=False)
+        crear('Empanada de Pino', empanadas)
+        crear('Berlinés con Manjar', self.dulces)
+        crear('Berlinés Crema Pastelera', self.dulces, stock=0)
+        crear('Pan de Pascua', pasteleria)
+
+    def _buscar(self, **parametros):
+        respuesta = self.client.get(reverse('pedir'), parametros)
+        self.assertEqual(respuesta.status_code, 200)
+        return [p.nombre for p in respuesta.context['productos']], respuesta
+
+    def test_busca_por_parte_del_nombre_sin_importar_las_mayusculas(self):
+        nombres, respuesta = self._buscar(q='MARRAQ')
+
+        self.assertEqual(nombres, ['Marraqueta (Pan Batido)'])
+        self.assertContains(respuesta, '1 resultado para «MARRAQ»')
+
+    def test_pan_no_trae_empanadas(self):
+        nombres, _ = self._buscar(q='pan')
+
+        self.assertNotIn('Empanada de Pino', nombres)
+
+    def test_pan_muestra_toda_la_categoria_y_luego_los_parecidos_en_el_nombre(self):
+        nombres, respuesta = self._buscar(q='pan')
+
+        # Primero la categoría "Panadería" completa (con el nombre más parecido arriba) y después
+        # el "Pan de Pascua", que solo calza por su nombre. El producto inactivo no aparece.
+        self.assertEqual(nombres, [
+            'Pan Amasado Tradicional',
+            'Marraqueta (Pan Batido)',
+            'Hallulla Especial',
+            'Pan de Pascua',
+        ])
+        self.assertContains(respuesta, '4 resultados para «pan»')
+
+    def test_acepta_el_plural(self):
+        panes, _ = self._buscar(q='panes')
+        empanadas, _ = self._buscar(q='empanadas')
+
+        self.assertIn('Hallulla Especial', panes)
+        self.assertEqual(empanadas, ['Empanada de Pino'])
+
+    def test_ignora_las_tildes_en_ambos_sentidos(self):
+        sin_tilde, _ = self._buscar(q='berlines')
+        con_tilde, _ = self._buscar(q='amásado')
+        categoria, _ = self._buscar(q='panaderia')
+
+        self.assertEqual(len(sin_tilde), 2)
+        self.assertEqual(con_tilde, ['Pan Amasado Tradicional'])
+        self.assertIn('Hallulla Especial', categoria)
+
+    def test_varias_palabras_en_cualquier_orden(self):
+        nombres, _ = self._buscar(q='tradicional  amasado')
+
+        self.assertEqual(nombres, ['Pan Amasado Tradicional'])
+
+    def test_no_muestra_productos_inactivos(self):
+        nombres, respuesta = self._buscar(q='antiguo')
+
+        self.assertEqual(nombres, [])
+        self.assertContains(respuesta, 'No encontramos productos que coincidan con «antiguo»')
+
+    def test_los_agotados_van_al_final_de_los_resultados(self):
+        nombres, _ = self._buscar(q='berlines')
+
+        self.assertEqual(nombres, ['Berlinés con Manjar', 'Berlinés Crema Pastelera'])
+
+    def test_sin_resultados_ofrece_volver_al_catalogo(self):
+        _, respuesta = self._buscar(q='pizza')
+
+        self.assertContains(respuesta, 'No encontramos productos')
+        self.assertContains(respuesta, 'Ver todos los productos')
+
+    def test_la_busqueda_se_combina_con_la_categoria(self):
+        dentro, _ = self._buscar(q='berlines', categoria=self.dulces.pk)
+        fuera, _ = self._buscar(q='pan', categoria=self.dulces.pk)
+
+        self.assertEqual(len(dentro), 2)
+        self.assertEqual(fuera, [])
+
+    def test_texto_en_blanco_equivale_a_no_buscar(self):
+        nombres, respuesta = self._buscar(q='   ')
+
+        self.assertEqual(len(nombres), 7)
+        self.assertNotContains(respuesta, 'para «')  # no muestra "N resultados para …"
+
+    def test_solo_simbolos_no_trae_nada(self):
+        nombres, _ = self._buscar(q='%%__')
+
+        self.assertEqual(nombres, [])
+
+    def test_caracteres_especiales_no_rompen_la_pagina_ni_se_ejecutan(self):
+        nombres, respuesta = self._buscar(q="%_'\"<script>alert(1)</script>")
+
+        self.assertEqual(nombres, [])
+        self.assertNotContains(respuesta, '<script>alert(1)')
+        self.assertContains(respuesta, '&lt;script&gt;')
+
+    def test_una_busqueda_enorme_se_recorta(self):
+        nombres, respuesta = self._buscar(q='a ' * 500)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertLessEqual(len(respuesta.context['busqueda']), 80)
+
+
+class BusquedaEnVivoTests(TestCase):
+    """La búsqueda en vivo pide solo la zona de resultados (?parcial=1)."""
+
+    def setUp(self):
+        categoria = Categoria.objects.create(nombre='Panadería')
+        for nombre in ('Marraqueta (Pan Batido)', 'Hallulla Especial'):
+            Producto.objects.create(
+                categoria=categoria, nombre=nombre, precio=Decimal('1000.00'), stock=5, activo=True,
+            )
+
+    def test_la_respuesta_parcial_trae_solo_los_resultados(self):
+        respuesta = self.client.get(reverse('pedir'), {'q': 'marraq', 'parcial': '1'})
+
+        self.assertContains(respuesta, 'Marraqueta (Pan Batido)')
+        self.assertContains(respuesta, '1 resultado para «marraq»')
+        self.assertNotContains(respuesta, '<html')
+        self.assertNotContains(respuesta, 'Buscar productos por nombre')  # el formulario no se repite
+        self.assertNotContains(respuesta, 'Hallulla Especial')
+
+    def test_la_pagina_completa_incluye_buscador_script_y_resultados(self):
+        respuesta = self.client.get(reverse('pedir'), {'q': 'marraq'})
+
+        self.assertContains(respuesta, '<html')
+        self.assertContains(respuesta, 'id="buscar-producto"')
+        self.assertContains(respuesta, 'busqueda_catalogo.js')
+        self.assertContains(respuesta, 'id="resultados"')
+        self.assertContains(respuesta, 'Marraqueta (Pan Batido)')
+
+    def test_la_respuesta_parcial_escapa_el_texto_buscado(self):
+        respuesta = self.client.get(reverse('pedir'), {'q': '<img src=x onerror=alert(1)>', 'parcial': '1'})
+
+        self.assertNotContains(respuesta, '<img src=x')
+        self.assertContains(respuesta, '&lt;img')
+
+    def test_la_respuesta_parcial_sin_busqueda_trae_el_catalogo(self):
+        respuesta = self.client.get(reverse('pedir'), {'parcial': '1'})
+
+        self.assertContains(respuesta, 'Hallulla Especial')
+        self.assertContains(respuesta, 'Marraqueta (Pan Batido)')
+        self.assertNotContains(respuesta, '<html')
+
+
+class PlantillasSinRestosTests(TestCase):
+    """Ninguna página pública debe mostrar código de plantilla sin interpretar.
+
+    Un comentario {# ... #} partido en dos líneas, por ejemplo, Django lo imprime como texto.
+    """
+
+    def setUp(self):
+        categoria = Categoria.objects.create(nombre='Panadería')
+        self.producto = Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+
+    def test_las_paginas_publicas_no_muestran_etiquetas_de_plantilla(self):
+        self.client.post(reverse('carrito_agregar'), {'producto_id': self.producto.pk})
+        direcciones = [
+            reverse('inicio'),
+            reverse('pedir'),
+            reverse('pedir') + '?q=marraq',
+            reverse('pedir') + '?q=marraq&parcial=1',
+            reverse('carrito'),
+            reverse('local'),
+            reverse('login'),
+            reverse('registro'),
+            reverse('terminos_condiciones'),
+            reverse('politicas_privacidad'),
+        ]
+        for direccion in direcciones:
+            with self.subTest(direccion=direccion):
+                contenido = self.client.get(direccion).content.decode()
+                for resto in ('{#', '#}', '{%', '%}', '{{', '}}'):
+                    self.assertNotIn(resto, contenido)
+
+
+class LimpiarBusquedaTests(TestCase):
+    """El enlace "Limpiar" reemplaza a la "x" nativa y al botón Buscar."""
+
+    def setUp(self):
+        categoria = Categoria.objects.create(nombre='Panadería')
+        Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('1000.00'), stock=5, activo=True,
+        )
+
+    def test_con_busqueda_muestra_limpiar_hacia_el_catalogo_completo(self):
+        respuesta = self.client.get(reverse('pedir'), {'q': 'marraq'})
+        contenido = respuesta.content.decode()
+
+        enlace = contenido[contenido.index('class="buscador__limpiar"'):]
+        enlace = enlace[:enlace.index('</a>')]
+        self.assertIn(f'href="{reverse("pedir")}"', enlace)
+        self.assertIn('data-limpiar', enlace)
+        self.assertNotIn('hidden', enlace)
+        self.assertIn('>Limpiar', enlace)
+
+    def test_sin_busqueda_limpiar_va_oculto(self):
+        contenido = self.client.get(reverse('pedir')).content.decode()
+
+        enlace = contenido[contenido.index('class="buscador__limpiar"'):]
+        enlace = enlace[:enlace.index('</a>')]
+        self.assertIn('hidden', enlace)
+
+    def test_el_boton_buscar_solo_existe_sin_javascript(self):
+        contenido = self.client.get(reverse('pedir')).content.decode()
+
+        formulario = contenido[contenido.index('<form class="buscador"'):]
+        formulario = formulario[:formulario.index('</form>')]
+        self.assertIn('<noscript><button', formulario)
+        self.assertEqual(formulario.count('<button'), 1)  # el único botón está dentro de <noscript>

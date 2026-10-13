@@ -1,0 +1,39 @@
+{% comment %}
+  Zona que cambia al buscar: cantidad de resultados, categorías y productos.
+  La incluye pedir.html y la devuelve sola la vista cuando static/js/busqueda_catalogo.js pide ?parcial=1.
+{% endcomment %}
+{% if busqueda and productos %}
+  <p class="buscador__resultado" data-resumen="{{ productos|length }} resultado{{ productos|length|pluralize }} para «{{ busqueda }}»">
+    {{ productos|length }} resultado{{ productos|length|pluralize }} para «{{ busqueda }}»
+  </p>
+{% endif %}
+
+{% if categorias %}
+  <nav aria-label="Categorías">
+    <ul class="filtros">
+      <li><a href="{% url 'pedir' %}"{% if not categoria_actual and not busqueda %} aria-current="page"{% endif %}>Todos</a></li>
+      {% for c in categorias %}
+        <li><a href="{% url 'pedir' %}?categoria={{ c.pk }}"{% if categoria_actual.pk == c.pk %} aria-current="page"{% endif %}>{{ c.nombre }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+{% endif %}
+
+{% if productos %}
+  <ul class="productos">
+    {% for p in productos %}
+      {# Aquí no hay h2 antes de los productos, así que sus títulos son h2 (no h3) #}
+      {% include "core/_tarjeta_producto.html" with nivel=2 %}
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="vacio"{% if busqueda %} data-resumen="No encontramos productos que coincidan con «{{ busqueda }}»"{% endif %}>
+    {% if busqueda %}
+      No encontramos productos que coincidan con «{{ busqueda }}».
+      <a href="{% url 'pedir' %}" data-limpiar>Ver todos los productos</a>
+    {% else %}
+      Todavía no hay productos disponibles.
+      {% if categoria_actual %}<a href="{% url 'pedir' %}">Ver todos los productos</a>{% endif %}
+    {% endif %}
+  </p>
+{% endif %}

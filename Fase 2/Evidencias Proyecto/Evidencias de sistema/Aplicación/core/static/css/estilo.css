@@ -729,6 +729,33 @@ main { flex: 1; }
 .filtros a:hover { border-color: var(--cafe); }
 .filtros a[aria-current="page"] { background: var(--cafe); border-color: var(--cafe); color: var(--papel); }
 
+/* Buscador del catálogo (pedir.html) */
+.buscador { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; }
+.buscador__caja { position: relative; flex: 1 1 260px; min-width: 0; max-width: 460px; }
+.buscador__campo { width: 100%; padding-right: 84px; } /* deja lugar al enlace "Limpiar" */
+/* La "x" nativa del navegador se reemplaza por el enlace "Limpiar" */
+.buscador__campo::-webkit-search-cancel-button,
+.buscador__campo::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.buscador__campo::-ms-clear { display: none; }
+.buscador__limpiar {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  padding: 6px 8px;
+  color: var(--cafe);
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  border-radius: 6px;
+}
+.buscador__limpiar:hover { background: var(--crema-2); color: var(--cafe-hover); }
+.buscador__limpiar[hidden] { display: none; }
+.buscador__resultado { margin: 0 0 16px; color: var(--texto-suave); }
+#resultados { transition: opacity 0.15s ease; }
+#resultados[aria-busy="true"] { opacity: 0.55; }
+
 /* Página Local: datos de la tienda y mapa de cobertura */
 .local {
   display: grid;
@@ -842,7 +869,9 @@ main { flex: 1; }
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  /* auto-fill (no auto-fit): con pocos productos, p. ej. un resultado de búsqueda, la tarjeta
+     conserva su tamaño de columna en vez de estirarse a todo el ancho. */
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: 20px;
 }
 
