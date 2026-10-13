@@ -1,0 +1,555 @@
+{% extends "core/base_admin.html" %}
+{% load static %}
+{% load formato %}
+
+{% block titulo %}Gestión de Inventario y Productos{% endblock %}
+
+{% block contenido %}
+<!-- Mensajes de feedback -->
+{% if messages %}
+  <div class="mensajes-alertas" style="margin-bottom: 20px;">
+    {% for message in messages %}
+      <div class="mensaje-alerta mensaje-alerta--{{ message.tags }}" style="padding: 12px 18px; border-radius: var(--radio, 8px); margin-bottom: 8px; font-weight: 500; font-family: var(--fuente-texto); {% if message.tags == 'success' %}background: #edf5e8; color: #38542a; border: 1.5px solid #c7e0be;{% elif message.tags == 'warning' %}background: #fdf5e2; color: #7a4f10; border: 1.5px solid var(--trigo, #e3b25b);{% else %}background: #fbeee8; color: var(--terracota, #b4532a); border: 1.5px solid #f2cfbf;{% endif %}">
+        {{ message }}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+<div class="crud-tarjeta-marco" id="crud-productos">
+  
+  <div class="crud-cabecera-fila">
+    <div class="crud-enlace-superior">
+      <a href="{% url 'inicio_admin' %}" class="crud-link-admin">administrar catálogo</a>
+    </div>
+    
+    <div class="crud-titulo-accion">
+      <h2 class="crud-titulo-principal" id="crudTituloPrincipal">Gestión de insumos y materias primas</h2>
+      
+      <button type="button" class="crud-btn-agregar" id="btnAccionAgregarInsumo" onclick="abrirModalAgregarInsumo()">
+        + Agregar Insumo
+      </button>
+      <button type="button" class="crud-btn-agregar" id="btnAccionAgregarProducto" onclick="abrirModalAgregarProducto()" style="display: none;">
+        + Agregar Producto
+      </button>
+    </div>
+  </div>
+
+  <!-- NAVEGACIÓN ENTRE PESTAÑAS -->
+  <div class="crud-pestanas-nav">
+    <button type="button" class="crud-pestana-btn activa" id="tabBtnInsumos" onclick="cambiarPestanaCrud('insumos')">
+      🌾 Insumos y Materias Primas ({{ insumos|length }})
+    </button>
+    <button type="button" class="crud-pestana-btn" id="tabBtnProductos" onclick="cambiarPestanaCrud('productos')">
+      🥖 Productos de la Panadería ({{ todos_los_productos|length }})
+    </button>
+  </div>
+
+  <!-- PANEL 1: INSUMOS -->
+  <div id="panelInsumos" class="crud-panel-seccion">
+    <div class="crud-tabla-responsive">
+      <table class="crud-tabla-pantallazo">
+        <thead>
+          <tr>
+            <th style="width: 10%;">ID</th>
+            <th style="width: 24%;">Nombre producto</th>
+            <th style="width: 14%;">Stock (Bolsa/saco)</th>
+            <th style="width: 10%;">Total Kg</th>
+            <th style="width: 18%;">Nombre Proveedor</th>
+            <th style="width: 12%;">Precio por saco(Kg)</th>
+            <th style="width: 12%;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for insumo in insumos %}
+            <tr>
+              <td class="crud-col-id">{{ insumo.codigo|default:insumo.pk }}</td>
+              <td class="crud-col-nombre">{{ insumo.nombre }}</td>
+              <td class="crud-col-centro">{{ insumo.stock_sacos }}</td>
+              <td class="crud-col-centro">{{ insumo.total_kg|floatformat:0 }}</td>
+              <td class="crud-col-proveedor">{{ insumo.proveedor_nombre|default:"-" }}</td>
+              <td class="crud-col-precio">{{ insumo.precio_saco|clp }}</td>
+              <td class="crud-col-acciones">
+                <button type="button" class="crud-btn-accion crud-btn-editar"
+                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0 }}')">
+                  Editar
+                </button>
+                <button type="button" class="crud-btn-accion crud-btn-eliminar"
+                        onclick="abrirModalEliminarInsumo('{{ insumo.pk }}', '{{ insumo.codigo }}', '{{ insumo.nombre|escapejs }}')">
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 28px; color: var(--texto-suave);">
+                No hay insumos registrados. Presiona "+ Agregar Insumo" para crear el primero.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PANEL 2: PRODUCTOS -->
+  <div id="panelProductos" class="crud-panel-seccion" style="display: none;">
+    <div class="crud-tabla-responsive">
+      <table class="crud-tabla-pantallazo">
+        <thead>
+          <tr>
+            <th style="width: 6%;">ID</th>
+            <th style="width: 24%;">Producto</th>
+            <th style="width: 14%;">Categoría</th>
+            <th style="width: 12%;">Precio Venta</th>
+            <th style="width: 12%;">Stock Actual</th>
+            <th style="width: 10%;">Estado</th>
+            <th style="width: 22%;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for prod in todos_los_productos %}
+            <tr>
+              <td class="crud-col-id">#{{ prod.pk }}</td>
+              <td class="crud-col-nombre">
+                <strong>{{ prod.nombre }}</strong>
+                {% if prod.descripcion %}
+                  <small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">{{ prod.descripcion|truncatewords:6 }}</small>
+                {% endif %}
+              </td>
+              <td class="crud-col-centro">
+                <span class="crud-badge-cat">{{ prod.categoria.nombre }}</span>
+              </td>
+              <td class="crud-col-precio">{{ prod.precio|clp }}</td>
+              <td class="crud-col-centro">
+                <strong>{{ prod.stock }}</strong> {{ prod.get_unidad_medida_display|default:prod.unidad_medida }}
+                {% if prod.stock <= prod.stock_critico %}
+                  <small style="display: block; color: var(--terracota); font-weight: 700;">(Bajo stock)</small>
+                {% endif %}
+              </td>
+              <td class="crud-col-centro">
+                {% if prod.activo %}
+                  <span class="crud-badge crud-badge--exito">Activo</span>
+                {% else %}
+                  <span class="crud-badge crud-badge--inactivo">Inactivo</span>
+                {% endif %}
+              </td>
+              <td class="crud-col-acciones">
+                <button type="button" class="crud-btn-accion" style="background-color: #7b4b2a;"
+                        onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
+                  + Hornada
+                </button>
+                <button type="button" class="crud-btn-accion crud-btn-editar"
+                        data-pk="{{ prod.pk }}"
+                        data-nombre="{{ prod.nombre }}"
+                        data-categoria="{{ prod.categoria.pk }}"
+                        data-precio="{{ prod.precio|floatformat:0 }}"
+                        data-stock="{{ prod.stock }}"
+                        data-stock-critico="{{ prod.stock_critico }}"
+                        data-unidad="{{ prod.unidad_medida }}"
+                        data-descripcion="{{ prod.descripcion|default:'' }}"
+                        data-activo="{{ prod.activo|yesno:'true,false' }}"
+                        data-imagen="{{ prod.imagen_url|default:'' }}"
+                        data-disponibilidad='{{ prod.disponibilidad_formulario }}'
+                        onclick="abrirModalEditarProductoBtn(this)">
+                  Editar
+                </button>
+                <button type="button" class="crud-btn-accion crud-btn-eliminar"
+                        onclick="abrirModalEliminarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
+                  Eliminar
+                </button>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 28px; color: var(--texto-suave);">
+                No hay productos en el catálogo. Presiona "+ Agregar Producto" para registrar uno nuevo.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- ========================================== -->
+<!-- MODALES DE INSUMOS                        -->
+<!-- ========================================== -->
+
+<!-- MODAL 1: Agregar Insumo -->
+<div class="crud-modal-backdrop" id="modalAgregarInsumo" style="display: none;">
+  <div class="crud-modal-caja">
+    <div class="crud-modal-header">
+      <h3>Agregar Nuevo Insumo</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarInsumo()">&times;</button>
+    </div>
+    <form method="post" action="{% url 'crear_insumo' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="insumo_codigo">Código / ID:</label>
+            <input type="text" id="insumo_codigo" name="codigo" required class="crud-input" placeholder="Ej: INS-001">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="insumo_nombre">Nombre Insumo:</label>
+            <input type="text" id="insumo_nombre" name="nombre" required class="crud-input" placeholder="Ej: Harina de Trigo">
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="insumo_stock_sacos">Stock (Sacos/Bolsas):</label>
+            <input type="number" id="insumo_stock_sacos" name="stock_sacos" min="0" value="0" required class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="insumo_kilos_por_saco">Kg por saco:</label>
+            <input type="number" step="0.01" id="insumo_kilos_por_saco" name="kilos_por_saco" value="25.00" required class="crud-input">
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="insumo_proveedor">Nombre Proveedor:</label>
+            <input type="text" id="insumo_proveedor" name="proveedor_nombre" class="crud-input" placeholder="Ej: Molinos del Sur">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="insumo_precio_saco">Precio por Saco ($CLP):</label>
+            <input type="number" step="0.01" id="insumo_precio_saco" name="precio_saco" value="0" required class="crud-input">
+          </div>
+        </div>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalAgregarInsumo()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar">Guardar Insumo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 2: Editar Insumo -->
+<div class="crud-modal-backdrop" id="modalEditarInsumo" style="display: none;">
+  <div class="crud-modal-caja">
+    <div class="crud-modal-header">
+      <h3>Editar Insumo</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarInsumo()">&times;</button>
+    </div>
+    <form id="formEditarInsumo" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_codigo">Código / ID:</label>
+            <input type="text" id="edit_insumo_codigo" name="codigo" required class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_nombre">Nombre Insumo:</label>
+            <input type="text" id="edit_insumo_nombre" name="nombre" required class="crud-input">
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_stock_sacos">Stock (Sacos/Bolsas):</label>
+            <input type="number" id="edit_insumo_stock_sacos" name="stock_sacos" min="0" required class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_kilos_por_saco">Kg por saco:</label>
+            <input type="number" step="0.01" id="edit_insumo_kilos_por_saco" name="kilos_por_saco" required class="crud-input">
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_proveedor">Nombre Proveedor:</label>
+            <input type="text" id="edit_insumo_proveedor" name="proveedor_nombre" class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_precio_saco">Precio por Saco ($CLP):</label>
+            <input type="number" step="0.01" id="edit_insumo_precio_saco" name="precio_saco" required class="crud-input">
+          </div>
+        </div>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEditarInsumo()">Cancelar</button>
+        <button type="submit" class="crud-btn-actualizar">Actualizar Insumo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 3: Eliminar Insumo -->
+<div class="crud-modal-backdrop" id="modalEliminarInsumo" style="display: none;">
+  <div class="crud-modal-caja crud-modal-caja--alerta">
+    <div class="crud-modal-header">
+      <h3>Eliminar Insumo</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarInsumo()">&times;</button>
+    </div>
+    <form id="formEliminarInsumo" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
+        <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
+          ¿Estás seguro de que deseas eliminar este insumo?
+        </p>
+        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="eliminar_insumo_texto">
+          -
+        </p>
+      </div>
+      <div class="crud-modal-footer" style="justify-content: center;">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEliminarInsumo()">Cancelar</button>
+        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Eliminación</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODALES DE PRODUCTOS                      -->
+<!-- ========================================== -->
+
+<!-- MODAL 4: Agregar Producto -->
+<div class="crud-modal-backdrop" id="modalAgregarProducto" style="display: none;">
+  <div class="crud-modal-caja">
+    <div class="crud-modal-header">
+      <h3>Registrar Nuevo Producto de Venta</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarProducto()">&times;</button>
+    </div>
+    <form method="post" action="{% url 'crear_producto' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <div class="crud-form-grupo">
+          <label for="prod_nombre">Nombre del Producto:</label>
+          <input type="text" id="prod_nombre" name="nombre" required class="crud-input" placeholder="Ej: Hogaza de Masa Madre">
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="prod_categoria">Categoría:</label>
+            <div style="display: flex; gap: 8px;">
+              <select id="prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
+                <option value="">Selecciona categoría</option>
+                {% for cat in categorias_productos %}
+                  <option value="{{ cat.pk }}">{{ cat.nombre }}</option>
+                {% endfor %}
+              </select>
+              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarCategoria()">
+                + Nueva
+              </button>
+            </div>
+          </div>
+          <div class="crud-form-grupo">
+            <label for="prod_unidad">Unidad de Medida:</label>
+            <select id="prod_unidad" name="unidad_medida" class="crud-input">
+              <option value="unid">Unidad</option>
+              <option value="kg">Kilogramo (Kg)</option>
+            </select>
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="prod_precio">Precio Venta ($CLP):</label>
+            <input type="number" id="prod_precio" name="precio" min="0" step="10" required class="crud-input" placeholder="Ej: 2500">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="prod_stock">Stock Inicial:</label>
+            <input type="number" id="prod_stock" name="stock" min="0" value="20" required class="crud-input">
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="prod_stock_critico">Stock Crítico (Alerta):</label>
+          <input type="number" id="prod_stock_critico" name="stock_critico" min="0" value="10" class="crud-input">
+        </div>
+        <div class="crud-form-grupo">
+          <label for="prod_imagen">Imagen del Producto (Ruta /media/... o URL):</label>
+          <input type="text" id="prod_imagen" name="imagen_url" class="crud-input" placeholder="Ej: /media/productos/marraqueta.jpg">
+        </div>
+        {% include "core/_disponibilidad_producto.html" with prefijo="prod" %}
+        <div class="crud-form-grupo">
+          <label for="prod_desc">Descripción (Opcional):</label>
+          <textarea id="prod_desc" name="descripcion" rows="2" class="crud-input" placeholder="Breve detalle artesanal del producto..."></textarea>
+        </div>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalAgregarProducto()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar">Guardar Producto</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 5: Editar Producto -->
+<div class="crud-modal-backdrop" id="modalEditarProducto" style="display: none;">
+  <div class="crud-modal-caja">
+    <div class="crud-modal-header">
+      <h3>Editar Producto de Venta</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarProducto()">&times;</button>
+    </div>
+    <form id="formEditarProducto" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <div class="crud-form-grupo">
+          <label for="edit_prod_nombre">Nombre del Producto:</label>
+          <input type="text" id="edit_prod_nombre" name="nombre" required class="crud-input">
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="prod_categoria">Categoría:</label>
+            <div style="display: flex; gap: 8px;">
+              <select id="prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
+                <option value="">Selecciona categoría</option>
+                {% for cat in categorias_productos %}
+                  <option value="{{ cat.pk }}">{{ cat.nombre }}</option>
+                {% endfor %}
+              </select>
+              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarCategoria()">
+                + Nueva
+              </button>
+            </div>
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_prod_unidad">Unidad de Medida:</label>
+            <select id="edit_prod_unidad" name="unidad_medida" class="crud-input">
+              <option value="unid">Unidad</option>
+              <option value="kg">Kilogramo (Kg)</option>
+            </select>
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_prod_precio">Precio Venta ($CLP):</label>
+            <input type="number" id="edit_prod_precio" name="precio" min="0" step="10" required class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_prod_stock">Stock Actual (Controlado por producción):</label>
+            <input type="number" 
+                   id="edit_prod_stock" 
+                   name="stock" 
+                   readonly 
+                   class="crud-input"
+                   style="background-color: #f2f2f2; color: #666; cursor: not-allowed; font-weight: bold;">
+            <small style="display: block; margin-top: 4px; color: var(--texto-suave, #666); font-size: 0.78rem;">
+              🔒 El stock solo se incrementa desde <strong>+ Hornada</strong> o por ventas en caja.
+            </small>
+          </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_prod_stock_critico">Stock Crítico:</label>
+            <input type="number" id="edit_prod_stock_critico" name="stock_critico" min="0" class="crud-input">
+          </div>
+          <div class="crud-form-grupo" style="display: flex; flex-direction: column; justify-content: flex-end;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
+              <input type="checkbox" id="edit_prod_activo" name="activo" value="true" style="width: 18px; height: 18px;">
+              <span>Producto Activo en Tienda</span>
+            </label>
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="edit_prod_imagen">Imagen del Producto (Ruta /media/... o URL):</label>
+          <input type="text" id="edit_prod_imagen" name="imagen_url" class="crud-input">
+        </div>
+        {% include "core/_disponibilidad_producto.html" with prefijo="edit_prod" %}
+        <div class="crud-form-grupo">
+          <label for="edit_prod_desc">Descripción:</label>
+          <textarea id="edit_prod_desc" name="descripcion" rows="2" class="crud-input"></textarea>
+        </div>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEditarProducto()">Cancelar</button>
+        <button type="submit" class="crud-btn-actualizar">Actualizar Producto</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 6: Registrar Producción Diaria (Hornada) -->
+<div class="crud-modal-backdrop" id="modalRegistrarProduccion" style="display: none;">
+  <div class="crud-modal-caja">
+    <div class="crud-modal-header">
+      <h3>Registrar Producción Diaria (Hornada)</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalRegistrarProduccion()">&times;</button>
+    </div>
+    <form id="formRegistrarProduccion" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <p style="font-size: 1rem; color: var(--cafe-oscuro); margin-bottom: 4px;" id="produccion_producto_nombre">
+          Producto: -
+        </p>
+        <div class="crud-form-grupo">
+          <label for="prod_cant_horneada">Cantidad Horneada / Producida hoy:</label>
+          <input type="number" id="prod_cant_horneada" name="cantidad" min="1" value="20" required class="crud-input" placeholder="Ej: 50">
+        </div>
+        <p style="font-size: 0.85rem; color: var(--texto-suave); margin: 0;">
+          Esta cantidad se sumará directamente al stock actual del producto y quedará guardada en el registro diario con la fecha y tu usuario.
+        </p>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalRegistrarProduccion()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar" style="background-color: #7b4b2a;">+ Registrar Hornada</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 7: Eliminar Producto -->
+<div class="crud-modal-backdrop" id="modalEliminarProducto" style="display: none;">
+  <div class="crud-modal-caja crud-modal-caja--alerta">
+    <div class="crud-modal-header">
+      <h3>Eliminar Producto</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarProducto()">&times;</button>
+    </div>
+    <form id="formEliminarProducto" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
+        <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
+          ¿Estás seguro de que deseas eliminar este producto del catálogo?
+        </p>
+        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="eliminar_prod_texto">
+          -
+        </p>
+      </div>
+      <div class="crud-modal-footer" style="justify-content: center;">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEliminarProducto()">Cancelar</button>
+        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Eliminación</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Crear Categoría Rápida -->
+<div class="crud-modal-backdrop" id="modalAgregarCategoria" style="display: none; z-index: 9999 !important;">
+  <div class="crud-modal-caja" style="max-width: 450px z-index: 10000 !important;">
+    <div class="crud-modal-header">
+      <h3>Nueva Categoría de Producto</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarCategoria()">&times;</button>
+    </div>
+    <form method="post" action="{% url 'crear_categoria' %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}">
+      <div class="crud-modal-cuerpo">
+        <div class="crud-form-grupo">
+          <label for="cat_nombre">Nombre de la Categoría:</label>
+          <input type="text" id="cat_nombre" name="nombre" required class="crud-input" placeholder="Ej: Panes de Masa Madre">
+        </div>
+        <div class="crud-form-grupo">
+          <label for="cat_desc">Descripción (Opcional):</label>
+          <textarea id="cat_desc" name="descripcion" rows="2" class="crud-input" placeholder="Breve detalle de esta categoría..."></textarea>
+        </div>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalAgregarCategoria()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar">Crear Categoría</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/crud_inventario.js' %}"></script>
+{% endblock %}

@@ -223,7 +223,7 @@ class Producto(models.Model):
     stock_critico = models.IntegerField(default=10)
     unidad_medida = models.CharField(max_length=10, choices=UNIDADES, default='unid')
     unidades_por_kg = models.CharField(max_length=100, blank=True, null=True)
-    imagen_url = models.URLField(max_length=500, blank=True, null=True)
+    imagen_url = models.CharField(max_length=500, blank=True, null=True, verbose_name="URL o Ruta de Imagen")
     activo = models.BooleanField(default=True)
     turnos = models.ManyToManyField(
         Turno, blank=True, related_name='productos', verbose_name='Turnos de venta',
