@@ -23,6 +23,8 @@
 
   var ESPERA_MS = 250;      // tiempo sin teclear antes de buscar
   var temporizador = null;
+  // La petición vigente. Una respuesta solo se aplica si sigue siendo esta: si el cliente cambió el texto
+  // mientras tanto (o volvió al que ya se ve), lo que llegue después es de una búsqueda vieja y se descarta.
   var peticion = null;
   // La búsqueda a la que corresponden los resultados que hay en pantalla. No es "la última que se intentó":
   // si una búsqueda falla, esto no cambia, y por eso se sabe que lo que se ve está desactualizado.
@@ -62,15 +64,29 @@
     aviso.hidden = false;
   }
 
+  // Cancela la búsqueda en vuelo y deja de esperarla: lo que responda ya no se aplica.
+  function descartarPeticion() {
+    if (peticion) {
+      var vieja = peticion;
+      peticion = null;
+      vieja.abort();
+    }
+  }
+
   // `forzar` repite la búsqueda aunque el texto sea el mismo que el de la última que se mostró.
   function buscar(forzar) {
     var texto = campo.value.trim();
     if (forzar !== true && texto === mostrada) {
-      ocultarAviso();   // volvió al texto de lo que se ve: no hay nada desactualizado
+      // Volvió al texto de lo que ya se ve: no hay nada nuevo que buscar ni desactualizado que avisar. Y si
+      // había una búsqueda en vuelo (p. ej. escribió «pan» y lo borró antes de la respuesta), ya no sirve:
+      // se descarta, o llegaría después y dejaría el campo vacío con los resultados de «pan».
+      descartarPeticion();
+      zona.setAttribute('aria-busy', 'false');
+      ocultarAviso();
       return;
     }
 
-    if (peticion) { peticion.abort(); }   // una búsqueda nueva descarta la anterior
+    descartarPeticion();   // una búsqueda nueva descarta la anterior
     var actual = new AbortController();
     peticion = actual;
     zona.setAttribute('aria-busy', 'true');
@@ -81,6 +97,7 @@
         return respuesta.text();
       })
       .then(function (html) {
+        if (peticion !== actual) { return; }   // llegó tarde: el cliente ya cambió la búsqueda
         // El fragmento lo genera nuestro servidor (con el texto buscado ya escapado). Se analiza como
         // documento y se mueven los nodos, sin asignar HTML directamente ni ejecutar scripts.
         var nodos = new DOMParser().parseFromString(html, 'text/html').body.childNodes;
@@ -88,11 +105,13 @@
         zona.setAttribute('aria-busy', 'false');
         mostrada = texto;
         ocultarAviso();
+        peticion = null;
         history.replaceState(null, '', direccion(texto, false));  // recargar o compartir conserva la búsqueda
         anunciar();
       })
       .catch(function (error) {
-        if (error.name === 'AbortError') { return; }  // la reemplazó otra búsqueda
+        if (error.name === 'AbortError' || peticion !== actual) { return; }  // la reemplazó otra búsqueda
+        peticion = null;
         zona.setAttribute('aria-busy', 'false');
         mostrarAviso(texto, /^HTTP/.test(error.message || '') ? 'servidor' : 'red');
       });
