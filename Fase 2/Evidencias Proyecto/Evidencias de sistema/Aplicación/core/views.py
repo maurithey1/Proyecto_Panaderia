@@ -1,12 +1,15 @@
 import re
+import time
+from datetime import timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Case, IntegerField, Q, Sum, Value, When
+from django.db.models import Case, F, IntegerField, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
@@ -43,6 +46,7 @@ def _entero_o_none(valor):
 
 def inicio(request):
     """Los 4 productos más vendidos (pedidos no cancelados), leídos de la BD."""
+    _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
     estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
 
     productos = (
@@ -64,6 +68,7 @@ def inicio(request):
 
 def pedir(request):
     """Catálogo completo, público. Se puede filtrar con ?categoria=<id>."""
+    _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
     categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
 
     productos = Producto.objects.filter(activo=True).order_by(
@@ -122,6 +127,7 @@ def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="succes
 
 @require_POST
 def agregar_al_carrito(request):
+    _expirar_pedidos_webpay_vencidos()  # el límite de stock no debe incluir pagos abandonados
     es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     producto_id = _entero_o_none(request.POST.get('producto_id', ''))
     
@@ -161,6 +167,7 @@ def agregar_al_carrito(request):
 
 def carrito(request):
     """Muestra el carrito de la sesión con los datos reales de cada producto."""
+    _expirar_pedidos_webpay_vencidos()  # libera el stock de pagos Webpay abandonados
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict):
         carrito_sesion = {}
@@ -259,6 +266,7 @@ def quitar_del_carrito(request, producto_id):
 @require_POST
 def finalizar_compra(request):
     """Compra de demostración: crea pedido, detalle y pago simulado, y descuenta el stock."""
+    _expirar_pedidos_webpay_vencidos()  # un pago abandonado no debe dejar sin stock a quien reintenta
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict) or not carrito_sesion:
         messages.error(request, 'Tu carrito está vacío.')
@@ -445,6 +453,62 @@ def finalizar_compra(request):
     return redirect(f"{response['url']}?token_ws={token_ws}")
 
 
+# Un pedido con Webpay que sigue PENDIENTE pasado este tiempo se da por abandonado. Transbank da
+# 5 min para abrir el formulario y 10 min para pagar en él (ambiente de integración): 15 min como
+# máximo, y se deja margen para que un pago que llega justo no encuentre el pedido ya cancelado.
+WEBPAY_VIGENCIA_MIN = 20
+
+
+def _cancelar_pedido_pendiente(pedido_id, estado_pago):
+    """Cancela un pedido PENDIENTE y devuelve su stock una sola vez.
+
+    Se puede llamar de nuevo con el mismo pedido: si ya no está PENDIENTE no hace nada.
+    Devuelve True si canceló el pedido.
+    """
+    with transaction.atomic():
+        pedido = Pedido.objects.select_for_update().filter(pk=pedido_id, estado='PENDIENTE').first()
+        if pedido is None:
+            return False
+        for detalle in pedido.detalles.all():
+            Producto.objects.filter(pk=detalle.producto_id).update(stock=F('stock') + detalle.cantidad)
+        pedido.estado = 'CANCELADO'
+        pedido.save(update_fields=['estado'])
+        Pago.objects.filter(pedido=pedido).update(estado=estado_pago)
+    return True
+
+
+def _expirar_pedidos_webpay_vencidos():
+    """Libera el stock de los pedidos Webpay abandonados (el cliente cerró la ventana de pago).
+
+    Si cierra la ventana, Transbank no devuelve al cliente al sitio y nadie más los cancelaría.
+    """
+    limite = timezone.now() - timedelta(minutes=WEBPAY_VIGENCIA_MIN)
+    vencidos = Pedido.objects.filter(
+        estado='PENDIENTE', fecha__lt=limite, pago__metodo__startswith='Webpay',
+    ).values_list('pk', flat=True)
+    for pedido_id in list(vencidos):
+        _cancelar_pedido_pendiente(pedido_id, 'EXPIRADO')
+
+
+def _respuesta_resuelta_webpay(tx, token_ws, intentos=3, espera=1.0):
+    """Consulta el estado real de una transacción cuando el commit dio error.
+
+    Devuelve la respuesta si Transbank ya la resolvió (aprobada o no) y None si sigue en
+    proceso o no se pudo consultar. En ese caso el pedido no se toca: si el pago nunca llega,
+    _expirar_pedidos_webpay_vencidos lo libera pasado el plazo.
+    """
+    for intento in range(intentos):
+        try:
+            respuesta = tx.status(token_ws)
+        except Exception:
+            respuesta = None
+        if respuesta and respuesta.get('status') not in (None, 'INITIALIZED'):
+            return respuesta
+        if intento < intentos - 1:
+            time.sleep(espera)
+    return None
+
+
 def iniciar_pago_webpay(request, pedido_id=None):
     """
     Inicia una transacción en Transbank Webpay Plus para un pedido existente o pendiente.
@@ -497,39 +561,51 @@ def webpay_confirmar(request):
     """
     Punto de retorno (return_url) invocado tras el paso por la pasarela de Webpay Plus.
     Procesa el resultado:
-    - token_ws presente: Transacción completada -> commit()
-    - TBK_TOKEN presente: Transacción cancelada por el usuario en la interfaz de Webpay
+    - TBK_TOKEN presente (con o sin token_ws): pago anulado o formulario fallido -> se cancela
+    - solo token_ws: Transacción completada -> commit()
+    - Solo TBK_ID_SESION y TBK_ORDEN_COMPRA: venció el tiempo del formulario de Webpay
     """
     token_ws = request.POST.get('token_ws') or request.GET.get('token_ws')
     tbk_token = request.POST.get('TBK_TOKEN') or request.GET.get('TBK_TOKEN')
     tbk_orden_compra = request.POST.get('TBK_ORDEN_COMPRA') or request.GET.get('TBK_ORDEN_COMPRA')
 
-    # Caso 1: Pago cancelado por el usuario en Webpay
-    if not token_ws and tbk_token:
-        pedido_id = None
-        if tbk_orden_compra and tbk_orden_compra.startswith('ORD-'):
-            try:
-                pedido_id = int(tbk_orden_compra.replace('ORD-', ''))
-            except ValueError:
-                pass
-        if not pedido_id:
-            pedido_id = request.session.get('webpay_pedido_id')
-
-        if pedido_id:
-            pedido = Pedido.objects.filter(pk=pedido_id, estado='PENDIENTE').first()
-            if pedido:
-                with transaction.atomic():
-                    for detalle in pedido.detalles.select_related('producto'):
-                        detalle.producto.stock += detalle.cantidad
-                        detalle.producto.save(update_fields=['stock'])
-                    pedido.estado = 'CANCELADO'
-                    pedido.save(update_fields=['estado'])
-                    if hasattr(pedido, 'pago'):
-                        pedido.pago.estado = 'CANCELADO'
-                        pedido.pago.save(update_fields=['estado'])
-
+    # Caso 1: el pago no se completó y el cliente volvió al sitio, ya sea porque lo anuló o porque
+    # el formulario de Webpay falló y pulsó "Intentar nuevamente". Llega TBK_TOKEN (con o sin
+    # token_ws): el pago NO se autorizó, así que no se confirma. Solo se cancela el pedido cuyo
+    # token de Transbank coincide con el recibido. La sesión no sirve de prueba: este retorno suele
+    # llegar por POST desde otro dominio y el navegador no envía la cookie de sesión.
+    if tbk_token:
+        tokens = [t for t in (tbk_token, token_ws) if t]
+        pedido_id = (
+            Pedido.objects.filter(estado='PENDIENTE', pago__codigo_autorizacion__in=tokens)
+            .values_list('pk', flat=True)
+            .first()
+        )
+        if pedido_id is not None:
+            _cancelar_pedido_pendiente(pedido_id, 'CANCELADO')
         request.session.pop('webpay_pedido_id', None)
-        messages.warning(request, 'El pago fue cancelado en Webpay. Tus productos se mantienen en el carrito.')
+        messages.warning(
+            request,
+            'El pago no se completó en Webpay. No se realizó ningún cobro y tus productos '
+            'se mantienen en el carrito: puedes intentarlo de nuevo.',
+        )
+        return redirect('carrito')
+
+    # Caso 3: el cliente dejó vencer el formulario de Webpay. Transbank devuelve TBK_ID_SESION y
+    # TBK_ORDEN_COMPRA, sin token. Solo se cancela el pedido que esta misma sesión inició; si la
+    # sesión no coincide, el pedido lo libera _expirar_pedidos_webpay_vencidos pasado el plazo.
+    if not token_ws and not tbk_token and tbk_orden_compra:
+        pedido_id = None
+        if tbk_orden_compra.startswith('ORD-'):
+            pedido_id = _entero_o_none(tbk_orden_compra[len('ORD-'):])
+        if pedido_id is not None and pedido_id == request.session.get('webpay_pedido_id'):
+            _cancelar_pedido_pendiente(pedido_id, 'EXPIRADO')
+        request.session.pop('webpay_pedido_id', None)
+        messages.warning(
+            request,
+            'Se agotó el tiempo para pagar en Webpay. No se realizó ningún cobro '
+            'y tus productos se mantienen en el carrito.',
+        )
         return redirect('carrito')
 
     if not token_ws:
@@ -540,20 +616,19 @@ def webpay_confirmar(request):
     tx = obtener_transaccion_webpay()
     try:
         response = tx.commit(token_ws)
-    except Exception as e:
-        pedido_id = request.session.get('webpay_pedido_id')
-        if pedido_id:
-            pedido = Pedido.objects.filter(pk=pedido_id, estado='PENDIENTE').first()
-            if pedido:
-                with transaction.atomic():
-                    for detalle in pedido.detalles.select_related('producto'):
-                        detalle.producto.stock += detalle.cantidad
-                        detalle.producto.save(update_fields=['stock'])
-                    pedido.estado = 'CANCELADO'
-                    pedido.save(update_fields=['estado'])
-        request.session.pop('webpay_pedido_id', None)
-        messages.error(request, f'Error al confirmar la transacción con Transbank: {str(e)}')
-        return redirect('carrito')
+    except Exception:
+        # Un error al confirmar NO significa que el pago falló. Por ejemplo, el 422 "Invalid status
+        # '10' ... while authorizing" quiere decir que Transbank todavía está autorizando y va a
+        # cobrar: cancelar el pedido ahí dejaría un pago cobrado sin pedido. Antes de decidir algo
+        # se consulta el estado real; si sigue en proceso, el pedido queda como está.
+        response = _respuesta_resuelta_webpay(tx, token_ws)
+        if response is None:
+            messages.warning(
+                request,
+                'Estamos confirmando tu pago con Transbank. Espera unos segundos y revisa tu '
+                'pedido; no lo pagues de nuevo.',
+            )
+            return redirect('carrito')
 
     buy_order = response.get('buy_order', '')
     pedido_id = None

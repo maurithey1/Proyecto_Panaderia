@@ -1,12 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.contrib.messages import get_messages
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .models import Categoria, DetallePedido, Pago, Pedido, Producto
 from .retiro import ZONA_HORARIA, dias_de_retiro, franjas_del_dia, texto_retiro, validar_retiro
+from .views import WEBPAY_VIGENCIA_MIN
 from .zona_despacho import leer_coordenadas, punto_en_zona
 
 
@@ -417,3 +420,228 @@ class RetiroProgramadoCompraTests(TestCase):
         })
 
         self.assertEqual(Pedido.objects.get().direccion_despacho, 'Marigen 9795, La Florida')
+
+
+class WebpayPagoAbandonadoTests(TestCase):
+    """Un pago con Webpay que no se completa no debe dejar un pedido PENDIENTE reteniendo stock."""
+
+    def setUp(self):
+        self.categoria = Categoria.objects.create(nombre='Panes de prueba')
+        self.producto = Producto.objects.create(
+            categoria=self.categoria,
+            nombre='Hogaza de prueba',
+            precio=Decimal('1000.00'),
+            stock=10,
+            activo=True,
+        )
+
+    def _pedido_webpay(self, cantidad=3, minutos=0, estado='PENDIENTE'):
+        """Un pedido como el que deja finalizar_compra al enviar al cliente a Webpay."""
+        self.producto.stock -= cantidad
+        self.producto.save(update_fields=['stock'])
+        pedido = Pedido.objects.create(
+            estado=estado, canal='WEB', tipo_entrega='RETIRO', total=Decimal('1000.00') * cantidad,
+        )
+        DetallePedido.objects.create(
+            pedido=pedido, producto=self.producto, cantidad=cantidad,
+            precio_unitario=self.producto.precio, subtotal=self.producto.precio * cantidad,
+        )
+        Pago.objects.create(
+            pedido=pedido, monto=pedido.total, metodo='Webpay Plus', estado='PENDIENTE',
+            codigo_autorizacion='TOKEN',
+        )
+        if minutos:
+            Pedido.objects.filter(pk=pedido.pk).update(fecha=timezone.now() - timedelta(minutes=minutos))
+        return pedido
+
+    def _stock(self):
+        return Producto.objects.get(pk=self.producto.pk).stock
+
+    def _como_cliente_del_pedido(self, pedido):
+        sesion = self.client.session
+        sesion['webpay_pedido_id'] = pedido.pk
+        sesion.save()
+
+    def _timeout(self, pedido):
+        return self.client.get(reverse('webpay_confirmar'), {
+            'TBK_ID_SESION': 'sesion-de-transbank', 'TBK_ORDEN_COMPRA': f'ORD-{pedido.pk}',
+        })
+
+    def test_timeout_cancela_el_pedido_y_repone_el_stock(self):
+        pedido = self._pedido_webpay(cantidad=3)
+        self._como_cliente_del_pedido(pedido)
+        self.assertEqual(self._stock(), 7)
+
+        respuesta = self._timeout(pedido)
+
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(pedido.pago.estado, 'EXPIRADO')
+        self.assertEqual(self._stock(), 10)
+        self.assertIn('Se agotó el tiempo', ' '.join(str(m) for m in get_messages(respuesta.wsgi_request)))
+
+    def test_timeout_repetido_no_repone_dos_veces(self):
+        pedido = self._pedido_webpay(cantidad=3)
+        self._como_cliente_del_pedido(pedido)
+
+        self._timeout(pedido)
+        self._como_cliente_del_pedido(pedido)
+        self._timeout(pedido)
+
+        self.assertEqual(self._stock(), 10)
+
+    def test_timeout_no_cancela_el_pedido_de_otra_sesion(self):
+        pedido = self._pedido_webpay(cantidad=3)  # esta sesión no inició ese pedido
+
+        self._timeout(pedido)
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(self._stock(), 7)
+
+    def test_retorno_sin_nada_sigue_pidiendo_el_token(self):
+        respuesta = self.client.get(reverse('webpay_confirmar'))
+
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        self.assertIn('No se recibió el token', ' '.join(str(m) for m in get_messages(respuesta.wsgi_request)))
+
+    def test_pedido_abandonado_se_libera_al_ver_el_carrito(self):
+        pedido = self._pedido_webpay(cantidad=3, minutos=WEBPAY_VIGENCIA_MIN + 1)
+
+        self.client.get(reverse('carrito'))
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(pedido.pago.estado, 'EXPIRADO')
+        self.assertEqual(self._stock(), 10)
+
+    def test_el_catalogo_no_muestra_el_stock_de_un_pago_abandonado(self):
+        pedido = self._pedido_webpay(cantidad=3, minutos=WEBPAY_VIGENCIA_MIN + 1)
+
+        respuesta = self.client.get(reverse('pedir'))
+
+        self.assertContains(respuesta, '<strong>Stock:</strong> 10')
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+
+    def test_pedido_reciente_no_se_libera(self):
+        pedido = self._pedido_webpay(cantidad=3, minutos=WEBPAY_VIGENCIA_MIN - 5)
+
+        self.client.get(reverse('carrito'))
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(self._stock(), 7)
+
+    def test_pedidos_pagados_no_se_tocan(self):
+        pedido = self._pedido_webpay(cantidad=3, minutos=WEBPAY_VIGENCIA_MIN + 60, estado='PAGADO')
+
+        self.client.get(reverse('carrito'))
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PAGADO')
+        self.assertEqual(self._stock(), 7)
+
+    def test_intentar_nuevamente_cancela_el_pedido_sin_confirmar_el_pago(self):
+        """La página de error de Webpay vuelve con TBK_TOKEN y token_ws, por POST y sin cookie."""
+        pedido = self._pedido_webpay(cantidad=3)  # su token guardado es 'TOKEN'
+
+        with mock.patch('core.views.obtener_transaccion_webpay') as obtener:
+            respuesta = self.client.post(reverse('webpay_confirmar'), {
+                'token_ws': 'TOKEN', 'TBK_TOKEN': 'TOKEN',
+                'TBK_ORDEN_COMPRA': f'ORD-{pedido.pk}', 'TBK_ID_SESION': 'sesion',
+            })
+
+        obtener.return_value.commit.assert_not_called()
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(self._stock(), 10)
+        mensajes = ' '.join(str(m) for m in get_messages(respuesta.wsgi_request))
+        self.assertIn('puedes intentarlo de nuevo', mensajes)
+
+    def test_anular_cancela_solo_con_el_token_del_pedido(self):
+        pedido = self._pedido_webpay(cantidad=3)
+
+        # Quien solo conoce el número de pedido no puede cancelarlo.
+        self.client.get(reverse('webpay_confirmar'), {
+            'TBK_TOKEN': 'adivinado', 'TBK_ORDEN_COMPRA': f'ORD-{pedido.pk}',
+        })
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(self._stock(), 7)
+
+        # Con el token que entregó Transbank sí, y una sola vez.
+        for _ in range(2):
+            self.client.get(reverse('webpay_confirmar'), {
+                'TBK_TOKEN': 'TOKEN', 'TBK_ORDEN_COMPRA': f'ORD-{pedido.pk}',
+            })
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(self._stock(), 10)
+
+    def _retorno_con_commit_en_error(self, pedido, estado_real):
+        """El retorno de Transbank cuando el commit falla con 422 (todavía autorizando)."""
+        self._como_cliente_del_pedido(pedido)
+        with mock.patch('core.views.obtener_transaccion_webpay') as obtener, \
+                mock.patch('core.views.time.sleep'):
+            tx = obtener.return_value
+            tx.commit.side_effect = Exception("Invalid status '10' for transaction while authorizing (422)")
+            tx.status.return_value = estado_real
+            respuesta = self.client.get(reverse('webpay_confirmar'), {'token_ws': 'TOKEN'})
+        return respuesta, ' '.join(str(m) for m in get_messages(respuesta.wsgi_request))
+
+    def test_error_422_mientras_autoriza_no_cancela_el_pedido(self):
+        pedido = self._pedido_webpay(cantidad=3)
+
+        respuesta, mensajes = self._retorno_con_commit_en_error(pedido, {'status': 'INITIALIZED'})
+
+        self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(self._stock(), 7)
+        self.assertIn('Estamos confirmando tu pago', mensajes)
+        self.assertNotIn('422', mensajes)
+
+    def test_error_en_commit_pero_pago_autorizado_deja_el_pedido_pagado(self):
+        pedido = self._pedido_webpay(cantidad=3)
+
+        respuesta, _ = self._retorno_con_commit_en_error(pedido, {
+            'status': 'AUTHORIZED', 'response_code': 0, 'buy_order': f'ORD-{pedido.pk}',
+            'amount': 3000, 'payment_type_code': 'VD', 'authorization_code': '1415',
+        })
+
+        self.assertRedirects(
+            respuesta, reverse('boleta_simulada', args=[pedido.pk]), fetch_redirect_response=False,
+        )
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PAGADO')
+        self.assertEqual(pedido.pago.estado, 'APROBADO')
+        self.assertEqual(self._stock(), 7)
+
+    def test_error_en_commit_pero_pago_rechazado_repone_el_stock(self):
+        pedido = self._pedido_webpay(cantidad=3)
+
+        respuesta, _ = self._retorno_con_commit_en_error(pedido, {
+            'status': 'FAILED', 'response_code': -1, 'buy_order': f'ORD-{pedido.pk}',
+        })
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        self.assertEqual(self._stock(), 10)
+
+    def test_quien_reintenta_no_queda_bloqueado_por_su_pago_abandonado(self):
+        # Un pedido abandonado retiene 8 de 10: sin liberarlo, no alcanzaría el stock para comprar 5.
+        pedido = self._pedido_webpay(cantidad=8, minutos=WEBPAY_VIGENCIA_MIN + 1)
+        self.assertEqual(self._stock(), 2)
+        for _ in range(5):
+            self.client.post(reverse('carrito_agregar'), {'producto_id': self.producto.pk})
+
+        self.client.post(reverse('finalizar_compra'), {'tipo_entrega': 'RETIRO'})
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'CANCELADO')
+        nuevo = Pedido.objects.exclude(pk=pedido.pk).get()
+        self.assertEqual(nuevo.estado, 'PAGADO')
+        self.assertEqual(self._stock(), 5)
