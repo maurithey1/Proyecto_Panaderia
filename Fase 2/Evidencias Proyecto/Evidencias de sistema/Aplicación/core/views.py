@@ -629,15 +629,36 @@ WEBPAY_REINTENTO_SEG = 60              # tras una consulta fallida, no se repite
 WEBPAY_TOKEN_MIN = 40                  # los tokens reales de Transbank tienen 64 caracteres
 
 
+def _reembolso_aceptado(respuesta):
+    """True si la respuesta de Transbank a un reembolso confirma que el dinero se devolvió.
+
+    Transbank responde con type REVERSED (reversa: sin response_code) o NULLIFIED (anulación:
+    response_code 0 si la aceptó, -1 si la rechazó). El SDK solo lanza una excepción cuando el HTTP
+    no es 200: un rechazo con 200 llega como una respuesta normal, así que hay que leerla. Todo lo
+    que no confirme claramente la devolución se trata como no devuelto.
+    """
+    if not isinstance(respuesta, dict):
+        return False
+    tipo = respuesta.get('type')
+    if tipo == 'REVERSED':
+        return respuesta.get('response_code', 0) == 0
+    if tipo == 'NULLIFIED':
+        return respuesta.get('response_code') == 0
+    return False
+
+
 def _reembolsar_pago(tx, pedido_id, token, monto):
     """Pide a Transbank que devuelva un pago que no se pudo dejar asociado a un pedido.
 
-    Si el reembolso falla, el pago queda REEMBOLSO_PENDIENTE con el token guardado para que alguien
+    Solo se registra REEMBOLSADO si Transbank confirma la devolución. Si falla, la rechaza o responde
+    algo que no se entiende, el pago queda REEMBOLSO_PENDIENTE con el token guardado para que alguien
     del local lo resuelva a mano. Devuelve True si se reembolsó.
     """
     try:
-        tx.refund(token, int(monto))
+        respuesta = tx.refund(token, int(monto))
     except Exception:
+        respuesta = None
+    if not _reembolso_aceptado(respuesta):
         pedidos.marcar_pago(pedido_id, 'REEMBOLSO_PENDIENTE', codigo_autorizacion=token)
         return False
     pedidos.marcar_pago(pedido_id, 'REEMBOLSADO', codigo_autorizacion=token)
@@ -728,15 +749,37 @@ def _respuesta_resuelta_webpay(tx, token_ws, intentos=3, espera=1.0):
     return None
 
 
+def _es_su_pedido(request, pedido):
+    """True si quien hace la petición es quien está pagando este pedido.
+
+    Una compra como invitado no deja dueño en la base de datos: la prueba es que la sesión sea la que
+    lo está pagando (finalizar_compra guarda ahí su número). Si inició sesión, también es suyo el
+    pedido que quedó a nombre de su cuenta.
+    """
+    if request.session.get('webpay_pedido_id') == pedido.pk:
+        return True
+    return (
+        request.user.is_authenticated
+        and Pedido.objects.filter(pk=pedido.pk, cliente__user=request.user).exists()
+    )
+
+
+@require_POST
 def iniciar_pago_webpay(request, pedido_id=None):
     """
-    Inicia una transacción en Transbank Webpay Plus para un pedido existente o pendiente.
-    Redirige al cliente al portal de pago seguro de Transbank.
+    Inicia una transacción en Transbank Webpay Plus para un pedido pendiente (por ejemplo, para
+    reintentar el pago). Redirige al cliente al portal de pago seguro de Transbank.
+
+    Solo por POST y solo para el pedido de quien lo pide: iniciar el pago cambia el token del pedido,
+    y con ese token cualquiera podría cancelarlo (webpay_confirmar). Los pedidos de otros responden
+    404, igual que si no existieran.
     """
     if pedido_id is None:
-        pedido_id = request.POST.get('pedido_id') or request.session.get('webpay_pedido_id')
+        pedido_id = request.session.get('webpay_pedido_id')
 
     pedido = get_object_or_404(Pedido, pk=pedido_id)
+    if not _es_su_pedido(request, pedido):
+        raise Http404
 
     if pedido.estado == 'PAGADO':
         messages.info(request, 'Este pedido ya se encuentra pagado.')
