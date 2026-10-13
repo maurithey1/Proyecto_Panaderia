@@ -79,6 +79,10 @@
                 <small>{{ user.email|default:"Cliente registrado" }}</small>
               </div>
               <hr class="usuario-dropdown__divider">
+              <a href="{% url 'mis_pedidos' %}" class="usuario-dropdown__item">
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                <span>Mis Pedidos</span>
+              </a>
               <a href="{% url 'logout' %}" class="usuario-dropdown__item usuario-dropdown__item--danger">
                 <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>
                 <span>Cerrar sesión</span>

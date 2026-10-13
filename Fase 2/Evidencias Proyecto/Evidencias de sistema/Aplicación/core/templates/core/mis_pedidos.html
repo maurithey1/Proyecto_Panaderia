@@ -1,0 +1,100 @@
+{% extends "core/base.html" %}
+{% load static %}
+{% load formato %}
+
+{% block titulo %}Mis Pedidos{% endblock %}
+
+{% block contenido %}
+<section class="pagina">
+  <div class="contenedor" style="max-width: 900px;">
+    <div class="pagina__cabecera">
+      <h1>Mis Pedidos</h1>
+      <p>Revisa el historial y el estado de todas tus compras en Los Tres Spa.</p>
+    </div>
+
+    {% if pedidos %}
+      <div style="display: grid; gap: 20px;">
+        {% for pedido in pedidos %}
+          <article class="login-tarjeta" style="padding: 24px;">
+            <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--borde); padding-bottom: 12px;">
+              <div>
+                <h2 style="font-size: 1.2rem; margin: 0; color: var(--cafe-oscuro);">
+                  Pedido #{{ pedido.id }}
+                </h2>
+                <small style="color: var(--texto-suave);">
+                  {{ pedido.fecha|date:"d/m/Y \a \l\a\s H:i" }} hrs.
+                </small>
+              </div>
+
+              <div>
+                {% if pedido.estado == 'PAGADO' or pedido.estado == 'ENTREGADO' %}
+                  <span class="badge badge--exito">{{ pedido.get_estado_display }}</span>
+                {% elif pedido.estado == 'CANCELADO' %}
+                  <span class="badge badge--alerta">{{ pedido.get_estado_display }}</span>
+                {% else %}
+                  <span class="badge" style="background: var(--trigo-claro); color: var(--cafe-oscuro);">
+                    {{ pedido.get_estado_display }}
+                  </span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 16px;">
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+                  Productos comprados:
+                </strong>
+                <ul style="margin: 0; padding-left: 18px; font-size: 0.92rem; color: var(--texto-suave);">
+                  {% for detalle in pedido.detalles.all %}
+                    <li>{{ detalle.cantidad }}x {{ detalle.producto.nombre }} ({{ detalle.subtotal|clp }})</li>
+                  {% endfor %}
+                </ul>
+              </div>
+
+              <div>
+                <strong style="display: block; font-size: 0.9rem; color: var(--cafe-oscuro); margin-bottom: 4px;">
+                  Entrega:
+                </strong>
+                <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: var(--texto-suave);">
+                  {{ pedido.get_tipo_entrega_display }}
+                  {% if pedido.direccion_despacho %}
+                    <br><small>{{ pedido.direccion_despacho }}</small>
+                  {% endif %}
+                </p>
+
+                {% if pedido.pago %}
+                  <strong style="display: block; font-size: 0.9rem; color: var(--cafe-oscuro); margin-bottom: 4px;">
+                    Método de Pago:
+                  </strong>
+                  <p style="margin: 0; font-size: 0.9rem; color: var(--texto-suave);">
+                    {{ pedido.pago.metodo }}
+                  </p>
+                {% endif %}
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; pt-12; border-top: 1px dashed var(--borde); padding-top: 14px;">
+              <div>
+                <span style="font-size: 0.9rem; color: var(--texto-suave);">Total: </span>
+                <strong style="font-size: 1.25rem; color: var(--terracota);">{{ pedido.total|clp }}</strong>
+              </div>
+
+              <a href="{% url 'boleta_simulada' pedido.id %}" class="boton boton--contorno" style="padding: 6px 14px; font-size: 0.88rem;">
+                Ver Comprobante
+              </a>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="vacio" style="padding: 48px 24px;">
+        <svg class="icono" style="width: 3rem; height: 3rem; margin-bottom: 12px; color: var(--cafe-claro);" aria-hidden="true">
+          <use href="#i-pan"/>
+        </svg>
+        <p style="font-size: 1.1rem; margin-bottom: 16px;">Aún no has realizado ningún pedido.</p>
+        <a href="{% url 'pedir' %}" class="boton boton--primario">Ir al Catálogo</a>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

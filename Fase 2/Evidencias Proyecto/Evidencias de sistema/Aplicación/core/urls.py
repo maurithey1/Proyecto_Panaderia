@@ -1,9 +1,11 @@
 from django.urls import path
+from django.contrib.auth import views as auth_views
 from . import views
 
 urlpatterns = [
     path('', views.inicio, name='inicio'),
     path('pedir/', views.pedir, name='pedir'),
+    path('mis-pedidos/', views.mis_pedidos, name='mis_pedidos'),
     path('carrito/', views.carrito, name='carrito'),
     path('carrito/agregar/', views.agregar_al_carrito, name='carrito_agregar'),
     path('carrito/quitar/<int:producto_id>/', views.quitar_del_carrito, name='carrito_quitar'),
@@ -32,4 +34,36 @@ urlpatterns = [
     path('registro/', views.registro_view, name='registro'),
     path('terminos-y-condiciones/', views.terminos_condiciones, name='terminos_condiciones'),
     path('politicas-de-privacidad/', views.politicas_privacidad, name='politicas_privacidad'),
+    path(
+        'recuperar-password/', 
+        auth_views.PasswordResetView.as_view(
+            template_name='core/registration/password_reset_form.html',
+            email_template_name='core/registration/password_reset_email.html',
+            subject_template_name='core/registration/password_reset_subject.txt',
+            success_url='/recuperar-password/enviado/'
+        ), 
+        name='password_reset'
+    ),
+    path(
+        'recuperar-password/enviado/', 
+        auth_views.PasswordResetDoneView.as_view(
+            template_name='core/registration/password_reset_done.html'
+        ), 
+        name='password_reset_done'
+    ),
+    path(
+        'recuperar-password/confirmar/<uidb64>/<token>/', 
+        auth_views.PasswordResetConfirmView.as_view(
+            template_name='core/registration/password_reset_confirm.html',
+            success_url='/recuperar-password/completado/'
+        ), 
+        name='password_reset_confirm'
+    ),
+    path(
+        'recuperar-password/completado/', 
+        auth_views.PasswordResetCompleteView.as_view(
+            template_name='core/registration/password_reset_complete.html'
+        ), 
+        name='password_reset_complete'
+    ),
 ]
