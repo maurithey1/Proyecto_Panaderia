@@ -140,15 +140,37 @@ class Turno(models.Model):
         """Índices de los días en que rige (lunes = 0)."""
         return [i for i, campo in enumerate(self.CAMPOS_DIAS) if getattr(self, campo)]
 
+    @property
+    def cruza_medianoche(self):
+        """True si termina al día siguiente (p. ej. de 20:00 a 02:00)."""
+        return self.hora_fin < self.hora_inicio
+
     def rige_en(self, momento):
-        """True si un datetime (en hora de Chile) cae dentro del turno: día y hora."""
-        if momento.weekday() not in self.dias_activos():
-            return False
+        """True si un datetime (en hora de Chile) cae dentro del turno: día y hora.
+
+        Los días marcados son los días en que el turno EMPIEZA. Un turno de lunes de 18:00 a 12:00
+        cubre el lunes desde las 18:00 y el martes hasta las 12:00 (la madrugada es del día anterior).
+        """
+        dia = momento.weekday()
         hora = momento.time().replace(tzinfo=None)
-        if self.hora_inicio <= self.hora_fin:
-            return self.hora_inicio <= hora < self.hora_fin
-        # Cruza la medianoche (p. ej. 20:00 a 02:00).
-        return hora >= self.hora_inicio or hora < self.hora_fin
+        activos = self.dias_activos()
+        if not self.cruza_medianoche:
+            return dia in activos and self.hora_inicio <= hora < self.hora_fin
+        en_la_noche = dia in activos and hora >= self.hora_inicio
+        en_la_madrugada = (dia - 1) % 7 in activos and hora < self.hora_fin
+        return en_la_noche or en_la_madrugada
+
+    def cubre_tramo(self, dia_semana, inicio_min, fin_min):
+        """True si el tramo [inicio_min, fin_min] (minutos desde las 00:00 de ese día) cae entero dentro
+        del turno. Mismo criterio de días que rige_en: la madrugada pertenece al día anterior."""
+        activos = self.dias_activos()
+        turno_desde = self.hora_inicio.hour * 60 + self.hora_inicio.minute
+        turno_hasta = self.hora_fin.hour * 60 + self.hora_fin.minute
+        if not self.cruza_medianoche:
+            return dia_semana in activos and turno_desde <= inicio_min and fin_min <= turno_hasta
+        en_la_noche = dia_semana in activos and inicio_min >= turno_desde
+        en_la_madrugada = (dia_semana - 1) % 7 in activos and fin_min <= turno_hasta
+        return en_la_noche or en_la_madrugada
 
     @property
     def dias_formulario(self):

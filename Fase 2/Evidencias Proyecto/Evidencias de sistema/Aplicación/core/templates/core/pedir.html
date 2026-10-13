@@ -32,6 +32,11 @@
     </form>
     {# Anuncia la cantidad de resultados a lectores de pantalla cuando la búsqueda se actualiza sola #}
     <p class="sr-only" id="buscador-estado" role="status" aria-live="polite"></p>
+    {# Si una búsqueda no se pudo completar: lo que se ve abajo es de la búsqueda anterior (busqueda_catalogo.js) #}
+    <div class="buscador__aviso" id="buscador-aviso" role="alert" hidden>
+      <p class="buscador__aviso-texto" data-texto></p>
+      <button type="button" class="boton boton--contorno" data-reintentar>Reintentar</button>
+    </div>
 
     <div id="resultados" aria-busy="false">
       {% include "core/_resultados_busqueda.html" %}

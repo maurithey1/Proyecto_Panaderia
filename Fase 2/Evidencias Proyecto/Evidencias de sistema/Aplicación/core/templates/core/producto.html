@@ -6,7 +6,7 @@
 <section class="pagina">
   <div class="contenedor">
     <p><a href="{% url 'pedir' %}">← Volver al catálogo</a></p>
-    {% include "core/_producto_detalle.html" %}
+    {% include "core/_producto_detalle.html" with como_pagina=True %}
   </div>
 </section>
 {% endblock %}

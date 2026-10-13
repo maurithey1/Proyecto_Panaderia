@@ -119,6 +119,9 @@ document.addEventListener('submit', async (e) => {
       if (data.mensaje) {
         mostrarToast(data.mensaje, data.tipo_mensaje || 'success');
       }
+
+      // Lo que depende del carrito (horarios, restricciones, si se puede comprar) lo recalcula el servidor.
+      document.dispatchEvent(new CustomEvent('carrito:cambio', { detail: data }));
     }
   } catch (err) {
     console.error('Error procesando carrito:', err);
