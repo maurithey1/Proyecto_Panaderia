@@ -152,3 +152,20 @@ LOGIN_URL = 'login'  # Redirige a esta URL si el usuario no está autenticado
 WEBPAY_AMBIENTE = os.getenv('WEBPAY_AMBIENTE', 'INTEGRATION')
 WEBPAY_COMMERCE_CODE = os.getenv('WEBPAY_COMMERCE_CODE', '597055555532')
 WEBPAY_API_KEY = os.getenv('WEBPAY_API_KEY', '579B532A7440BB0C9079DED94D31EA1615BACEB56610332264630D42D0A36B1C')
+
+# ==========================================
+# CONFIGURACIÓN SERVIDOR SMTP (django.core.mail)
+# ==========================================
+
+# En producción (VPS Cloud - Docker Engine):
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')  # Servidor SMTP
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))         # Puerto TLS (587)
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'walterandres999@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'klrp fdoh bndk stns')
+DEFAULT_FROM_EMAIL = 'Los Tres Spa <no-reply@lostres.cl>'
+
+# NOTA PARA PRUEBAS LOCALES: Si deseas probar sin enviar correos reales,
+# descomenta la siguiente línea para ver el correo en la consola de Django:
+# EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'

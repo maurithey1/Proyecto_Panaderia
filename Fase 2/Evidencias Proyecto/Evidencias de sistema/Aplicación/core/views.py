@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -191,6 +192,28 @@ def pedir(request):
         'filtros_qs': filtros_qs,
         'busqueda': busqueda,
     })
+
+@login_required
+def mis_pedidos(request):
+    """
+    Muestra el historial de compras y pedidos realizados por el cliente autenticado.
+    """
+    _expirar_pedidos_webpay_vencidos()  # Libera pedidos Webpay abandonados
+
+    cliente = getattr(request.user, 'perfil_cliente', None)
+    
+    if not cliente:
+        pedidos = Pedido.objects.none()
+    else:
+        pedidos = (
+            Pedido.objects.filter(cliente=cliente)
+            .prefetch_related('detalles__producto')
+            .select_related('pago')
+            .order_by('-fecha')
+        )
+
+    return render(request, 'core/mis_pedidos.html', {'pedidos': pedidos})
+
 
 def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="success"):
     """Helper para calcular totales y devolver respuesta JSON estandarizada."""
@@ -1546,7 +1569,7 @@ def registro_view(request):
         return redirect('inicio')
 
     if request.method == 'POST':
-        rut = request.POST.get('rut', '').strip()
+        username = request.POST.get('username', '').strip()
         first_name = request.POST.get('first_name', '').strip()
         last_name = request.POST.get('last_name', '').strip()
         email = request.POST.get('email', '').strip().lower()
@@ -1564,7 +1587,7 @@ def registro_view(request):
         # Validaciones de backend
         errores = []
 
-        if not (rut and first_name and last_name and email and telefono and password and password_confirm and region and comuna and direccion1):
+        if not (username and first_name and last_name and email and telefono and password and password_confirm and region and comuna and direccion1):
             errores.append('Por favor completa todos los campos obligatorios.')
 
         if password != password_confirm:
@@ -1573,8 +1596,8 @@ def registro_view(request):
         if len(password) < 6:
             errores.append('La contraseña debe tener al menos 6 caracteres.')
 
-        if Usuario.objects.filter(username__iexact=rut).exists():
-            errores.append('Ya existe una cuenta registrada con este RUT.')
+        if Usuario.objects.filter(username__iexact=username).exists():
+            errores.append('Ya existe una cuenta registrada con este nombre de usuario.')
 
         if email and Usuario.objects.filter(email__iexact=email).exists():
             errores.append('Ya existe una cuenta con este correo electrónico.')
@@ -1584,7 +1607,7 @@ def registro_view(request):
                 messages.error(request, err)
             return render(request, 'core/registro.html', {
                 'datos': {
-                    'rut': rut,
+                    'username': username,
                     'first_name': first_name,
                     'last_name': last_name,
                     'email': email,
@@ -1601,7 +1624,7 @@ def registro_view(request):
             with transaction.atomic():
                 # 1. Crear Usuario cliente
                 user = Usuario.objects.create_user(
-                    username=rut,
+                    username=username,
                     email=email,
                     password=password,
                     first_name=first_name,

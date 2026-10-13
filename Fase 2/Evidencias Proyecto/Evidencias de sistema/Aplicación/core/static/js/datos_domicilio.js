@@ -99,3 +99,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 });
+
+document.getElementById('btn-continuar')?.addEventListener('click', () => {
+  const username = document.getElementById('id_username').value.trim();
+  const email = document.getElementById('id_email').value.trim();
+  const pass = document.getElementById('id_password').value;
+  const passConfirm = document.getElementById('id_password_confirm').value;
+
+  if (!username || !email || !pass || !passConfirm) {
+    mostrarToast('Por favor completa todos los campos del paso 1.', 'error');
+    return;
+  }
+
+  if (pass !== passConfirm) {
+    mostrarToast('Las contraseñas no coinciden.', 'error');
+    return;
+  }
+
+  if (pass.length < 6) {
+    mostrarToast('La contraseña debe tener al menos 6 caracteres.', 'error');
+    return;
+  }
+
+  // Avanzar al paso 2 si todo está correcto
+  document.getElementById('paso-1').classList.add('oculto');
+  document.getElementById('paso-2').classList.remove('oculto');
+  document.getElementById('indicador-paso-1').classList.remove('activo');
+  document.getElementById('indicador-paso-1').classList.add('completado');
+  document.getElementById('indicador-paso-2').classList.add('activo');
+  document.getElementById('linea-paso').classList.add('completada');
+});

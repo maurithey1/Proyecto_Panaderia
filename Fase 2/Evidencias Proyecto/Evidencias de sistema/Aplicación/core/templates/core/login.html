@@ -52,14 +52,6 @@
           <svg class="icono"><use href="#i-espiga"/></svg>
         </span>
 
-        {% if messages %}
-          <div class="login-alertas" role="alert">
-            {% for m in messages %}
-              <p class="alerta">{{ m }}</p>
-            {% endfor %}
-          </div>
-        {% endif %}
-
         <form method="POST" action="{% url 'login' %}" class="login-form">
           {% csrf_token %}
           {% if next %}
@@ -94,7 +86,7 @@
           </div>
 
           <div class="login-olvido">
-            <a href="#recuperar" class="enlace-olvido">¿Ha olvidado su contraseña?</a>
+            <a href="{% url 'password_reset' %}" class="enlace-olvido">¿Ha olvidado su contraseña?</a>
           </div>
 
           <div class="login-acciones">

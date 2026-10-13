@@ -36,18 +36,6 @@
         <svg class="icono"><use href="#i-espiga"/></svg>
       </span>
 
-      <!-- Alertas de Django (backend) -->
-      {% if messages %}
-        <div class="registro-alertas" role="alert">
-          {% for m in messages %}
-            <p class="alerta">{{ m }}</p>
-          {% endfor %}
-        </div>
-      {% endif %}
-
-      <!-- Alerta dinámica de validación JavaScript (frontend) -->
-      <div id="js-alerta" class="alerta" style="display: none;" role="alert"></div>
-
       <form method="POST" action="{% url 'registro' %}" id="form-registro" novalidate>
         {% csrf_token %}
 
@@ -58,15 +46,15 @@
           <h1 id="registro-titulo" class="registro-titulo">Crear cuenta nueva</h1>
 
           <div class="campo">
-            <label for="id_rut">RUT</label>
+            <label for="id_rut">Nombre de usuario</label>
             <input 
               type="text" 
-              name="rut" 
-              id="id_rut" 
+              name="username" 
+              id="id_username" 
               class="entrada" 
-              placeholder="Ej: 12.345.678-9" 
-              value="{{ datos.rut|default:'' }}" 
-              autocomplete="off" 
+              placeholder="Ej: jesperalta" 
+              value="{{ datos.username|default:'' }}" 
+              autocomplete="username" 
               required
             >
           </div>
