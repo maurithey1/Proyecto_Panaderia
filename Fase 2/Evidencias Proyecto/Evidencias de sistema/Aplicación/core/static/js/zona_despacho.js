@@ -22,7 +22,11 @@
   var tiendaLat = parseFloat(panel.dataset.lat);
   var tiendaLng = parseFloat(panel.dataset.lng);
   var direccionTienda = panel.dataset.direccionTienda || 'la tienda';
-  var bloqueadoPorStock = botonEnviar ? botonEnviar.disabled : false; // ya viene deshabilitado desde el servidor
+  // El servidor bloquea el botón por falta de stock o de horarios y lo marca con data-bloqueo-servidor. Se lee
+  // cada vez (no solo al cargar) porque el carrito puede cambiar sin recargar la página (carrito_estado.js).
+  function bloqueadoPorServidor() {
+    return botonEnviar ? botonEnviar.dataset.bloqueoServidor === '1' : false;
+  }
 
   var ATRIBUCION = '&copy; <a href="https://www.openstreetmap.org/copyright">Colaboradores de OpenStreetMap</a>';
   var URL_TESELAS = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -153,9 +157,10 @@
   function actualizarEnvio() {
     if (!botonEnviar) { return; }
     var porDireccion = esDespacho() && !confirmado;
-    botonEnviar.disabled = bloqueadoPorStock || porDireccion;
+    var porServidor = bloqueadoPorServidor();
+    botonEnviar.disabled = porServidor || porDireccion;
     if (!avisoEnvio) { return; }
-    var mostrarAviso = porDireccion && !bloqueadoPorStock;
+    var mostrarAviso = porDireccion && !porServidor;
     avisoEnvio.hidden = !mostrarAviso;
     if (mostrarAviso) {
       avisoEnvio.textContent = MENSAJES_BLOQUEO[motivoBloqueo] || MENSAJES_BLOQUEO.direccion;
@@ -742,6 +747,10 @@
       if (!campoLat.value) { mostrar(TEXTO_INICIAL, 'error'); }
     }
   });
+
+  // El carrito cambió sin recargar la página (static/js/carrito_estado.js): el servidor pudo habilitar o
+  // bloquear la compra, así que se vuelve a calcular el botón sin tocar la dirección ni el mapa.
+  form.addEventListener('carrito:actualizado', actualizarEnvio);
 
   alternar();
 })();

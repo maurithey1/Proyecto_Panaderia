@@ -42,10 +42,6 @@ def _a_hhmm(minutos):
     return f'{minutos // 60:02d}:{minutos % 60:02d}'
 
 
-def _minutos_de(hora):
-    return hora.hour * 60 + hora.minute
-
-
 def _horario_del_dia(fecha):
     """(desde, hasta) en minutos desde la medianoche, o None si ese día no hay retiro."""
     for _nombre, dias, desde, hasta in RETIRO_TRAMOS:
@@ -55,14 +51,10 @@ def _horario_del_dia(fecha):
 
 
 def _cabe_en_turno(fecha, inicio, turno):
-    """True si la franja que empieza en `inicio` (minutos) cabe entera en el turno ese día."""
-    if fecha.weekday() not in turno.dias_activos():
-        return False
-    turno_desde, turno_hasta = _minutos_de(turno.hora_inicio), _minutos_de(turno.hora_fin)
-    fin = inicio + PASO_MIN
-    if turno_desde <= turno_hasta:
-        return turno_desde <= inicio and fin <= turno_hasta
-    return inicio >= turno_desde or fin <= turno_hasta   # el turno cruza la medianoche
+    """True si la franja que empieza en `inicio` (minutos) cabe entera en el turno ese día.
+
+    La regla de los días (y de la madrugada de un turno que cruza la medianoche) vive en Turno."""
+    return turno.cubre_tramo(fecha.weekday(), inicio, inicio + PASO_MIN)
 
 
 def _cabe_en_los_turnos(fecha, inicio, turnos_por_producto):

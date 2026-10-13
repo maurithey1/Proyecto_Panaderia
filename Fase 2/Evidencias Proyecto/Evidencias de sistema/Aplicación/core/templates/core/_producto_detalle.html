@@ -2,6 +2,7 @@
 {% comment %}
   Información de un producto y su disponibilidad. Es el contenido del modal del catálogo
   (lo pide static/js/producto_modal.js con ?parcial=1) y de la página /producto/<id>/.
+  Con como_pagina=True (producto.html) el título es el h1 de la página y los niveles bajan en uno.
 {% endcomment %}
 {% with cantidad_en_carrito=request.session.carrito|obt_cantidad_carrito:p.pk %}
 <article class="detalle" aria-labelledby="detalle-titulo-{{ p.pk }}">
@@ -15,7 +16,11 @@
 
   <div class="detalle__cuerpo">
     <p class="detalle__categoria">{{ p.categoria.nombre }}</p>
-    <h2 class="detalle__titulo" id="detalle-titulo-{{ p.pk }}">{{ p.nombre }}</h2>
+    {% if como_pagina %}
+      <h1 class="detalle__titulo" id="detalle-titulo-{{ p.pk }}">{{ p.nombre }}</h1>
+    {% else %}
+      <h2 class="detalle__titulo" id="detalle-titulo-{{ p.pk }}">{{ p.nombre }}</h2>
+    {% endif %}
     {% if p.descripcion %}<p class="detalle__descripcion">{{ p.descripcion }}</p>{% endif %}
     {% if p.unidades_por_kg %}<p class="detalle__equivalencia">💡 <em>{{ p.unidades_por_kg }}</em></p>{% endif %}
 
@@ -30,9 +35,16 @@
     </p>
 
     <section class="detalle__disponibilidad" aria-labelledby="detalle-disponibilidad-{{ p.pk }}">
-      <h3 id="detalle-disponibilidad-{{ p.pk }}">Disponibilidad</h3>
+      {% if como_pagina %}
+        <h2 id="detalle-disponibilidad-{{ p.pk }}">Disponibilidad</h2>
+      {% else %}
+        <h3 id="detalle-disponibilidad-{{ p.pk }}">Disponibilidad</h3>
+      {% endif %}
       {% if turnos_del_producto %}
-        {% if disponible_ahora %}
+        {% if p.stock <= 0 %}
+          {% comment %}Agotado: el horario no dice nada de si se puede comprar, así que no se afirma "Disponible ahora".{% endcomment %}
+          <p class="detalle__todo-el-dia">Cuando vuelva a haber stock, se vende en estos horarios:</p>
+        {% elif disponible_ahora %}
           <p class="detalle__estado detalle__estado--si">Disponible ahora</p>
         {% else %}
           <p class="detalle__estado detalle__estado--no">
@@ -48,11 +60,15 @@
                 <strong>{{ t.nombre }}</strong>
                 <span>{{ t.horario_texto }} · {{ t.dias_texto }}</span>
               {% endif %}
+              {% if t.cruza_medianoche %}<span>· termina a las {{ t.hora_fin|time:"H:i" }} del día siguiente</span>{% endif %}
             </li>
           {% endfor %}
         </ul>
       {% else %}
-        <p class="detalle__todo-el-dia">Se vende todos los días, en el horario de la tienda.</p>
+        <p class="detalle__todo-el-dia">
+          {% if p.stock <= 0 %}Cuando vuelva a haber stock, se vende todos los días, en el horario de la tienda.
+          {% else %}Se vende todos los días, en el horario de la tienda.{% endif %}
+        </p>
       {% endif %}
     </section>
 
