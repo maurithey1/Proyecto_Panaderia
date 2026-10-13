@@ -102,6 +102,20 @@
           </label>
         </fieldset>
 
+        <fieldset class="compra__seccion-pago">
+          <legend>Método de Pago</legend>
+          
+          <label class="compra__opcion-pago">
+            <input type="radio" name="metodo_pago" value="WEBPAY" checked>
+            <span><strong>Webpay Plus</strong> (Débito, Crédito, Prepago via Transbank)</span>
+          </label>
+          
+          <label class="compra__opcion-pago">
+            <input type="radio" name="metodo_pago" value="SIMULADO">
+            <span><strong>Simulación rápida</strong> (Demostración sin cobro real)</span>
+          </label>
+        </fieldset>
+
         {# Retiro en tienda: dirección del local y agenda (static/js/retiro_agenda.js y core/retiro.py) #}
         <div class="retiro" id="retiro-panel">
           <div class="retiro__local">
@@ -178,7 +192,7 @@
         </p>
         {# Explica por qué el botón está bloqueado cuando la dirección no sirve para despachar (static/js/zona_despacho.js) #}
         <p class="zona__aviso-envio" id="zona-aviso-envio" hidden></p>
-        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock %} disabled{% endif %}>Completar compra de demostración</button>
+        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock %} disabled{% endif %}>Pagar con Webpay / Confirmar Pedido</button>
       </form>
     {% else %}
       <p class="vacio">Tu carrito está vacío. <a href="{% url 'pedir' %}">Ver productos</a></p>

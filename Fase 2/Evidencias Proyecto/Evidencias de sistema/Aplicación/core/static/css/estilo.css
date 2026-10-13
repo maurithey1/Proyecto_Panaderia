@@ -302,6 +302,44 @@ h1, h2, h3 {
 }
 
 /* ------------------------------------------
+   SECCIÓN MÉTODO DE PAGO (CARRITO)
+   ------------------------------------------ */
+.compra__seccion-pago {
+  margin-top: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--crema-2, #e5d9c5);
+  border-radius: 8px;
+  background-color: var(--blanco, #ffffff);
+}
+
+.compra__seccion-pago legend {
+  font-weight: bold;
+  padding: 0 0.5rem;
+  color: var(--cafe-oscuro, #3e2723);
+}
+
+.compra__opcion-pago {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.compra__opcion-pago:last-child {
+  margin-bottom: 0;
+}
+
+.compra__opcion-pago input[type="radio"] {
+  accent-color: var(--cafe-principal, #8d6e63);
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+/* ------------------------------------------
    NOTIFICACIONES FLOTANTES (TOASTS EMERGENTES)
    ------------------------------------------ */
 
