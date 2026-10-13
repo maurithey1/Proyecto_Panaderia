@@ -8,12 +8,12 @@
   
   <div class="admin-page-header">
     <h1 class="admin-panel__titulo" style="text-align: left; margin-bottom: 0;">Gestión de Cuentas del Sistema</h1>
-    <button class="boton boton--primario" onclick="abrirModalCajero()">+ Registrar Nuevo Cajero</button>
+    <button class="boton boton--primario" onclick="abrirModalUsuario()">+ Registrar Nuevo Personal</button>
   </div>
 
-  <!-- SECCIÓN 1: TRABAJADORES (CAJEROS) - CRUD COMPLETO -->
+  <!-- SECCIÓN 1: PERSONAL DEL SISTEMA (ADMINISTRADORES Y CAJEROS) -->
   <section class="admin-panel" style="margin-bottom: 32px;">
-    <h2 class="admin-panel__subtitulo">Trabajadores y Cajeros (Acceso POS)</h2>
+    <h2 class="admin-panel__subtitulo">Personal del Sistema (Administradores y Cajeros)</h2>
     <div class="admin-tabla-wrapper">
       <table class="admin-tabla">
         <thead>
@@ -21,32 +21,52 @@
             <th>Usuario</th>
             <th>Nombre Completo</th>
             <th>Correo Electrónico</th>
-            <th>N° Caja</th>
+            <th>Rol / Asignación</th>
             <th>Estado</th>
             <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
-          {% for c in cajeros %}
+          {% for u in personal %}
             <tr>
-              <td><strong>{{ c.user.username }}</strong></td>
-              <td>{{ c.user.get_full_name|default:"-" }}</td>
-              <td>{{ c.user.email }}</td>
-              <td>Caja N° {{ c.num_caja_asignada }}</td>
+              <td><strong>{{ u.username }}</strong></td>
+              <td>{{ u.get_full_name|default:"-" }}</td>
+              <td>{{ u.email }}</td>
               <td>
-                {% if c.user.is_active %}
+                {% if u.es_administrador %}
+                  <span class="badge" style="background-color: var(--crema-2); color: var(--cafe-oscuro);">Administrador</span>
+                {% else %}
+                  <span class="badge" style="background-color: #e8f0fe; color: #1a73e8;">Cajero (Caja N° {{ u.perfil_cajero.num_caja_asignada|default:1 }})</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if u.is_active %}
                   <span class="badge badge--exito">Activo</span>
                 {% else %}
                   <span class="badge badge--alerta">Inactivo</span>
                 {% endif %}
               </td>
               <td class="tabla-acciones">
-                <a href="{% url 'editar_cajero' c.pk %}" class="boton-tabla">✏️ Editar</a>
-                <a href="{% url 'eliminar_cajero' c.pk %}" class="boton-tabla boton-tabla--danger" onclick="return confirm('¿Desea desactivar este cajero?')">🗑️ Desactivar</a>
+                <button 
+                  type="button" 
+                  class="boton-tabla"
+                  onclick="abrirModalEditarUsuario('{{ u.pk }}', '{{ u.username }}', '{{ u.first_name }}', '{{ u.last_name }}', '{{ u.email }}', '{{ u.rol }}', '{{ u.perfil_cajero.num_caja_asignada|default:1 }}')"
+                >
+                  ✏️ Editar
+                </button>
+                {% if u.pk != request.user.pk %}
+                  <button 
+                    type="button" 
+                    class="boton-tabla boton-tabla--danger"
+                    onclick="abrirModalDesactivarUsuario('{{ u.pk }}', '{{ u.username }}')"
+                  >
+                    🗑️ Desactivar
+                  </button>
+                {% endif %}
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="6" class="admin-vacio">No hay cajeros registrados en el sistema.</td></tr>
+            <tr><td colspan="6" class="admin-vacio">No hay personal registrado en el sistema.</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -88,32 +108,135 @@
 
 </div>
 
-<!-- Modal Ligero para Crear Cajero -->
-<dialog id="modalCajero" class="admin-modal">
-  <form method="POST" action="{% url 'crear_cajero' %}" class="admin-modal__content">
+<!-- MODAL 1: REGISTRAR NUEVO PERSONAL -->
+<dialog id="modalUsuario" class="admin-modal">
+  <form method="POST" action="{% url 'crear_personal' %}" class="admin-modal__content">
     {% csrf_token %}
-    <h3>Registrar Nuevo Cajero</h3>
+    <h3>Registrar Nuevo Personal</h3>
     
-    <div class="campo"><label>Usuario / Login:</label><input type="text" name="username" class="entrada" required></div>
-    <div class="fila-dos">
-      <div class="campo"><label>Nombre:</label><input type="text" name="first_name" class="entrada" required></div>
-      <div class="campo"><label>Apellido:</label><input type="text" name="last_name" class="entrada" required></div>
+    <div class="campo">
+      <label>Usuario / Login:</label>
+      <input type="text" name="username" class="entrada" required>
     </div>
-    <div class="campo"><label>Correo Electrónico:</label><input type="email" name="email" class="entrada" required></div>
+
     <div class="fila-dos">
-      <div class="campo"><label>Contraseña:</label><input type="password" name="password" class="entrada" required></div>
-      <div class="campo"><label>N° Caja Asignada:</label><input type="number" name="num_caja_asignada" value="1" min="1" class="entrada" required></div>
+      <div class="campo">
+        <label>Nombre:</label>
+        <input type="text" name="first_name" class="entrada" required>
+      </div>
+      <div class="campo">
+        <label>Apellido:</label>
+        <input type="text" name="last_name" class="entrada" required>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Correo Electrónico:</label>
+      <input type="email" name="email" class="entrada" required>
+    </div>
+
+    <div class="fila-dos">
+      <div class="campo">
+        <label>Rol de Usuario:</label>
+        <select name="rol" id="crear_rol" class="entrada" onchange="toggleCampoCajaCrear()">
+          <option value="CAJERO" selected>Cajero (Acceso POS)</option>
+          <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
+        </select>
+      </div>
+      <div class="campo" id="contenedor_caja_crear">
+        <label>N° Caja Asignada:</label>
+        <input type="number" name="num_caja_asignada" value="1" min="1" class="entrada">
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Contraseña:</label>
+      <input type="password" name="password" class="entrada" required>
     </div>
 
     <div class="registro-acciones">
-      <button type="button" class="boton boton--contorno" onclick="cerrarModalCajero()">Cancelar</button>
-      <button type="submit" class="boton boton--primario">Guardar Cajero</button>
+      <button type="button" class="boton boton--contorno" onclick="cerrarModalUsuario()">Cancelar</button>
+      <button type="submit" class="boton boton--primario">Guardar Personal</button>
     </div>
   </form>
 </dialog>
 
-<script>
-  function abrirModalCajero() { document.getElementById('modalCajero').showModal(); }
-  function cerrarModalCajero() { document.getElementById('modalCajero').close(); }
-</script>
+<!-- MODAL 2: EDITAR PERSONAL -->
+<dialog id="modalEditarUsuario" class="admin-modal">
+  <form method="POST" id="formEditarUsuario" action="" class="admin-modal__content">
+    {% csrf_token %}
+    <h3>Editar Datos del Personal</h3>
+    
+    <div class="campo">
+      <label>Usuario / Login:</label>
+      <input type="text" id="edit_username" class="entrada" disabled style="background-color: var(--crema-2); cursor: not-allowed; opacity: 0.85;">
+    </div>
+
+    <div class="fila-dos">
+      <div class="campo">
+        <label>Nombre:</label>
+        <input type="text" name="first_name" id="edit_first_name" class="entrada" required>
+      </div>
+      <div class="campo">
+        <label>Apellido:</label>
+        <input type="text" name="last_name" id="edit_last_name" class="entrada" required>
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Correo Electrónico:</label>
+      <input type="email" name="email" id="edit_email" class="entrada" required>
+    </div>
+
+    <div class="fila-dos">
+      <div class="campo">
+        <label>Rol de Usuario:</label>
+        <select name="rol" id="edit_rol" class="entrada" onchange="toggleCampoCajaEditar()">
+          <option value="CAJERO">Cajero (Acceso POS)</option>
+          <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
+        </select>
+      </div>
+      <div class="campo" id="contenedor_caja_editar">
+        <label>N° Caja Asignada:</label>
+        <input type="number" name="num_caja_asignada" id="edit_num_caja" min="1" class="entrada">
+      </div>
+    </div>
+
+    <div class="campo">
+      <label>Nueva Contraseña (Opcional):</label>
+      <input type="password" name="password" class="entrada" placeholder="••••••••">
+    </div>
+
+    <div class="registro-acciones">
+      <button type="button" class="boton boton--contorno" onclick="cerrarModalEditarUsuario()">Cancelar</button>
+      <button type="submit" class="boton boton--primario">Guardar Cambios</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL 3: CONFIRMAR DESACTIVACIÓN DE PERSONAL -->
+<dialog id="modalDesactivarUsuario" class="admin-modal">
+  <div class="admin-modal__content">
+    <h3>Desactivar Usuario</h3>
+    
+    <p style="margin-block: 16px; color: var(--texto-suave);">
+      ¿Está seguro/a de que desea desactivar la cuenta del usuario <strong id="desactivar_username" style="color: var(--cafe-oscuro);"></strong>?
+    </p>
+    <p style="font-size: 0.88rem; color: var(--terracota); margin-bottom: 24px;">
+      ⚠️ El usuario perderá el acceso al sistema, pero se conservará su historial operacional.
+    </p>
+
+    <div class="registro-acciones">
+      <button type="button" class="boton boton--contorno" onclick="cerrarModalDesactivarUsuario()">Cancelar</button>
+      <a id="btnConfirmarDesactivar" href="#" class="boton boton--primario" style="background-color: var(--terracota); border-color: var(--terracota);">
+        Sí, Desactivar
+      </a>
+    </div>
+  </div>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/gestion_usuarios.js' %}"></script>
 {% endblock %}

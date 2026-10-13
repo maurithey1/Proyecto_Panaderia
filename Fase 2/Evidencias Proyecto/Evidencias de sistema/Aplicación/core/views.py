@@ -20,7 +20,7 @@ from transbank.common.integration_type import IntegrationType
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario,
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador
 )
 from .templatetags.tienda import TIENDA
 from django.http import JsonResponse
@@ -980,26 +980,29 @@ def inicio_admin(request):
 def gestion_usuarios(request):
     """
     Vista principal de gestión de cuentas.
-    Separa los usuarios en Clientes (Solo Lectura) y Cajeros/Trabajadores (CRUD).
+    Separa los usuarios en Clientes (Solo Lectura) y Personal del Sistema (Administradores y Cajeros).
     """
     clientes = Cliente.objects.select_related('user', 'puntos').all().order_by('-user__date_joined')
-    cajeros = Cajero.objects.select_related('user').all().order_by('num_caja_asignada')
+    personal = Usuario.objects.filter(
+        rol__in=['ADMINISTRADOR', 'CAJERO']
+    ).select_related('perfil_cajero', 'perfil_admin').order_by('rol', 'username')
 
     contexto = {
         'clientes': clientes,
-        'cajeros': cajeros,
+        'personal': personal,
     }
     return render(request, 'core/gestion_usuarios.html', contexto)
 
 @admin_required
-def crear_cajero(request):
-    """Crea un nuevo usuario de tipo CAJERO con su correspondiente perfil operativo."""
+def crear_personal(request):
+    """Crea un nuevo usuario del personal (ADMINISTRADOR o CAJERO) con su perfil correspondiente."""
     if request.method == 'POST':
         username = request.POST.get('username', '').strip()
         first_name = request.POST.get('first_name', '').strip()
         last_name = request.POST.get('last_name', '').strip()
         email = request.POST.get('email', '').strip().lower()
         password = request.POST.get('password', '')
+        rol = request.POST.get('rol', 'CAJERO')
         num_caja = request.POST.get('num_caja_asignada', 1)
 
         if Usuario.objects.filter(username__iexact=username).exists():
@@ -1014,52 +1017,76 @@ def crear_cajero(request):
                     password=password,
                     first_name=first_name,
                     last_name=last_name,
-                    rol='CAJERO',
-                    is_staff=True # Permite accesos operativos
+                    rol=rol,
+                    is_staff=True
                 )
-                Cajero.objects.create(user=user, num_caja_asignada=num_caja)
-                messages.success(request, f'Cajero "{username}" registrado con éxito.')
+                if rol == 'CAJERO':
+                    Cajero.objects.create(user=user, num_caja_asignada=num_caja)
+                elif rol == 'ADMINISTRADOR':
+                    Administrador.objects.create(user=user, nivel_acceso='TOTAL')
+
+                messages.success(request, f'Usuario "{username}" ({rol}) registrado con éxito.')
         except Exception as e:
-            messages.error(request, f'Error al crear el cajero: {str(e)}')
+            messages.error(request, f'Error al crear el usuario: {str(e)}')
 
     return redirect('gestion_usuarios')
 
 
 @admin_required
-def editar_cajero(request, pk):
-    """Edita la información de un cajero existente y su asignación de caja."""
-    cajero = get_object_or_404(Cajero, pk=pk)
-    user = cajero.user
+def editar_personal(request, pk):
+    """Edita la información y rol de un usuario del personal (Administrador o Cajero)."""
+    user = get_object_or_404(Usuario, pk=pk)
 
     if request.method == 'POST':
         user.first_name = request.POST.get('first_name', '').strip()
         user.last_name = request.POST.get('last_name', '').strip()
         user.email = request.POST.get('email', '').strip().lower()
-        cajero.num_caja_asignada = request.POST.get('num_caja_asignada', 1)
-        
+        nuevo_rol = request.POST.get('rol', user.rol)
+        num_caja = request.POST.get('num_caja_asignada', 1)
+
+        # Si cambió el rol, actualizamos los perfiles asociados
+        if nuevo_rol != user.rol:
+            user.rol = nuevo_rol
+            if nuevo_rol == 'ADMINISTRADOR':
+                Cajero.objects.filter(user=user).delete()
+                Administrador.objects.get_or_create(user=user, defaults={'nivel_acceso': 'TOTAL'})
+            elif nuevo_rol == 'CAJERO':
+                Administrador.objects.filter(user=user).delete()
+                Cajero.objects.get_or_create(user=user, defaults={'num_caja_asignada': num_caja})
+
+        # Si es o sigue siendo Cajero, actualizamos el N° de caja
+        if user.rol == 'CAJERO':
+            cajero, _ = Cajero.objects.get_or_create(user=user)
+            try:
+                cajero.num_caja_asignada = int(num_caja)
+                cajero.save()
+            except (ValueError, TypeError):
+                pass
+
         # Cambio de contraseña opcional
         nueva_pass = request.POST.get('password', '').strip()
         if nueva_pass:
             user.set_password(nueva_pass)
 
         user.save()
-        cajero.save()
-        messages.success(request, f'Datos del cajero "{user.username}" actualizados correctamente.')
+        messages.success(request, f'Datos del usuario "{user.username}" actualizados correctamente.')
         return redirect('gestion_usuarios')
 
-    return render(request, 'core/editar_cajero.html', {'cajero': cajero})
+    return redirect('gestion_usuarios')
 
 
 @admin_required
-def eliminar_cajero(request, pk):
-    """Desactiva o elimina la cuenta de un cajero."""
-    cajero = get_object_or_404(Cajero, pk=pk)
-    user = cajero.user
-    
-    # Desactivar en lugar de eliminar físicamente para no perder historial de cajas
+def eliminar_personal(request, pk):
+    """Desactiva la cuenta de un usuario del personal (Administrador o Cajero)."""
+    user = get_object_or_404(Usuario, pk=pk)
+
+    if user == request.user:
+        messages.error(request, 'No puedes desactivar tu propia cuenta de administrador en uso.')
+        return redirect('gestion_usuarios')
+
     user.is_active = False
     user.save()
-    messages.warning(request, f'El cajero "{user.username}" ha sido desactivado del sistema.')
+    messages.warning(request, f'El usuario "{user.username}" ha sido desactivado del sistema.')
     return redirect('gestion_usuarios')
 
 

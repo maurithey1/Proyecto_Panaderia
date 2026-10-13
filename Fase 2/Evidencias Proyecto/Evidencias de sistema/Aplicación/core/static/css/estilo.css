@@ -1703,36 +1703,57 @@ main { flex: 1; }
   font-size: 0.9rem;
 }
 
-.admin-tabla th {
-  background: var(--crema-2);
-  color: var(--cafe-oscuro);
-  padding: 12px 14px;
-  border-bottom: 1.5px solid var(--borde);
-}
-
+/* Alineación vertical unificada para todas las celdas de la fila */
+.admin-tabla th,
 .admin-tabla td {
   padding: 12px 14px;
   border-bottom: 1px solid var(--borde);
   color: var(--cafe-oscuro);
+  vertical-align: middle;
 }
 
+.admin-tabla th {
+  background: var(--crema-2);
+  border-bottom: 1.5px solid var(--borde);
+  font-weight: 700;
+}
+
+/* Evita que los badges como "Cajero (Caja N° 1)" se dividan en dos líneas */
 .badge {
-  padding: 4px 8px;
+  display: inline-block;
+  padding: 4px 10px;
   border-radius: 999px;
   font-size: 0.78rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 .badge--exito { background: #e6f4ea; color: #137333; }
 .badge--alerta { background: #fce8e6; color: #c5221f; }
 
-.tabla-acciones { display: flex; gap: 8px; }
+/* Mantiene el <td> como celda de tabla sin alterar su display nativo */
+td.tabla-acciones {
+  white-space: nowrap;
+}
+
+/* Posiciona los botones horizontalmente en línea continua */
 .boton-tabla {
-  padding: 4px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  margin-right: 4px;
   border-radius: 6px;
   text-decoration: none;
   font-size: 0.82rem;
   border: 1px solid var(--borde);
   background: var(--papel);
+  color: var(--cafe-oscuro);
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.boton-tabla:last-child {
+  margin-right: 0;
 }
 .boton-tabla:hover { background: var(--crema-2); }
 .boton-tabla--danger { color: var(--terracota); }
