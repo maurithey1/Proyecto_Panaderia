@@ -71,11 +71,11 @@
               <td class="crud-col-precio">{{ insumo.precio_saco|clp }}</td>
               <td class="crud-col-acciones">
                 <button type="button" class="crud-btn-accion crud-btn-editar"
-                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0 }}')">
+                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0 }}')">
                   Editar
                 </button>
                 <button type="button" class="crud-btn-accion crud-btn-eliminar"
-                        onclick="abrirModalEliminarInsumo('{{ insumo.pk }}', '{{ insumo.codigo }}', '{{ insumo.nombre|escapejs }}')">
+                        onclick="abrirModalEliminarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}')">
                   Eliminar
                 </button>
               </td>
@@ -395,9 +395,9 @@
         </div>
         <div class="crud-form-fila-doble">
           <div class="crud-form-grupo">
-            <label for="prod_categoria">Categoría:</label>
+            <label for="edit_prod_categoria">Categoría:</label>
             <div style="display: flex; gap: 8px;">
-              <select id="prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
+              <select id="edit_prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
                 <option value="">Selecciona categoría</option>
                 {% for cat in categorias_productos %}
                   <option value="{{ cat.pk }}">{{ cat.nombre }}</option>
@@ -522,7 +522,7 @@
 
 <!-- MODAL: Crear Categoría Rápida -->
 <div class="crud-modal-backdrop" id="modalAgregarCategoria" style="display: none; z-index: 9999 !important;">
-  <div class="crud-modal-caja" style="max-width: 450px z-index: 10000 !important;">
+  <div class="crud-modal-caja" style="max-width: 450px; z-index: 10000 !important;">
     <div class="crud-modal-header">
       <h3>Nueva Categoría de Producto</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarCategoria()">&times;</button>

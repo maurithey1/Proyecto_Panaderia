@@ -11,21 +11,19 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
-from django.http import Http404
+from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from django.core.cache import cache
-from transbank.webpay.webpay_plus.transaction import Transaction
-from transbank.common.integration_type import IntegrationType
+
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria
 )
 from .templatetags.tienda import TIENDA
-from django.http import JsonResponse
 from .templatetags.formato import clp
 from . import pedidos
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
@@ -35,8 +33,6 @@ from .zona_despacho import leer_coordenadas, punto_en_zona
 # ==========================================
 # FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
 # ==========================================
-# Todo sale de la base de datos (modelo Producto). El archivo productos_prueba.json
-# solo sirve para cargar datos iniciales:  python manage.py cargar_productos
 
 PRODUCTOS_DESTACADOS = 4
 
@@ -57,7 +53,7 @@ def _turnos_activos():
 
 def inicio(request):
     """Los 4 productos más vendidos (pedidos no cancelados), leídos de la BD."""
-    _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
+    _expirar_pedidos_webpay_vencidos()
     estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
 
     productos = (
@@ -94,11 +90,7 @@ def _palabras(texto):
 
 
 def _posicion_de(palabra_buscada, palabras):
-    """Índice de la primera palabra que EMPIEZA con lo buscado, o None.
-
-    Se compara por inicio de palabra: 'pan' calza con 'pan' y 'panadería', pero no con
-    'empanada'. También acepta el plural sencillo ('panes' -> 'pan').
-    """
+    """Índice de la primera palabra que EMPIEZA con lo buscado, o None."""
     formas = {palabra_buscada}
     for sufijo in ('es', 's'):
         if palabra_buscada.endswith(sufijo) and len(palabra_buscada) - len(sufijo) >= 3:
@@ -110,12 +102,7 @@ def _posicion_de(palabra_buscada, palabras):
 
 
 def _buscar_productos(productos, busqueda):
-    """Productos que calzan con la búsqueda, del más al menos relevante.
-
-    Una palabra buscada calza si es el inicio de una palabra del nombre o de la categoría.
-    Orden: los agotados al final; luego los de la categoría que calza (buscar "pan" muestra toda
-    la categoría de panes); luego los que tienen la palabra antes en el nombre; luego por nombre.
-    """
+    """Productos que calzan con la búsqueda, del más al menos relevante."""
     terminos = _palabras(busqueda)[:BUSQUEDA_MAX_PALABRAS]
     if not terminos:
         return []
@@ -138,25 +125,22 @@ def _buscar_productos(productos, busqueda):
 
 def pedir(request):
     """Catálogo completo, público. Filtros combinables: ?categoria=<id>, ?turno=<id> y búsqueda ?q=."""
-    _expirar_pedidos_webpay_vencidos()  # el stock que se muestra no debe incluir pagos abandonados
+    _expirar_pedidos_webpay_vencidos()
     categorias = Categoria.objects.filter(productos__activo=True).distinct().order_by('nombre')
 
     productos = Producto.objects.filter(activo=True).prefetch_related(_turnos_activos()).order_by(
-        # Los agotados van al final
         Case(When(stock__gt=0, then=Value(0)), default=Value(1), output_field=IntegerField()),
         'nombre',
     )
 
-    # Turnos de venta (los administra el admin). "Ahora" se calcula con la hora de Chile.
     turnos = list(Turno.objects.filter(activo=True, productos__activo=True).distinct())
     ahora_cl = ahora_en_chile()
-    turnos_ahora = [t.pk for t in turnos if t.rige_en(ahora_cl)]  # pueden regir varios a la vez
+    turnos_ahora = [t.pk for t in turnos if t.rige_en(ahora_cl)]
     turno_actual = None
     turno_id = _entero_o_none(request.GET.get('turno', ''))
     if turno_id is not None:
         turno_actual = next((t for t in turnos if t.pk == turno_id), None)
     if turno_actual:
-        # Lo que se vende en ese turno, más lo que no tiene turnos activos (se vende todo el día).
         sin_turnos = Producto.objects.exclude(turnos__activo=True).values('pk')
         en_el_turno = Producto.objects.filter(turnos=turno_actual).values('pk')
         productos = productos.filter(Q(pk__in=sin_turnos) | Q(pk__in=en_el_turno))
@@ -168,7 +152,6 @@ def pedir(request):
         if categoria_actual:
             productos = productos.filter(categoria=categoria_actual)
 
-    # Los filtros activos como query string, para que los enlaces y "Limpiar" los conserven.
     parametros = []
     if categoria_actual:
         parametros.append(f'categoria={categoria_actual.pk}')
@@ -176,13 +159,10 @@ def pedir(request):
         parametros.append(f'turno={turno_actual.pk}')
     filtros_qs = ('?' + '&'.join(parametros)) if parametros else ''
 
-    # Búsqueda por nombre o categoría: sin importar mayúsculas ni tildes (ver _buscar_productos).
     busqueda = request.GET.get('q', '').strip()[:BUSQUEDA_MAX_LARGO]
     if busqueda:
         productos = _buscar_productos(productos, busqueda)
 
-    # La búsqueda en vivo (static/js/busqueda_catalogo.js) pide solo la zona de resultados. Va en
-    # una URL distinta (?parcial=1) para que el navegador no guarde el fragmento como si fuera la página.
     plantilla = 'core/_resultados_busqueda.html' if request.GET.get('parcial') == '1' else 'core/pedir.html'
     return render(request, plantilla, {
         'productos': productos,
@@ -195,12 +175,11 @@ def pedir(request):
         'busqueda': busqueda,
     })
 
+
 @login_required
 def mis_pedidos(request):
-    """
-    Muestra el historial de compras y pedidos realizados por el cliente autenticado.
-    """
-    _expirar_pedidos_webpay_vencidos()  # Libera pedidos Webpay abandonados
+    """Muestra el historial de compras y pedidos realizados por el cliente autenticado."""
+    _expirar_pedidos_webpay_vencidos()
 
     cliente = getattr(request.user, 'perfil_cliente', None)
     
@@ -232,11 +211,9 @@ def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="succes
 
     cant_unidades_item = cantidades.get(int(producto_id), 0)
 
-    # Calcular total del carrito
     productos = Producto.objects.filter(pk__in=cantidades.keys(), activo=True)
     total_monto = sum(p.precio * cantidades[p.pk] for p in productos if p.pk in cantidades)
     
-    # Subtotal del producto modificado
     producto_obj = next((p for p in productos if p.pk == int(producto_id)), None)
     subtotal_item = (producto_obj.precio * cant_unidades_item) if producto_obj else 0
 
@@ -244,7 +221,7 @@ def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="succes
         'ok': True,
         'producto_id': int(producto_id),
         'cantidad_item': cant_unidades_item,
-        'cant_carrito': len(carrito), # O sum(cantidades.values()) según tu preferencia
+        'cant_carrito': len(carrito),
         'subtotal_item_clp': clp(subtotal_item),
         'total_carrito_clp': clp(total_monto),
         'mensaje': mensaje,
@@ -254,7 +231,7 @@ def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="succes
 
 @require_POST
 def agregar_al_carrito(request):
-    _expirar_pedidos_webpay_vencidos()  # el límite de stock no debe incluir pagos abandonados
+    _expirar_pedidos_webpay_vencidos()
     es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     producto_id = _entero_o_none(request.POST.get('producto_id', ''))
     
@@ -294,7 +271,7 @@ def agregar_al_carrito(request):
 
 def carrito(request):
     """Muestra el carrito de la sesión con los datos reales de cada producto."""
-    _expirar_pedidos_webpay_vencidos()  # libera el stock de pagos Webpay abandonados
+    _expirar_pedidos_webpay_vencidos()
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict):
         carrito_sesion = {}
@@ -337,7 +314,6 @@ def carrito(request):
         if len(carrito_normalizado) < len(cantidades):
             messages.warning(request, 'Se quitaron del carrito productos que ya no están disponibles.')
 
-    # Cliente registrado: se le ofrece la dirección que dejó al crear su cuenta.
     direccion_guardada = ''
     if request.user.is_authenticated:
         direccion_guardada = (
@@ -346,8 +322,6 @@ def carrito(request):
             .first()
         ) or ''
 
-    # Los productos con turnos solo se venden dentro de ellos: la agenda ofrece únicamente las horas
-    # (de retiro o de entrega) que sirven para todos los productos del carrito.
     turnos_por_producto = []
     restricciones = []
     for item in items:
@@ -359,7 +333,6 @@ def carrito(request):
                 'turnos': '; '.join(turno.descripcion for turno in turnos),
             })
     agenda = dias_de_retiro(turnos_por_producto=turnos_por_producto)
-    # ¿No queda ninguna hora por culpa de los productos (y no porque la tienda esté cerrada)?
     sin_horas_por_productos = bool(turnos_por_producto) and not agenda and bool(dias_de_retiro())
 
     return render(request, 'core/carrito.html', {
@@ -373,6 +346,7 @@ def carrito(request):
             item['cantidad'] <= item['producto'].stock for item in items
         ),
     })
+
 
 @require_POST
 def disminuir_del_carrito(request, producto_id):
@@ -408,10 +382,11 @@ def quitar_del_carrito(request, producto_id):
     messages.success(request, msg)
     return redirect(request.META.get('HTTP_REFERER') or 'carrito')
 
+
 @require_POST
 def finalizar_compra(request):
     """Compra de demostración: crea pedido, detalle y pago simulado, y descuenta el stock."""
-    _expirar_pedidos_webpay_vencidos()  # un pago abandonado no debe dejar sin stock a quien reintenta
+    _expirar_pedidos_webpay_vencidos()
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict) or not carrito_sesion:
         messages.error(request, 'Tu carrito está vacío.')
@@ -428,12 +403,10 @@ def finalizar_compra(request):
         return redirect('carrito')
 
     if tipo_entrega == 'DESPACHO':
-        # La dirección debe traer número (o S/N si no tiene): el repartidor lo necesita.
         if not re.search(r'\d|\bs\s*/?\s*n\b|\bsin\s+n[uú]mero\b', direccion, re.IGNORECASE):
             messages.error(request, 'Agrega el número de tu dirección (o S/N si no tiene).')
             return redirect('carrito')
 
-        # Depto, casa o block van en un campo aparte; se guardan junto a la dirección.
         detalles = request.POST.get('detalles_entrega', '').strip()
         if detalles:
             direccion = f'{direccion} ({detalles})'
@@ -441,7 +414,6 @@ def finalizar_compra(request):
             messages.error(request, 'La dirección y los detalles son demasiado largos (máximo 255 caracteres).')
             return redirect('carrito')
 
-        # Solo se despacha dentro de la zona marcada en el mapa (core/zona_despacho.py).
         coordenadas = leer_coordenadas(request.POST.get('latitud'), request.POST.get('longitud'))
         if coordenadas is None:
             messages.error(
@@ -471,8 +443,6 @@ def finalizar_compra(request):
             return redirect('carrito')
         cantidades[producto_id] = cantidad
 
-    # Agenda: día y hora de retiro o de entrega (core/retiro.py). Cada producto con turnos solo se vende
-    # dentro de ellos, así que la hora elegida debe caber en los turnos de todos los del carrito.
     productos_del_carrito = list(
         Producto.objects.filter(pk__in=cantidades, activo=True).prefetch_related(_turnos_activos())
     )
@@ -488,7 +458,6 @@ def finalizar_compra(request):
             return redirect('carrito')
         texto_agenda = f'{etiqueta_agenda}: {texto_retiro(fecha, hora)}'
     else:
-        # Sin agenda (otro cliente HTTP): los productos con turnos deben poder venderse ahora.
         momento = ahora_en_chile()
         fuera_de_turno = [p for p in productos_del_carrito if not esta_disponible(list(p.turnos.all()), momento)]
         if fuera_de_turno:
@@ -563,7 +532,6 @@ def finalizar_compra(request):
             producto.save(update_fields=['stock'])
 
         if not es_webpay:
-            # Flujo de Demostración Simulado (sin pasarela real)
             Pago.objects.create(
                 pedido=pedido,
                 monto=total,
@@ -580,7 +548,6 @@ def finalizar_compra(request):
             messages.success(request, 'Compra de demostración completada correctamente.')
             return redirect('boleta_simulada', pedido_id=pedido.pk)
 
-        # Flujo Oficial Transbank Webpay Plus
         pago = Pago.objects.create(
             pedido=pedido,
             monto=total,
@@ -589,7 +556,6 @@ def finalizar_compra(request):
             codigo_autorizacion='',
         )
 
-    # Iniciar transacción con Webpay Plus fuera de la transacción atómica
     buy_order = f"ORD-{pedido.pk}"
     if not request.session.session_key:
         request.session.save()
@@ -601,7 +567,6 @@ def finalizar_compra(request):
     try:
         response = tx.create(buy_order, session_id, amount, return_url)
     except Exception:
-        # Si falla la comunicación inicial con Transbank no hay ningún cobro: se libera el stock.
         pedidos.cancelar_pendiente(pedido.pk, 'FALLIDO')
         messages.error(
             request,
@@ -615,28 +580,17 @@ def finalizar_compra(request):
     request.session['webpay_pedido_id'] = pedido.pk
     request.session['webpay_token'] = token_ws
 
-    # Redirigir al formulario de Webpay Plus
     return redirect(f"{response['url']}?token_ws={token_ws}")
 
 
-# Un pedido con Webpay que sigue PENDIENTE pasado este tiempo se concilia con Transbank. Transbank da
-# 5 min para abrir el formulario y 10 min para pagar en él (ambiente de integración): 15 min como
-# máximo, y se deja margen para que un pago que llega justo no encuentre el pedido ya cancelado.
 WEBPAY_VIGENCIA_MIN = 20
-WEBPAY_TOPE_SIN_RESPUESTA_HORAS = 24   # si Transbank no responde en todo este tiempo, se libera igual
-WEBPAY_CONCILIAR_POR_VUELTA = 3        # pedidos que se consultan a Transbank en una misma petición
-WEBPAY_REINTENTO_SEG = 60              # tras una consulta fallida, no se repite antes de este tiempo
-WEBPAY_TOKEN_MIN = 40                  # los tokens reales de Transbank tienen 64 caracteres
+WEBPAY_TOPE_SIN_RESPUESTA_HORAS = 24
+WEBPAY_CONCILIAR_POR_VUELTA = 3
+WEBPAY_REINTENTO_SEG = 60
+WEBPAY_TOKEN_MIN = 40
 
 
 def _reembolso_aceptado(respuesta):
-    """True si la respuesta de Transbank a un reembolso confirma que el dinero se devolvió.
-
-    Transbank responde con type REVERSED (reversa: sin response_code) o NULLIFIED (anulación:
-    response_code 0 si la aceptó, -1 si la rechazó). El SDK solo lanza una excepción cuando el HTTP
-    no es 200: un rechazo con 200 llega como una respuesta normal, así que hay que leerla. Todo lo
-    que no confirme claramente la devolución se trata como no devuelto.
-    """
     if not isinstance(respuesta, dict):
         return False
     tipo = respuesta.get('type')
@@ -648,12 +602,6 @@ def _reembolso_aceptado(respuesta):
 
 
 def _reembolsar_pago(tx, pedido_id, token, monto):
-    """Pide a Transbank que devuelva un pago que no se pudo dejar asociado a un pedido.
-
-    Solo se registra REEMBOLSADO si Transbank confirma la devolución. Si falla, la rechaza o responde
-    algo que no se entiende, el pago queda REEMBOLSO_PENDIENTE con el token guardado para que alguien
-    del local lo resuelva a mano. Devuelve True si se reembolsó.
-    """
     try:
         respuesta = tx.refund(token, int(monto))
     except Exception:
@@ -666,28 +614,19 @@ def _reembolsar_pago(tx, pedido_id, token, monto):
 
 
 def _datos_de_pago(respuesta):
-    """(texto del método, código de autorización) de una respuesta de Transbank."""
     tipo = TIPOS_PAGO_WEBPAY.get(respuesta.get('payment_type_code', ''), 'Tarjeta')
     return f'Webpay Plus ({tipo})', respuesta.get('authorization_code', '')
 
 
 def _conciliar_pedido_vencido(tx, pedido):
-    """Decide qué hacer con un pago Webpay que sigue PENDIENTE pasado el plazo, según Transbank.
-
-    No se cancela "a ciegas": si el pago llegó a autorizarse, el pedido se deja PAGADO y no se
-    devuelve el stock. Solo se cancela cuando Transbank confirma que no hay un pago, o cuando no
-    responde durante un día entero.
-    """
     token = pedido.pago.codigo_autorizacion or ''
     if len(token) < WEBPAY_TOKEN_MIN:
-        # Nunca se llegó a crear la transacción en Transbank: no hay nada que consultar.
         pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
         return
 
     try:
         respuesta = tx.status(token)
     except Exception:
-        # No se pudo consultar: el pedido queda como está y se reintenta en un minuto.
         edad = timezone.now() - pedido.fecha
         if edad > timedelta(hours=WEBPAY_TOPE_SIN_RESPUESTA_HORAS):
             pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
@@ -696,22 +635,16 @@ def _conciliar_pedido_vencido(tx, pedido):
         return
 
     if respuesta.get('status') == 'AUTHORIZED' and respuesta.get('response_code') == 0:
-        # Se cobró pero la confirmación nunca llegó (p. ej. el cliente cerró la ventana al pagar).
         metodo, codigo = _datos_de_pago(respuesta)
         resultado, _ = pedidos.aprobar_pago(pedido.pk, respuesta.get('amount', 0), metodo, codigo)
         if resultado == pedidos.MONTO_DISTINTO:
             _reembolsar_pago(tx, pedido.pk, token, respuesta.get('amount', 0))
         return
 
-    # INITIALIZED (nunca se pagó), FAILED, REVERSED, NULLIFIED...: no hay un pago que respetar.
     pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
 
 
 def _expirar_pedidos_webpay_vencidos():
-    """Concilia con Transbank los pedidos Webpay abandonados (el cliente cerró la ventana de pago).
-
-    Si cierra la ventana, Transbank no devuelve al cliente al sitio y nadie más los resolvería.
-    """
     limite = timezone.now() - timedelta(minutes=WEBPAY_VIGENCIA_MIN)
     vencidos = list(
         Pedido.objects.filter(estado='PENDIENTE', fecha__lt=limite, pago__metodo__startswith='Webpay')
@@ -723,20 +656,14 @@ def _expirar_pedidos_webpay_vencidos():
     consultados = 0
     for pedido in vencidos:
         if cache.get(f'webpay-conciliar-{pedido.pk}'):
-            continue    # la consulta falló hace poco; se reintenta más tarde
+            continue
         if consultados >= WEBPAY_CONCILIAR_POR_VUELTA:
-            break       # no se hace esperar a una visita por muchos pedidos a la vez
+            break
         consultados += 1
         _conciliar_pedido_vencido(tx, pedido)
 
 
 def _respuesta_resuelta_webpay(tx, token_ws, intentos=3, espera=1.0):
-    """Consulta el estado real de una transacción cuando el commit dio error.
-
-    Devuelve la respuesta si Transbank ya la resolvió (aprobada o no) y None si sigue en
-    proceso o no se pudo consultar. En ese caso el pedido no se toca: si el pago nunca llega,
-    _expirar_pedidos_webpay_vencidos lo libera pasado el plazo.
-    """
     for intento in range(intentos):
         try:
             respuesta = tx.status(token_ws)
@@ -750,12 +677,6 @@ def _respuesta_resuelta_webpay(tx, token_ws, intentos=3, espera=1.0):
 
 
 def _es_su_pedido(request, pedido):
-    """True si quien hace la petición es quien está pagando este pedido.
-
-    Una compra como invitado no deja dueño en la base de datos: la prueba es que la sesión sea la que
-    lo está pagando (finalizar_compra guarda ahí su número). Si inició sesión, también es suyo el
-    pedido que quedó a nombre de su cuenta.
-    """
     if request.session.get('webpay_pedido_id') == pedido.pk:
         return True
     return (
@@ -766,14 +687,6 @@ def _es_su_pedido(request, pedido):
 
 @require_POST
 def iniciar_pago_webpay(request, pedido_id=None):
-    """
-    Inicia una transacción en Transbank Webpay Plus para un pedido pendiente (por ejemplo, para
-    reintentar el pago). Redirige al cliente al portal de pago seguro de Transbank.
-
-    Solo por POST y solo para el pedido de quien lo pide: iniciar el pago cambia el token del pedido,
-    y con ese token cualquiera podría cancelarlo (webpay_confirmar). Los pedidos de otros responden
-    404, igual que si no existieran.
-    """
     if pedido_id is None:
         pedido_id = request.session.get('webpay_pedido_id')
 
@@ -785,7 +698,6 @@ def iniciar_pago_webpay(request, pedido_id=None):
         messages.info(request, 'Este pedido ya se encuentra pagado.')
         return redirect('boleta_simulada', pedido_id=pedido.pk)
     if pedido.estado != 'PENDIENTE':
-        # Un pedido cancelado ya devolvió su stock: no se le puede cobrar sin volver a reservarlo.
         messages.error(request, 'Este pedido ya no está disponible para pagar. Vuelve a armar tu carrito.')
         return redirect('carrito')
 
@@ -800,7 +712,8 @@ def iniciar_pago_webpay(request, pedido_id=None):
     try:
         response = tx.create(buy_order, session_id, amount, return_url)
     except Exception as e:
-        messages.error(request, f'No se pudo conectar con Transbank Webpay: {str(e)}')
+        print(f"Error Webpay: {str(e)}") 
+        messages.error(request, "No fue posible conectar con la pasarela de pago. Por favor, intente nuevamente.")
         return redirect('carrito')
 
     token_ws = response.get('token')
@@ -824,22 +737,10 @@ def iniciar_pago_webpay(request, pedido_id=None):
 
 @csrf_exempt
 def webpay_confirmar(request):
-    """
-    Punto de retorno (return_url) invocado tras el paso por la pasarela de Webpay Plus.
-    Procesa el resultado:
-    - TBK_TOKEN presente (con o sin token_ws): pago anulado o formulario fallido -> se cancela
-    - solo token_ws: Transacción completada -> commit()
-    - Solo TBK_ID_SESION y TBK_ORDEN_COMPRA: venció el tiempo del formulario de Webpay
-    """
     token_ws = request.POST.get('token_ws') or request.GET.get('token_ws')
     tbk_token = request.POST.get('TBK_TOKEN') or request.GET.get('TBK_TOKEN')
     tbk_orden_compra = request.POST.get('TBK_ORDEN_COMPRA') or request.GET.get('TBK_ORDEN_COMPRA')
 
-    # Caso 1: el pago no se completó y el cliente volvió al sitio, ya sea porque lo anuló o porque
-    # el formulario de Webpay falló y pulsó "Intentar nuevamente". Llega TBK_TOKEN (con o sin
-    # token_ws): el pago NO se autorizó, así que no se confirma. Solo se cancela el pedido cuyo
-    # token de Transbank coincide con el recibido. La sesión no sirve de prueba: este retorno suele
-    # llegar por POST desde otro dominio y el navegador no envía la cookie de sesión.
     if tbk_token:
         tokens = [t for t in (tbk_token, token_ws) if t]
         pedido_id = (
@@ -857,9 +758,6 @@ def webpay_confirmar(request):
         )
         return redirect('carrito')
 
-    # Caso 3: el cliente dejó vencer el formulario de Webpay. Transbank devuelve TBK_ID_SESION y
-    # TBK_ORDEN_COMPRA, sin token. Solo se cancela el pedido que esta misma sesión inició; si la
-    # sesión no coincide, el pedido lo libera _expirar_pedidos_webpay_vencidos pasado el plazo.
     if not token_ws and not tbk_token and tbk_orden_compra:
         pedido_id = None
         if tbk_orden_compra.startswith('ORD-'):
@@ -878,15 +776,10 @@ def webpay_confirmar(request):
         messages.error(request, 'No se recibió el token de confirmación de Transbank.')
         return redirect('carrito')
 
-    # Caso 2: Confirmar transacción con Transbank (commit)
     tx = obtener_transaccion_webpay()
     try:
         response = tx.commit(token_ws)
     except Exception:
-        # Un error al confirmar NO significa que el pago falló. Por ejemplo, el 422 "Invalid status
-        # '10' ... while authorizing" quiere decir que Transbank todavía está autorizando y va a
-        # cobrar: cancelar el pedido ahí dejaría un pago cobrado sin pedido. Antes de decidir algo
-        # se consulta el estado real; si sigue en proceso, el pedido queda como está.
         response = _respuesta_resuelta_webpay(tx, token_ws)
         if response is None:
             messages.warning(
@@ -912,21 +805,15 @@ def webpay_confirmar(request):
     response_code = response.get('response_code')
     status = response.get('status')
 
-    # Transbank aprueba cuando response_code == 0 y status == 'AUTHORIZED'
     if response_code == 0 and status == 'AUTHORIZED':
         metodo, cod_autorizacion = _datos_de_pago(response)
         monto = response.get('amount', 0)
-        # El pago ya se cobró. El pedido puede estar PENDIENTE (lo normal), ya PAGADO (se repitió el
-        # retorno) o CANCELADO (el pago llegó después de que el pedido expiró): pedidos.aprobar_pago
-        # deja el pedido y el stock consistentes con eso.
         resultado, pedido = pedidos.aprobar_pago(pedido_id, monto, metodo, cod_autorizacion)
 
         if resultado in (pedidos.PAGADO, pedidos.YA_PAGADO, pedidos.REACTIVADO):
-            # Limpiar carrito tras confirmación de pago
             request.session['carrito'] = {}
             request.session.pop('webpay_pedido_id', None)
 
-            # Autorizar acceso al comprobante
             boletas = request.session.get('boletas_simuladas', [])
             if not isinstance(boletas, list):
                 boletas = []
@@ -937,7 +824,6 @@ def webpay_confirmar(request):
             messages.success(request, f'¡Pago aprobado con éxito! Código de autorización: {cod_autorizacion}')
             return redirect('boleta_simulada', pedido_id=pedido.pk)
 
-        # SIN_STOCK o MONTO_DISTINTO: el cobro no se puede dejar asociado a un pedido. Se reembolsa.
         reembolsado = _reembolsar_pago(tx, pedido.pk, token_ws, monto)
         request.session.pop('webpay_pedido_id', None)
         if resultado == pedidos.SIN_STOCK:
@@ -955,8 +841,6 @@ def webpay_confirmar(request):
             )
         return redirect('carrito')
 
-    # Pago rechazado por Transbank o por el banco emisor: se cancela una sola vez (si el pedido ya no
-    # estaba PENDIENTE, repetir el retorno no devuelve el stock de nuevo).
     pedidos.cancelar_pendiente(pedido_id, 'RECHAZADO')
     request.session.pop('webpay_pedido_id', None)
     messages.error(request, 'El pago fue rechazado por Webpay o tu banco. Por favor intenta nuevamente.')
@@ -964,7 +848,6 @@ def webpay_confirmar(request):
 
 
 def boleta_simulada(request, pedido_id):
-    """Comprobante de la compra de demostración (solo su sesión o su dueño)."""
     boletas = request.session.get('boletas_simuladas', [])
     autorizada = isinstance(boletas, list) and pedido_id in boletas
     if not autorizada and request.user.is_authenticated:
@@ -983,13 +866,11 @@ def boleta_simulada(request, pedido_id):
 
 
 def producto_detalle(request, pk):
-    """Información del producto y cuándo se vende. Con ?parcial=1 devuelve solo el contenido del modal
-    del catálogo (static/js/producto_modal.js); sin él, la página completa (para quien no usa JavaScript)."""
     producto = get_object_or_404(
         Producto.objects.select_related('categoria').prefetch_related(_turnos_activos()),
         pk=pk, activo=True,
     )
-    turnos = list(producto.turnos.all())  # solo los activos (ver _turnos_activos)
+    turnos = list(producto.turnos.all())
     disponible_ahora, vuelve = resumen_de_disponibilidad(turnos, ahora_en_chile())
     plantilla = 'core/_producto_detalle.html' if request.GET.get('parcial') == '1' else 'core/producto.html'
     return render(request, plantilla, {
@@ -1001,23 +882,10 @@ def producto_detalle(request, pk):
 
 
 def local(request):
-    """Información de la tienda: dirección, horarios, despacho y mapa de cobertura.
-    Los datos salen de core/templatetags/tienda.py."""
     return render(request, 'core/local.html')
 
 
-# ==========================================
-# FUNCIONES DE CARRITO Y VISTAS DE CLIENTE
-# ==========================================
-
-
 def redireccionar_por_rol(user):
-    """
-    Redirige al usuario según su rol en el sistema:
-    - ADMINISTRADOR -> 'inicio_admin'
-    - CAJERO -> 'inicio_cajero'
-    - CLIENTE -> 'inicio'
-    """
     if getattr(user, 'es_administrador', False):
         return redirect('inicio_admin')
     elif getattr(user, 'es_cajero', False):
@@ -1025,19 +893,7 @@ def redireccionar_por_rol(user):
     return redirect('inicio')
 
 
-# ==========================================
-# FUNCIONES DE ADMINISTRADOR
-# ==========================================
-
-# --------------------------------------------
-# DECORADOR Y CONTROL DE ACCESO ADMINISTRADOR
-# --------------------------------------------
-
 def admin_required(view_func):
-    """
-    Decorador que verifica que el usuario esté autenticado y sea Administrador.
-    Si no cumple, lo redirige al inicio con un mensaje de error.
-    """
     def _wrapped_view(request, *args, **kwargs):
         if not request.user.is_authenticated:
             messages.error(request, 'Debe iniciar sesión para acceder a esta sección.')
@@ -1048,16 +904,10 @@ def admin_required(view_func):
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 
+
 @admin_required
 def inicio_admin(request):
-    """
-    Vista principal del Panel de Administración (Dashboard).
-    Muestra resúmenes de ventas, gráficos e indicadores clave.
-    """
-    # Productos activos para el resumen de stock del dashboard
     productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
-    
-    # Tarifas de proveedores para la tarjeta de comparativo de materias primas
     tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
 
     contexto = {
@@ -1066,12 +916,9 @@ def inicio_admin(request):
     }
     return render(request, 'core/inicio_admin.html', contexto)
 
+
 @admin_required
 def gestion_usuarios(request):
-    """
-    Vista principal de gestión de cuentas.
-    Separa los usuarios en Clientes (Solo Lectura) y Personal del Sistema (Administradores y Cajeros).
-    """
     clientes = Cliente.objects.select_related('user', 'puntos').all().order_by('-user__date_joined')
     personal = Usuario.objects.filter(
         rol__in=['ADMINISTRADOR', 'CAJERO']
@@ -1083,91 +930,85 @@ def gestion_usuarios(request):
     }
     return render(request, 'core/gestion_usuarios.html', contexto)
 
+
 @admin_required
+@require_POST
 def crear_personal(request):
-    """Crea un nuevo usuario del personal (ADMINISTRADOR o CAJERO) con su perfil correspondiente."""
-    if request.method == 'POST':
-        username = request.POST.get('username', '').strip()
-        first_name = request.POST.get('first_name', '').strip()
-        last_name = request.POST.get('last_name', '').strip()
-        email = request.POST.get('email', '').strip().lower()
-        password = request.POST.get('password', '')
-        rol = request.POST.get('rol', 'CAJERO')
-        num_caja = request.POST.get('num_caja_asignada', 1)
+    username = request.POST.get('username', '').strip()
+    first_name = request.POST.get('first_name', '').strip()
+    last_name = request.POST.get('last_name', '').strip()
+    email = request.POST.get('email', '').strip().lower()
+    password = request.POST.get('password', '')
+    rol = request.POST.get('rol', 'CAJERO')
+    num_caja = request.POST.get('num_caja_asignada', 1)
 
-        if Usuario.objects.filter(username__iexact=username).exists():
-            messages.error(request, 'El nombre de usuario ya está registrado.')
-            return redirect('gestion_usuarios')
-
-        try:
-            with transaction.atomic():
-                user = Usuario.objects.create_user(
-                    username=username,
-                    email=email,
-                    password=password,
-                    first_name=first_name,
-                    last_name=last_name,
-                    rol=rol,
-                    is_staff=True
-                )
-                if rol == 'CAJERO':
-                    Cajero.objects.create(user=user, num_caja_asignada=num_caja)
-                elif rol == 'ADMINISTRADOR':
-                    Administrador.objects.create(user=user, nivel_acceso='TOTAL')
-
-                messages.success(request, f'Usuario "{username}" ({rol}) registrado con éxito.')
-        except Exception as e:
-            messages.error(request, f'Error al crear el usuario: {str(e)}')
-
-    return redirect('gestion_usuarios')
-
-
-@admin_required
-def editar_personal(request, pk):
-    """Edita la información y rol de un usuario del personal (Administrador o Cajero)."""
-    user = get_object_or_404(Usuario, pk=pk)
-
-    if request.method == 'POST':
-        user.first_name = request.POST.get('first_name', '').strip()
-        user.last_name = request.POST.get('last_name', '').strip()
-        user.email = request.POST.get('email', '').strip().lower()
-        nuevo_rol = request.POST.get('rol', user.rol)
-        num_caja = request.POST.get('num_caja_asignada', 1)
-
-        # Si cambió el rol, actualizamos los perfiles asociados
-        if nuevo_rol != user.rol:
-            user.rol = nuevo_rol
-            if nuevo_rol == 'ADMINISTRADOR':
-                Cajero.objects.filter(user=user).delete()
-                Administrador.objects.get_or_create(user=user, defaults={'nivel_acceso': 'TOTAL'})
-            elif nuevo_rol == 'CAJERO':
-                Administrador.objects.filter(user=user).delete()
-                Cajero.objects.get_or_create(user=user, defaults={'num_caja_asignada': num_caja})
-
-        # Si es o sigue siendo Cajero, actualizamos el N° de caja
-        if user.rol == 'CAJERO':
-            cajero, _ = Cajero.objects.get_or_create(user=user)
-            try:
-                cajero.num_caja_asignada = int(num_caja)
-                cajero.save()
-            except (ValueError, TypeError):
-                pass
-
-        # Cambio de contraseña opcional
-        nueva_pass = request.POST.get('password', '').strip()
-        if nueva_pass:
-            user.set_password(nueva_pass)
-
-        user.save()
-        messages.success(request, f'Datos del usuario "{user.username}" actualizados correctamente.')
+    if Usuario.objects.filter(username__iexact=username).exists():
+        messages.error(request, 'El nombre de usuario ya está registrado.')
         return redirect('gestion_usuarios')
 
+    try:
+        with transaction.atomic():
+            user = Usuario.objects.create_user(
+                username=username,
+                email=email,
+                password=password,
+                first_name=first_name,
+                last_name=last_name,
+                rol=rol,
+                is_staff=True
+            )
+            if rol == 'CAJERO':
+                Cajero.objects.create(user=user, num_caja_asignada=num_caja)
+            elif rol == 'ADMINISTRADOR':
+                Administrador.objects.create(user=user, nivel_acceso='TOTAL')
+
+            messages.success(request, f'Usuario "{username}" ({rol}) registrado con éxito.')
+    except Exception as e:
+        messages.error(request, f'Error al crear el usuario: {str(e)}')
+
     return redirect('gestion_usuarios')
 
 
 @admin_required
+@require_POST
+def editar_personal(request, pk):
+    user = get_object_or_404(Usuario, pk=pk)
+
+    user.first_name = request.POST.get('first_name', '').strip()
+    user.last_name = request.POST.get('last_name', '').strip()
+    user.email = request.POST.get('email', '').strip().lower()
+    nuevo_rol = request.POST.get('rol', user.rol)
+    num_caja = request.POST.get('num_caja_asignada', 1)
+
+    if nuevo_rol != user.rol:
+        user.rol = nuevo_rol
+        if nuevo_rol == 'ADMINISTRADOR':
+            Cajero.objects.filter(user=user).delete()
+            Administrador.objects.get_or_create(user=user, defaults={'nivel_acceso': 'TOTAL'})
+        elif nuevo_rol == 'CAJERO':
+            Administrador.objects.filter(user=user).delete()
+            Cajero.objects.get_or_create(user=user, defaults={'num_caja_asignada': num_caja})
+
+    if user.rol == 'CAJERO':
+        cajero, _ = Cajero.objects.get_or_create(user=user)
+        try:
+            cajero.num_caja_asignada = int(num_caja)
+            cajero.save()
+        except (ValueError, TypeError):
+            pass
+
+    nueva_pass = request.POST.get('password', '').strip()
+    if nueva_pass:
+        user.set_password(nueva_pass)
+
+    user.save()
+    messages.success(request, f'Datos del usuario "{user.username}" actualizados correctamente.')
+    return redirect('gestion_usuarios')
+
+
+@admin_required
+@require_POST
 def eliminar_personal(request, pk):
-    """Desactiva la cuenta de un usuario del personal (Administrador o Cajero)."""
     user = get_object_or_404(Usuario, pk=pk)
 
     if user == request.user:
@@ -1180,18 +1021,24 @@ def eliminar_personal(request, pk):
     return redirect('gestion_usuarios')
 
 
-# --------------------------------------------
-# CRUD DE GESTIÓN DE PRODUCTOS / INSUMOS
-# --------------------------------------------
+@admin_required
+@require_POST
+def desactivar_usuario(request, pk):
+    usuario = get_object_or_404(Usuario, pk=pk)
+    if usuario.pk == request.user.pk:
+        messages.error(request, 'No puedes desactivar tu propia cuenta de administrador.')
+        return redirect('gestion_usuarios')
+
+    usuario.is_active = False
+    usuario.save()
+    messages.success(request, f'El usuario {usuario.username} ha sido desactivado.')
+    return redirect('gestion_usuarios')
+
 
 @admin_required
 def gestion_inventario(request):
-    """
-    Vista independiente para la gestión de insumos, materias primas y productos.
-    """
     insumos = Insumo.objects.all().order_by('codigo', 'nombre')
 
-    # Calcular próximo ID sugerido (ej: NI007)
     ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
     siguiente_id = 'NI001'
     if ultimo and ultimo.codigo.startswith('NI'):
@@ -1219,7 +1066,6 @@ def gestion_inventario(request):
 @admin_required
 @require_POST
 def crear_insumo(request):
-    """Crea un nuevo insumo de materia prima."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
     codigo = request.POST.get('codigo', '').strip().upper()
     nombre = request.POST.get('nombre', '').strip()
@@ -1256,7 +1102,6 @@ def crear_insumo(request):
     except Exception:
         precio_saco = Decimal('0.00')
 
-    # Generar código si no se especificó
     if not codigo:
         ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
         if ultimo and ultimo.codigo.startswith('NI'):
@@ -1290,7 +1135,6 @@ def crear_insumo(request):
 @admin_required
 @require_POST
 def editar_insumo(request, pk):
-    """Actualiza los datos de un insumo existente."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
     insumo = get_object_or_404(Insumo, pk=pk)
 
@@ -1346,7 +1190,6 @@ def editar_insumo(request, pk):
 @admin_required
 @require_POST
 def eliminar_insumo(request, pk):
-    """Elimina un insumo del catálogo de productos/inventario."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
     insumo = get_object_or_404(Insumo, pk=pk)
     nombre = insumo.nombre
@@ -1356,12 +1199,7 @@ def eliminar_insumo(request, pk):
     return redirect(next_url)
 
 
-# --------------------------------------------
-# CRUD DE PRODUCTOS DE VENTA AL PÚBLICO
-# --------------------------------------------
-
 def _hora_o_none(texto):
-    """'09:30' (o '09:30:00') -> time; None si no es una hora válida."""
     for formato in ('%H:%M', '%H:%M:%S'):
         try:
             return datetime.strptime((texto or '').strip(), formato).time()
@@ -1371,24 +1209,15 @@ def _hora_o_none(texto):
 
 
 def _dias_del_formulario(request, campo):
-    """Índices de día (0 = lunes ... 6 = domingo) marcados en las casillas `campo`."""
     indices = (_entero_o_none(v) for v in request.POST.getlist(campo))
     return {i for i in indices if i is not None and 0 <= i <= 6}
 
 
 class DisponibilidadInvalida(Exception):
-    """La disponibilidad del formulario no se puede guardar. El mensaje es para el administrador."""
+    pass
 
 
 def _disponibilidad_del_formulario(request):
-    """Lee y VALIDA la "Disponibilidad" del formulario del panel, sin tocar la base de datos.
-
-    Devuelve el plan a aplicar, que _aplicar_disponibilidad ejecuta una vez validado todo lo demás:
-      ('mantener',)    sin el campo, o producto con varios turnos cargados en /admin/: no se toca.
-      ('todo_el_dia',) el producto no tiene turnos (se vende a cualquier hora).
-      ('horario', nombre, desde, hasta, dias_por_campo)  un horario propio.
-    Lanza DisponibilidadInvalida si el horario no sirve.
-    """
     modo = request.POST.get('disponibilidad', 'mantener')
     if modo == 'todo_el_dia':
         return ('todo_el_dia',)
@@ -1408,20 +1237,11 @@ def _disponibilidad_del_formulario(request):
     except ValidationError as error:
         raise DisponibilidadInvalida(error.messages[0])
 
-    _turno_igual(nombre, desde, hasta, dias_por_campo)   # falla si el nombre ya lo usa otro horario
+    _turno_igual(nombre, desde, hasta, dias_por_campo)
     return ('horario', nombre, desde, hasta, dias_por_campo)
 
 
 def _turno_igual(nombre, desde, hasta, dias_por_campo):
-    """El turno que se puede reutilizar para ese horario y esos días (y ese nombre, si se puso uno).
-
-    Devuelve None si hay que crear uno nuevo, y lanza DisponibilidadInvalida si el nombre ya lo usa
-    un turno que no corresponde reutilizar.
-
-    Un turno desactivado en /admin/ no restringe a sus productos (se venden todo el día). Reactivarlo
-    los restringiría de golpe aunque nadie los haya tocado, así que solo se reutiliza si es ACTIVO o si
-    ningún producto lo usa. Si lo usan otros productos, se crea un turno independiente.
-    """
     iguales = Turno.objects.filter(hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
     if nombre:
         iguales = iguales.filter(nombre__iexact=nombre)
@@ -1431,7 +1251,7 @@ def _turno_igual(nombre, desde, hasta, dias_por_campo):
         return activo
     sin_uso = iguales.filter(activo=False).annotate(usos=Count('productos')).filter(usos=0).first()
     if sin_uso is not None:
-        return sin_uso    # desactivado y sin productos: reactivarlo no afecta a nadie
+        return sin_uso
 
     if nombre:
         existente = Turno.objects.filter(nombre__iexact=nombre).first()
@@ -1449,11 +1269,6 @@ def _turno_igual(nombre, desde, hasta, dias_por_campo):
 
 
 def _aplicar_disponibilidad(producto, plan):
-    """Guarda el plan que devolvió _disponibilidad_del_formulario. Debe correr en la misma transacción
-    que el producto: si algo falla, no queda un producto a medio configurar.
-
-    Nunca se modifica un turno que usan otros productos: se reutiliza uno igual o se crea uno nuevo.
-    """
     modo = plan[0]
     if modo == 'todo_el_dia':
         producto.turnos.clear()
@@ -1462,10 +1277,9 @@ def _aplicar_disponibilidad(producto, plan):
         return
 
     _, nombre, desde, hasta, dias_por_campo = plan
-    turno = _turno_igual(nombre, desde, hasta, dias_por_campo)   # se revisa de nuevo, ya en la transacción
+    turno = _turno_igual(nombre, desde, hasta, dias_por_campo)
     if turno is None:
         candidato = Turno(nombre=nombre, hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
-        # Sin nombre, el turno se llama como su horario: "10:00 a 13:00 (sábado y domingo)".
         base = nombre or f'{candidato.horario_texto} ({candidato.dias_texto})'[:50]
         candidato.nombre = base
         sufijo = 2
@@ -1482,7 +1296,6 @@ def _aplicar_disponibilidad(producto, plan):
         turno = candidato
 
     if not turno.activo:
-        # Solo llega aquí un turno desactivado que ningún producto usa (ver _turno_igual).
         turno.activo = True
         turno.save(update_fields=['activo'])
     producto.turnos.set([turno])
@@ -1491,7 +1304,6 @@ def _aplicar_disponibilidad(producto, plan):
 @admin_required
 @require_POST
 def crear_producto(request):
-    """Crea un nuevo producto para el catálogo de venta de la panadería."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     nombre = request.POST.get('nombre', '').strip()
     categoria_id = request.POST.get('categoria_id')
@@ -1523,8 +1335,6 @@ def crear_producto(request):
     except (ValueError, TypeError):
         stock_critico = 10
 
-    # La disponibilidad se valida ANTES de crear nada: un horario inválido no puede dejar un producto
-    # recién creado y disponible todo el día. El producto y su disponibilidad se guardan juntos.
     try:
         disponibilidad = _disponibilidad_del_formulario(request)
         with transaction.atomic():
@@ -1550,7 +1360,6 @@ def crear_producto(request):
 @admin_required
 @require_POST
 def editar_producto(request, pk):
-    """Actualiza la información de un producto de venta existente."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     producto = get_object_or_404(Producto, pk=pk)
 
@@ -1561,14 +1370,13 @@ def editar_producto(request, pk):
     stock_critico = request.POST.get('stock_critico', producto.stock_critico)
     unidad_medida = request.POST.get('unidad_medida', producto.unidad_medida)
     descripcion = request.POST.get('descripcion', '').strip()
-    imagen_url = request.POST.get('imagen_url', '').strip()  # Captura la imagen
+    imagen_url = request.POST.get('imagen_url', '').strip()
     activo = request.POST.get('activo') in ['1', 'true', 'on', True]
 
     if not nombre:
         messages.error(request, 'El nombre del producto no puede quedar vacío.')
         return redirect(next_url)
 
-    # Primero se valida la disponibilidad: si no sirve, no se cambia nada del producto.
     try:
         disponibilidad = _disponibilidad_del_formulario(request)
     except DisponibilidadInvalida as error:
@@ -1609,13 +1417,10 @@ def editar_producto(request, pk):
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
     return redirect(next_url)
 
+
 @admin_required
 @require_POST
 def registrar_produccion(request, pk):
-    """
-    HU-EP003-001: Registra la producción diaria/hornada horneada.
-    Suma la cantidad al stock del producto y registra el historial en ProduccionDiaria.
-    """
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     producto = get_object_or_404(Producto, pk=pk)
     cantidad = _entero_o_none(request.POST.get('cantidad', 0))
@@ -1640,7 +1445,6 @@ def registrar_produccion(request, pk):
 @admin_required
 @require_POST
 def eliminar_producto(request, pk):
-    """Elimina o desactiva un producto de venta."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
     producto = get_object_or_404(Producto, pk=pk)
     nombre = producto.nombre
@@ -1654,12 +1458,10 @@ def eliminar_producto(request, pk):
         messages.warning(request, f'El producto "{nombre}" ha sido eliminado del catálogo.')
     return redirect(next_url)
 
-# core/views.py
 
 @admin_required
 @require_POST
 def crear_categoria(request):
-    """Crea una nueva categoría de productos desde el panel de administración."""
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
@@ -1680,19 +1482,8 @@ def crear_categoria(request):
 
     return redirect(next_url)
 
-# ==========================================
-# FUNCIONES DE ADMINISTRADOR
-# ==========================================
 
-# ==========================================
-# FUNCIONES DE CAJERO
-# ==========================================
-
-# ------------------------------------------
-# DECORADOR Y CONTROL DE ACCESO CAJERO
-# ------------------------------------------
 def cajero_required(view_func):
-    """Verifica que el usuario esté autenticado y sea Cajero o Administrador."""
     def _wrapped_view(request, *args, **kwargs):
         if not request.user.is_authenticated:
             messages.error(request, 'Debe iniciar sesión para acceder al sistema POS.')
@@ -1703,9 +1494,9 @@ def cajero_required(view_func):
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 
+
 @cajero_required
 def inicio_cajero(request):
-    """Vista principal del Terminal POS / Punto de Venta."""
     categorias = Categoria.objects.all().order_by('nombre')
     productos = Producto.objects.filter(activo=True).order_by('nombre')
 
@@ -1715,19 +1506,8 @@ def inicio_cajero(request):
     }
     return render(request, 'core/inicio_cajero.html', contexto)
 
-# ==========================================
-# FUNCIONES DE CAJERO
-# ==========================================
-
 
 def login_view(request):
-    """
-    Controlador de inicio de sesión con soporte para:
-    - Autenticación por Correo Electrónico o Nombre de Usuario.
-    - Redirección según rol (Administrador, Cajero, Cliente).
-    - Redirección previa con parámetro ?next=/...
-    """
-    # Si el usuario ya está conectado, redirigir a su vista correspondiente
     if request.user.is_authenticated:
         return redireccionar_por_rol(request.user)
 
@@ -1741,14 +1521,12 @@ def login_view(request):
             messages.error(request, 'Por favor, ingrese su correo o usuario y contraseña.')
             return render(request, 'core/login.html', {'next': next_url})
 
-        # Buscar si el dato ingresado corresponde al email o al username
         usuario_encontrado = Usuario.objects.filter(
             Q(username__iexact=identificador) | Q(email__iexact=identificador)
         ).first()
 
         username_auth = usuario_encontrado.username if usuario_encontrado else identificador
 
-        # Autenticación de Django
         user = authenticate(request, username=username_auth, password=password)
 
         if user is not None:
@@ -1758,7 +1536,6 @@ def login_view(request):
 
             login(request, user)
 
-            # Redirección personalizada o según rol
             if next_url and next_url.startswith('/'):
                 return redirect(next_url)
 
@@ -1770,19 +1547,12 @@ def login_view(request):
 
 
 def logout_view(request):
-    """Cierra la sesión y redirige a la página de inicio."""
     logout(request)
     messages.info(request, 'Has cerrado sesión correctamente.')
     return redirect('inicio')
 
 
 def registro_view(request):
-    """
-    Vista de registro público exclusiva para clientes (Formulario en 2 Pasos).
-    - Asigna obligatoriamente rol='CLIENTE'.
-    - Crea Usuario, Perfil Cliente y registro inicial de PuntosFidelizacion (0 pts).
-    - Inicia sesión automáticamente tras el registro y redirige a 'inicio'.
-    """
     if request.user.is_authenticated:
         return redirect('inicio')
 
@@ -1795,14 +1565,12 @@ def registro_view(request):
         password = request.POST.get('password', '')
         password_confirm = request.POST.get('password_confirm', '')
 
-        # Datos de domicilio
         region = request.POST.get('region', '').strip()
         comuna = request.POST.get('comuna', '').strip()
         direccion1 = request.POST.get('direccion1', '').strip()
         direccion2 = request.POST.get('direccion2', '').strip()
         indicaciones = request.POST.get('indicaciones', '').strip()
 
-        # Validaciones de backend
         errores = []
 
         if not (username and first_name and last_name and email and telefono and password and password_confirm and region and comuna and direccion1):
@@ -1817,8 +1585,8 @@ def registro_view(request):
         if Usuario.objects.filter(username__iexact=username).exists():
             errores.append('Ya existe una cuenta registrada con este nombre de usuario.')
 
-        if email and Usuario.objects.filter(email__iexact=email).exists():
-            errores.append('Ya existe una cuenta con este correo electrónico.')
+        if Usuario.objects.filter(email=email).exists():
+            errores.append('El correo electrónico ya se encuentra registrado.')
 
         if errores:
             for err in errores:
@@ -1840,7 +1608,6 @@ def registro_view(request):
 
         try:
             with transaction.atomic():
-                # 1. Crear Usuario cliente
                 user = Usuario.objects.create_user(
                     username=username,
                     email=email,
@@ -1850,7 +1617,6 @@ def registro_view(request):
                     rol='CLIENTE'
                 )
 
-                # 2. Formatear dirección para el perfil
                 partes_dir = [direccion1]
                 if direccion2:
                     partes_dir.append(direccion2)
@@ -1860,20 +1626,17 @@ def registro_view(request):
                 if indicaciones:
                     direccion_completa += f" (Ref: {indicaciones})"
 
-                # 3. Crear Perfil Cliente
                 cliente = Cliente.objects.create(
                     user=user,
                     direccion=direccion_completa[:255],
                     telefono=telefono or "+56 9"
                 )
 
-                # 4. Inicializar bolsa de puntos de fidelización
                 PuntosFidelizacion.objects.create(
                     cliente=cliente,
                     puntos_acumulados=0
                 )
 
-                # 5. Iniciar sesión automática
                 login(request, user)
                 messages.success(request, f'¡Bienvenido/a a Los Tres Spa, {first_name}! Tu cuenta ha sido creada exitosamente.')
                 return redirect('inicio')
@@ -1884,14 +1647,10 @@ def registro_view(request):
 
     return render(request, 'core/registro.html')
 
-# ---------------------------------------------------------------
-# APARTADO TERMINOS Y CONDICIONES / POLÍTICAS DE PRIVACIDAD
-# ---------------------------------------------------------------
 
 def terminos_condiciones(request):
-    """Muestra la página de Términos y Condiciones de Uso."""
     return render(request, 'core/terminos_condiciones.html')
 
+
 def politicas_privacidad(request):
-    """Muestra la página de Políticas de Privacidad y Protección de Datos."""
     return render(request, 'core/politicas_privacidad.html')

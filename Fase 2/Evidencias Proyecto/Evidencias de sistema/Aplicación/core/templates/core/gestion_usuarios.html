@@ -11,7 +11,7 @@
     <button class="boton boton--primario" onclick="abrirModalUsuario()">+ Registrar Nuevo Personal</button>
   </div>
 
-  <!-- SECCIÓN 1: PERSONAL DEL SISTEMA (ADMINISTRADORES Y CAJEROS) -->
+  <!-- SECCIÓN 1: PERSONAL DEL SISTEMA -->
   <section class="admin-panel" style="margin-bottom: 32px;">
     <h2 class="admin-panel__subtitulo">Personal del Sistema (Administradores y Cajeros)</h2>
     <div class="admin-tabla-wrapper">
@@ -50,7 +50,7 @@
                 <button 
                   type="button" 
                   class="boton-tabla"
-                  onclick="abrirModalEditarUsuario('{{ u.pk }}', '{{ u.username }}', '{{ u.first_name }}', '{{ u.last_name }}', '{{ u.email }}', '{{ u.rol }}', '{{ u.perfil_cajero.num_caja_asignada|default:1 }}')"
+                  onclick="abrirModalEditarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}', '{{ u.first_name|escapejs }}', '{{ u.last_name|escapejs }}', '{{ u.email|escapejs }}', '{{ u.rol|escapejs }}', '{{ u.perfil_cajero.num_caja_asignada|default:1 }}')"
                 >
                   ✏️ Editar
                 </button>
@@ -58,7 +58,7 @@
                   <button 
                     type="button" 
                     class="boton-tabla boton-tabla--danger"
-                    onclick="abrirModalDesactivarUsuario('{{ u.pk }}', '{{ u.username }}')"
+                    onclick="abrirModalDesactivarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}')"
                   >
                     🗑️ Desactivar
                   </button>
@@ -73,14 +73,14 @@
     </div>
   </section>
 
-  <!-- SECCIÓN 2: CLIENTES REGISTRADOS - SOLO LECTURA -->
+  <!-- SECCIÓN 2: CLIENTES REGISTRADOS -->
   <section class="admin-panel">
     <h2 class="admin-panel__subtitulo">Clientes Registrados (Solo Lectura)</h2>
     <div class="admin-tabla-wrapper">
       <table class="admin-tabla">
         <thead>
           <tr>
-            <th>RUT / Usuario</th>
+            <th>Usuario</th>
             <th>Nombre Completo</th>
             <th>Correo</th>
             <th>Teléfono</th>
@@ -204,7 +204,7 @@
 
     <div class="campo">
       <label>Nueva Contraseña (Opcional):</label>
-      <input type="password" name="password" class="entrada" placeholder="••••••••">
+      <input type="password" name="password" class="entrada" placeholder="••••••••" autocomplete="new-password">
     </div>
 
     <div class="registro-acciones">
@@ -214,9 +214,10 @@
   </form>
 </dialog>
 
-<!-- MODAL 3: CONFIRMAR DESACTIVACIÓN DE PERSONAL -->
+<!-- MODAL 3: CONFIRMAR DESACTIVACIÓN DE PERSONAL (CAMBIADO A FORMULARIO POST SEGURO) -->
 <dialog id="modalDesactivarUsuario" class="admin-modal">
-  <div class="admin-modal__content">
+  <form method="POST" id="formDesactivarUsuario" action="" class="admin-modal__content">
+    {% csrf_token %}
     <h3>Desactivar Usuario</h3>
     
     <p style="margin-block: 16px; color: var(--texto-suave);">
@@ -228,11 +229,11 @@
 
     <div class="registro-acciones">
       <button type="button" class="boton boton--contorno" onclick="cerrarModalDesactivarUsuario()">Cancelar</button>
-      <a id="btnConfirmarDesactivar" href="#" class="boton boton--primario" style="background-color: var(--terracota); border-color: var(--terracota);">
+      <button type="submit" class="boton boton--primario" style="background-color: var(--terracota); border-color: var(--terracota);">
         Sí, Desactivar
-      </a>
+      </button>
     </div>
-  </div>
+  </form>
 </dialog>
 
 {% endblock %}
