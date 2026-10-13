@@ -1792,14 +1792,22 @@ class ConciliacionWebpayTests(TestCase):
             'payment_type_code': 'VD', 'authorization_code': '1415',
         }
 
-    def _transbank(self, status=None, commit=None, status_error=None, refund_error=None):
-        """Un Transbank simulado. Devuelve el mock para poder revisar qué se le pidió."""
+    REEMBOLSO_ACEPTADO = {
+        'type': 'NULLIFIED', 'authorization_code': '123456', 'authorization_date': '2026-10-13T12:00:00.000Z',
+        'nullified_amount': 3000, 'balance': 0, 'response_code': 0,
+    }
+
+    def _transbank(self, status=None, commit=None, status_error=None, refund_error=None, refund=None):
+        """Un Transbank simulado. Devuelve el mock para poder revisar qué se le pidió.
+
+        Por defecto acepta los reembolsos, como el real; `refund` fija otra respuesta (p. ej. un rechazo)."""
         tx = mock.MagicMock()
         tx.status.return_value = status if status is not None else {'status': 'INITIALIZED'}
         if status_error:
             tx.status.side_effect = status_error
         if commit is not None:
             tx.commit.return_value = commit
+        tx.refund.return_value = refund if refund is not None else dict(self.REEMBOLSO_ACEPTADO)
         if refund_error:
             tx.refund.side_effect = refund_error
         parche = mock.patch('core.views.obtener_transaccion_webpay', return_value=tx)
@@ -1869,6 +1877,64 @@ class ConciliacionWebpayTests(TestCase):
         self.assertEqual(pedido.pago.estado, 'REEMBOLSO_PENDIENTE')
         self.assertEqual(pedido.pago.codigo_autorizacion, TOKEN_REAL)   # para resolverlo a mano
         self.assertIn(f'N° {pedido.pk}', self._mensajes(respuesta))
+
+    def _pago_sin_stock_con_reembolso(self, refund):
+        """Un pago que llega tarde y ya no hay stock: hay que devolverlo. Devuelve (pedido, respuesta)."""
+        pedido = self._reservar(3)
+        tx = self._transbank(status={'status': 'INITIALIZED'}, refund=refund)
+        self._envejecer(pedido)
+        self._expirar()
+        Producto.objects.filter(pk=self.producto.pk).update(stock=0)
+        tx.commit.return_value = self._autorizada(pedido)
+        respuesta = self._retorno()
+        pedido.refresh_from_db()
+        return pedido, respuesta
+
+    def test_un_reembolso_rechazado_por_transbank_no_se_registra_como_exitoso(self):
+        rechazo = {'type': 'NULLIFIED', 'response_code': -1}
+
+        pedido, respuesta = self._pago_sin_stock_con_reembolso(rechazo)
+
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSO_PENDIENTE')
+        self.assertEqual(pedido.pago.codigo_autorizacion, TOKEN_REAL)   # para resolverlo a mano
+        mensajes = self._mensajes(respuesta)
+        self.assertNotIn('Te devolvimos el pago', mensajes)
+        self.assertIn(f'N° {pedido.pk}', mensajes)
+
+    def test_una_reversa_se_toma_como_devolucion_exitosa(self):
+        pedido, respuesta = self._pago_sin_stock_con_reembolso({'type': 'REVERSED'})
+
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSADO')
+        self.assertIn('Te devolvimos el pago', self._mensajes(respuesta))
+
+    def test_una_respuesta_que_no_confirma_la_devolucion_no_cuenta_como_exitosa(self):
+        inesperadas = {
+            'sin tipo': {'response_code': 0},
+            'tipo desconocido': {'type': 'OTRA_COSA', 'response_code': 0},
+            'anulacion sin codigo': {'type': 'NULLIFIED'},
+            'reversa con codigo de rechazo': {'type': 'REVERSED', 'response_code': -1},
+            'solo un numero (cuerpo vacio)': 204,
+        }
+        for nombre, respuesta_tbk in inesperadas.items():
+            with self.subTest(nombre):
+                Pedido.objects.all().delete()
+                Producto.objects.filter(pk=self.producto.pk).update(stock=10)
+
+                pedido, _ = self._pago_sin_stock_con_reembolso(respuesta_tbk)
+
+                self.assertEqual(pedido.pago.estado, 'REEMBOLSO_PENDIENTE')
+
+    def test_la_conciliacion_tampoco_da_por_devuelto_un_reembolso_rechazado(self):
+        pedido = self._reservar(3)
+        autorizada = {'status': 'AUTHORIZED', 'response_code': 0, 'amount': 1000, 'authorization_code': '1415'}
+        tx = self._transbank(status=autorizada, refund={'type': 'NULLIFIED', 'response_code': -1})
+        self._envejecer(pedido)
+
+        self._expirar()
+
+        pedido.refresh_from_db()
+        tx.refund.assert_called_once_with(TOKEN_REAL, 1000)
+        self.assertEqual(pedido.pago.estado, 'REEMBOLSO_PENDIENTE')
 
     # --- el retorno -------------------------------------------------------------------------------
     def test_un_pago_normal_deja_el_pedido_pagado_con_el_stock_reservado(self):
@@ -2008,8 +2074,11 @@ class ConciliacionWebpayTests(TestCase):
         pedido = self._reservar(3)
         tx = self._transbank()
         pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+        sesion = self.client.session   # el pedido es de esta sesión: se llega hasta la comprobación del estado
+        sesion['webpay_pedido_id'] = pedido.pk
+        sesion.save()
 
-        respuesta = self.client.get(reverse('iniciar_pago_webpay', args=[pedido.pk]))
+        respuesta = self.client.post(reverse('iniciar_pago_webpay', args=[pedido.pk]))
 
         self.assertRedirects(respuesta, reverse('carrito'), fetch_redirect_response=False)
         tx.create.assert_not_called()
@@ -2488,3 +2557,143 @@ class AvisoDeBusquedaFallidaTests(TestCase):
 
         self.assertIn('#resultados[data-desactualizado="true"]', css)
         self.assertIn('.buscador__aviso', css)
+
+
+class InicioDePagoWebpayTests(TestCase):
+    """Nadie puede iniciar (ni, con el token que recibe, cancelar) el pago de un pedido que no es suyo."""
+
+    TOKEN_ORIGINAL = 'b2' * 32
+    TOKEN_NUEVO = 'c3' * 32
+
+    def setUp(self):
+        cache.clear()
+        categoria = Categoria.objects.create(nombre='Panes')
+        self.producto = Producto.objects.create(
+            categoria=categoria, nombre='Hogaza', precio=Decimal('1000.00'), stock=10, activo=True,
+        )
+        self.tx = mock.MagicMock()
+        self.tx.create.return_value = {
+            'token': self.TOKEN_NUEVO, 'url': 'https://webpay3gint.transbank.cl/webpayserver/initTransaction',
+        }
+        parche = mock.patch('core.views.obtener_transaccion_webpay', return_value=self.tx)
+        parche.start()
+        self.addCleanup(parche.stop)
+
+    def _pedido(self, cliente=None):
+        Producto.objects.filter(pk=self.producto.pk).update(stock=F('stock') - 2)
+        pedido = Pedido.objects.create(
+            cliente=cliente, estado='PENDIENTE', canal='WEB', tipo_entrega='RETIRO', total=Decimal('2000.00'),
+        )
+        DetallePedido.objects.create(
+            pedido=pedido, producto=self.producto, cantidad=2,
+            precio_unitario=self.producto.precio, subtotal=Decimal('2000.00'),
+        )
+        Pago.objects.create(
+            pedido=pedido, monto=pedido.total, metodo='Webpay Plus', estado='PENDIENTE',
+            codigo_autorizacion=self.TOKEN_ORIGINAL,
+        )
+        return pedido
+
+    def _cliente(self, nombre):
+        from .models import Cliente
+
+        usuario = Usuario.objects.create_user(nombre, password='clave-larga-123', rol='CLIENTE')
+        return Cliente.objects.create(user=usuario, direccion='Calle 1', telefono='+56 9 1')
+
+    def _sesion_paga(self, cliente_http, pedido):
+        """Lo que deja finalizar_compra en la sesión de quien va a pagar."""
+        sesion = cliente_http.session
+        sesion['webpay_pedido_id'] = pedido.pk
+        sesion.save()
+
+    def _iniciar(self, pedido, cliente_http=None):
+        return (cliente_http or self.client).post(reverse('iniciar_pago_webpay', args=[pedido.pk]))
+
+    def _intacto(self, pedido):
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(pedido.pago.codigo_autorizacion, self.TOKEN_ORIGINAL)
+        self.assertEqual(Producto.objects.get(pk=self.producto.pk).stock, 8)
+        self.tx.create.assert_not_called()
+
+    def test_una_sesion_anonima_no_puede_iniciar_el_pago_de_un_pedido_ajeno(self):
+        pedido = self._pedido()
+
+        respuesta = self._iniciar(pedido)
+
+        self.assertEqual(respuesta.status_code, 404)
+        self._intacto(pedido)
+
+    def test_otro_cliente_con_sesion_iniciada_tampoco(self):
+        duenio = self._cliente('duenio')
+        pedido = self._pedido(cliente=duenio)
+        self._cliente('intruso')
+        self.client.login(username='intruso', password='clave-larga-123')
+
+        respuesta = self._iniciar(pedido)
+
+        self.assertEqual(respuesta.status_code, 404)
+        self._intacto(pedido)
+
+    def test_una_sesion_que_paga_otro_pedido_no_sirve_para_este(self):
+        propio = self._pedido()
+        ajeno = self._pedido()
+        self._sesion_paga(self.client, propio)
+
+        respuesta = self._iniciar(ajeno)
+
+        self.assertEqual(respuesta.status_code, 404)
+        ajeno.refresh_from_db()
+        self.assertEqual(ajeno.pago.codigo_autorizacion, self.TOKEN_ORIGINAL)
+        self.tx.create.assert_not_called()
+
+    def test_un_pedido_inexistente_da_404(self):
+        respuesta = self.client.post(reverse('iniciar_pago_webpay', args=[9999]))
+
+        self.assertEqual(respuesta.status_code, 404)
+
+    def test_quien_hizo_la_compra_como_invitado_puede_reintentar_el_pago(self):
+        pedido = self._pedido()
+        self._sesion_paga(self.client, pedido)
+
+        respuesta = self._iniciar(pedido)
+
+        self.assertRedirects(
+            respuesta,
+            f'https://webpay3gint.transbank.cl/webpayserver/initTransaction?token_ws={self.TOKEN_NUEVO}',
+            fetch_redirect_response=False,
+        )
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.pago.codigo_autorizacion, self.TOKEN_NUEVO)
+        self.assertEqual(self.tx.create.call_count, 1)
+
+    def test_el_cliente_duenio_con_sesion_iniciada_puede_iniciar_el_pago(self):
+        duenio = self._cliente('duenio')
+        pedido = self._pedido(cliente=duenio)
+        self.client.login(username='duenio', password='clave-larga-123')
+
+        respuesta = self._iniciar(pedido)
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertIn(self.TOKEN_NUEVO, respuesta['Location'])
+        self.assertEqual(self.tx.create.call_count, 1)
+
+    def test_solo_acepta_post(self):
+        pedido = self._pedido()
+        self._sesion_paga(self.client, pedido)
+
+        respuesta = self.client.get(reverse('iniciar_pago_webpay', args=[pedido.pk]))
+
+        self.assertEqual(respuesta.status_code, 405)
+        self._intacto(pedido)
+
+    def test_el_pedido_ajeno_no_se_puede_cancelar_con_un_token_propio(self):
+        """El ataque completo: iniciar el pago del pedido de otro para obtener un token y cancelarlo con él."""
+        pedido = self._pedido()
+
+        self._iniciar(pedido)
+        self.client.get(reverse('webpay_confirmar'), {'TBK_TOKEN': self.TOKEN_NUEVO})
+
+        pedido.refresh_from_db()
+        self.assertEqual(pedido.estado, 'PENDIENTE')
+        self.assertEqual(Producto.objects.get(pk=self.producto.pk).stock, 8)
