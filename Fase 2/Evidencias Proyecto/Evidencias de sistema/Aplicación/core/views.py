@@ -8,14 +8,15 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.db import transaction
-from django.db.models import Case, F, IntegerField, Prefetch, Q, Sum, Value, When
+from django.db import IntegrityError, transaction
+from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from django.core.cache import cache
 from transbank.webpay.webpay_plus.transaction import Transaction
 from transbank.common.integration_type import IntegrationType
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
@@ -26,6 +27,7 @@ from .models import (
 from .templatetags.tienda import TIENDA
 from django.http import JsonResponse
 from .templatetags.formato import clp
+from . import pedidos
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -598,17 +600,13 @@ def finalizar_compra(request):
     tx = obtener_transaccion_webpay()
     try:
         response = tx.create(buy_order, session_id, amount, return_url)
-    except Exception as e:
-        # Si falla la comunicación inicial con Transbank, revertir stock y cancelar pedido
-        with transaction.atomic():
-            for detalle in pedido.detalles.select_related('producto'):
-                detalle.producto.stock += detalle.cantidad
-                detalle.producto.save(update_fields=['stock'])
-            pedido.estado = 'CANCELADO'
-            pedido.save(update_fields=['estado'])
-            pago.estado = 'FALLIDO'
-            pago.save(update_fields=['estado'])
-        messages.error(request, f'No se pudo conectar con Transbank Webpay: {str(e)}')
+    except Exception:
+        # Si falla la comunicación inicial con Transbank no hay ningún cobro: se libera el stock.
+        pedidos.cancelar_pendiente(pedido.pk, 'FALLIDO')
+        messages.error(
+            request,
+            'No pudimos conectar con Transbank. No se realizó ningún cobro: intenta de nuevo en unos minutos.',
+        )
         return redirect('carrito')
 
     token_ws = response.get('token')
@@ -621,41 +619,94 @@ def finalizar_compra(request):
     return redirect(f"{response['url']}?token_ws={token_ws}")
 
 
-# Un pedido con Webpay que sigue PENDIENTE pasado este tiempo se da por abandonado. Transbank da
+# Un pedido con Webpay que sigue PENDIENTE pasado este tiempo se concilia con Transbank. Transbank da
 # 5 min para abrir el formulario y 10 min para pagar en él (ambiente de integración): 15 min como
 # máximo, y se deja margen para que un pago que llega justo no encuentre el pedido ya cancelado.
 WEBPAY_VIGENCIA_MIN = 20
+WEBPAY_TOPE_SIN_RESPUESTA_HORAS = 24   # si Transbank no responde en todo este tiempo, se libera igual
+WEBPAY_CONCILIAR_POR_VUELTA = 3        # pedidos que se consultan a Transbank en una misma petición
+WEBPAY_REINTENTO_SEG = 60              # tras una consulta fallida, no se repite antes de este tiempo
+WEBPAY_TOKEN_MIN = 40                  # los tokens reales de Transbank tienen 64 caracteres
 
 
-def _cancelar_pedido_pendiente(pedido_id, estado_pago):
-    """Cancela un pedido PENDIENTE y devuelve su stock una sola vez.
+def _reembolsar_pago(tx, pedido_id, token, monto):
+    """Pide a Transbank que devuelva un pago que no se pudo dejar asociado a un pedido.
 
-    Se puede llamar de nuevo con el mismo pedido: si ya no está PENDIENTE no hace nada.
-    Devuelve True si canceló el pedido.
+    Si el reembolso falla, el pago queda REEMBOLSO_PENDIENTE con el token guardado para que alguien
+    del local lo resuelva a mano. Devuelve True si se reembolsó.
     """
-    with transaction.atomic():
-        pedido = Pedido.objects.select_for_update().filter(pk=pedido_id, estado='PENDIENTE').first()
-        if pedido is None:
-            return False
-        for detalle in pedido.detalles.all():
-            Producto.objects.filter(pk=detalle.producto_id).update(stock=F('stock') + detalle.cantidad)
-        pedido.estado = 'CANCELADO'
-        pedido.save(update_fields=['estado'])
-        Pago.objects.filter(pedido=pedido).update(estado=estado_pago)
+    try:
+        tx.refund(token, int(monto))
+    except Exception:
+        pedidos.marcar_pago(pedido_id, 'REEMBOLSO_PENDIENTE', codigo_autorizacion=token)
+        return False
+    pedidos.marcar_pago(pedido_id, 'REEMBOLSADO', codigo_autorizacion=token)
     return True
 
 
-def _expirar_pedidos_webpay_vencidos():
-    """Libera el stock de los pedidos Webpay abandonados (el cliente cerró la ventana de pago).
+def _datos_de_pago(respuesta):
+    """(texto del método, código de autorización) de una respuesta de Transbank."""
+    tipo = TIPOS_PAGO_WEBPAY.get(respuesta.get('payment_type_code', ''), 'Tarjeta')
+    return f'Webpay Plus ({tipo})', respuesta.get('authorization_code', '')
 
-    Si cierra la ventana, Transbank no devuelve al cliente al sitio y nadie más los cancelaría.
+
+def _conciliar_pedido_vencido(tx, pedido):
+    """Decide qué hacer con un pago Webpay que sigue PENDIENTE pasado el plazo, según Transbank.
+
+    No se cancela "a ciegas": si el pago llegó a autorizarse, el pedido se deja PAGADO y no se
+    devuelve el stock. Solo se cancela cuando Transbank confirma que no hay un pago, o cuando no
+    responde durante un día entero.
+    """
+    token = pedido.pago.codigo_autorizacion or ''
+    if len(token) < WEBPAY_TOKEN_MIN:
+        # Nunca se llegó a crear la transacción en Transbank: no hay nada que consultar.
+        pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+        return
+
+    try:
+        respuesta = tx.status(token)
+    except Exception:
+        # No se pudo consultar: el pedido queda como está y se reintenta en un minuto.
+        edad = timezone.now() - pedido.fecha
+        if edad > timedelta(hours=WEBPAY_TOPE_SIN_RESPUESTA_HORAS):
+            pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+        else:
+            cache.set(f'webpay-conciliar-{pedido.pk}', 1, WEBPAY_REINTENTO_SEG)
+        return
+
+    if respuesta.get('status') == 'AUTHORIZED' and respuesta.get('response_code') == 0:
+        # Se cobró pero la confirmación nunca llegó (p. ej. el cliente cerró la ventana al pagar).
+        metodo, codigo = _datos_de_pago(respuesta)
+        resultado, _ = pedidos.aprobar_pago(pedido.pk, respuesta.get('amount', 0), metodo, codigo)
+        if resultado == pedidos.MONTO_DISTINTO:
+            _reembolsar_pago(tx, pedido.pk, token, respuesta.get('amount', 0))
+        return
+
+    # INITIALIZED (nunca se pagó), FAILED, REVERSED, NULLIFIED...: no hay un pago que respetar.
+    pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+
+
+def _expirar_pedidos_webpay_vencidos():
+    """Concilia con Transbank los pedidos Webpay abandonados (el cliente cerró la ventana de pago).
+
+    Si cierra la ventana, Transbank no devuelve al cliente al sitio y nadie más los resolvería.
     """
     limite = timezone.now() - timedelta(minutes=WEBPAY_VIGENCIA_MIN)
-    vencidos = Pedido.objects.filter(
-        estado='PENDIENTE', fecha__lt=limite, pago__metodo__startswith='Webpay',
-    ).values_list('pk', flat=True)
-    for pedido_id in list(vencidos):
-        _cancelar_pedido_pendiente(pedido_id, 'EXPIRADO')
+    vencidos = list(
+        Pedido.objects.filter(estado='PENDIENTE', fecha__lt=limite, pago__metodo__startswith='Webpay')
+        .select_related('pago').order_by('pk')
+    )
+    if not vencidos:
+        return
+    tx = obtener_transaccion_webpay()
+    consultados = 0
+    for pedido in vencidos:
+        if cache.get(f'webpay-conciliar-{pedido.pk}'):
+            continue    # la consulta falló hace poco; se reintenta más tarde
+        if consultados >= WEBPAY_CONCILIAR_POR_VUELTA:
+            break       # no se hace esperar a una visita por muchos pedidos a la vez
+        consultados += 1
+        _conciliar_pedido_vencido(tx, pedido)
 
 
 def _respuesta_resuelta_webpay(tx, token_ws, intentos=3, espera=1.0):
@@ -690,6 +741,10 @@ def iniciar_pago_webpay(request, pedido_id=None):
     if pedido.estado == 'PAGADO':
         messages.info(request, 'Este pedido ya se encuentra pagado.')
         return redirect('boleta_simulada', pedido_id=pedido.pk)
+    if pedido.estado != 'PENDIENTE':
+        # Un pedido cancelado ya devolvió su stock: no se le puede cobrar sin volver a reservarlo.
+        messages.error(request, 'Este pedido ya no está disponible para pagar. Vuelve a armar tu carrito.')
+        return redirect('carrito')
 
     buy_order = f"ORD-{pedido.pk}"
     if not request.session.session_key:
@@ -750,7 +805,7 @@ def webpay_confirmar(request):
             .first()
         )
         if pedido_id is not None:
-            _cancelar_pedido_pendiente(pedido_id, 'CANCELADO')
+            pedidos.cancelar_pendiente(pedido_id, 'CANCELADO')
         request.session.pop('webpay_pedido_id', None)
         messages.warning(
             request,
@@ -767,7 +822,7 @@ def webpay_confirmar(request):
         if tbk_orden_compra.startswith('ORD-'):
             pedido_id = _entero_o_none(tbk_orden_compra[len('ORD-'):])
         if pedido_id is not None and pedido_id == request.session.get('webpay_pedido_id'):
-            _cancelar_pedido_pendiente(pedido_id, 'EXPIRADO')
+            pedidos.cancelar_pendiente(pedido_id, 'EXPIRADO')
         request.session.pop('webpay_pedido_id', None)
         messages.warning(
             request,
@@ -808,65 +863,61 @@ def webpay_confirmar(request):
     if not pedido_id:
         pedido_id = request.session.get('webpay_pedido_id')
 
-    pedido = get_object_or_404(Pedido, pk=pedido_id)
+    if not pedido_id or not Pedido.objects.filter(pk=pedido_id).exists():
+        raise Http404
 
     response_code = response.get('response_code')
     status = response.get('status')
 
     # Transbank aprueba cuando response_code == 0 y status == 'AUTHORIZED'
     if response_code == 0 and status == 'AUTHORIZED':
-        tipo_codigo = response.get('payment_type_code', '')
-        tipo_texto = TIPOS_PAGO_WEBPAY.get(tipo_codigo, 'Tarjeta')
-        cod_autorizacion = response.get('authorization_code', '')
+        metodo, cod_autorizacion = _datos_de_pago(response)
+        monto = response.get('amount', 0)
+        # El pago ya se cobró. El pedido puede estar PENDIENTE (lo normal), ya PAGADO (se repitió el
+        # retorno) o CANCELADO (el pago llegó después de que el pedido expiró): pedidos.aprobar_pago
+        # deja el pedido y el stock consistentes con eso.
+        resultado, pedido = pedidos.aprobar_pago(pedido_id, monto, metodo, cod_autorizacion)
 
-        with transaction.atomic():
-            pedido.estado = 'PAGADO'
-            pedido.save(update_fields=['estado'])
+        if resultado in (pedidos.PAGADO, pedidos.YA_PAGADO, pedidos.REACTIVADO):
+            # Limpiar carrito tras confirmación de pago
+            request.session['carrito'] = {}
+            request.session.pop('webpay_pedido_id', None)
 
-            pago, _ = Pago.objects.get_or_create(
-                pedido=pedido,
-                defaults={
-                    'monto': Decimal(str(response.get('amount', pedido.total))),
-                    'metodo': f'Webpay Plus ({tipo_texto})',
-                    'estado': 'APROBADO',
-                    'codigo_autorizacion': cod_autorizacion,
-                }
+            # Autorizar acceso al comprobante
+            boletas = request.session.get('boletas_simuladas', [])
+            if not isinstance(boletas, list):
+                boletas = []
+            if pedido.pk not in boletas:
+                boletas.append(pedido.pk)
+            request.session['boletas_simuladas'] = boletas
+
+            messages.success(request, f'¡Pago aprobado con éxito! Código de autorización: {cod_autorizacion}')
+            return redirect('boleta_simulada', pedido_id=pedido.pk)
+
+        # SIN_STOCK o MONTO_DISTINTO: el cobro no se puede dejar asociado a un pedido. Se reembolsa.
+        reembolsado = _reembolsar_pago(tx, pedido.pk, token_ws, monto)
+        request.session.pop('webpay_pedido_id', None)
+        if resultado == pedidos.SIN_STOCK:
+            motivo = ('Tu pago llegó cuando el tiempo del pedido ya había vencido y esos productos se '
+                      'vendieron a otra persona.')
+        else:
+            motivo = 'El monto cobrado no coincide con el de tu pedido.'
+        if reembolsado:
+            messages.warning(request, f'{motivo} Te devolvimos el pago automáticamente; puedes volver a intentarlo.')
+        else:
+            messages.error(
+                request,
+                f'{motivo} No pudimos devolver el pago automáticamente: contáctanos indicando el pedido '
+                f'N° {pedido.pk} y te lo reembolsamos.',
             )
-            pago.monto = Decimal(str(response.get('amount', pedido.total)))
-            pago.metodo = f'Webpay Plus ({tipo_texto})'
-            pago.estado = 'APROBADO'
-            pago.codigo_autorizacion = cod_autorizacion
-            pago.save()
-
-        # Limpiar carrito tras confirmación de pago
-        request.session['carrito'] = {}
-        request.session.pop('webpay_pedido_id', None)
-
-        # Autorizar acceso al comprobante
-        boletas = request.session.get('boletas_simuladas', [])
-        if not isinstance(boletas, list):
-            boletas = []
-        boletas.append(pedido.pk)
-        request.session['boletas_simuladas'] = boletas
-
-        messages.success(request, f'¡Pago aprobado con éxito! Código de autorización: {cod_autorizacion}')
-        return redirect('boleta_simulada', pedido_id=pedido.pk)
-    else:
-        # Pago rechazado por Transbank o por el banco emisor
-        with transaction.atomic():
-            for detalle in pedido.detalles.select_related('producto'):
-                detalle.producto.stock += detalle.cantidad
-                detalle.producto.save(update_fields=['stock'])
-            pedido.estado = 'CANCELADO'
-            pedido.save(update_fields=['estado'])
-            if hasattr(pedido, 'pago'):
-                pedido.pago.estado = 'RECHAZADO'
-                pedido.pago.save(update_fields=['estado'])
-
-        request.session.pop('webpay_pedido_id', None)
-        messages.error(request, 'El pago fue rechazado por Webpay o tu banco. Por favor intenta nuevamente.')
         return redirect('carrito')
 
+    # Pago rechazado por Transbank o por el banco emisor: se cancela una sola vez (si el pedido ya no
+    # estaba PENDIENTE, repetir el retorno no devuelve el stock de nuevo).
+    pedidos.cancelar_pendiente(pedido_id, 'RECHAZADO')
+    request.session.pop('webpay_pedido_id', None)
+    messages.error(request, 'El pago fue rechazado por Webpay o tu banco. Por favor intenta nuevamente.')
+    return redirect('carrito')
 
 
 def boleta_simulada(request, pedido_id):
@@ -1282,51 +1333,95 @@ def _dias_del_formulario(request, campo):
     return {i for i in indices if i is not None and 0 <= i <= 6}
 
 
-def _guardar_disponibilidad_del_producto(request, producto):
-    """Aplica la "Disponibilidad" del formulario del panel: todo el día o un horario propio.
+class DisponibilidadInvalida(Exception):
+    """La disponibilidad del formulario no se puede guardar. El mensaje es para el administrador."""
 
-    - todo_el_dia: el producto no tiene turnos (se vende a cualquier hora).
-    - horario: el admin define desde, hasta y los días (y un nombre, opcional). Se reutiliza un turno
-      igual si ya existe; si no, se crea uno nuevo. Nunca se modifica un turno que usan otros productos.
-    - mantener (o sin el campo): no se toca, p. ej. un producto con varios turnos cargados en /admin/.
+
+def _disponibilidad_del_formulario(request):
+    """Lee y VALIDA la "Disponibilidad" del formulario del panel, sin tocar la base de datos.
+
+    Devuelve el plan a aplicar, que _aplicar_disponibilidad ejecuta una vez validado todo lo demás:
+      ('mantener',)    sin el campo, o producto con varios turnos cargados en /admin/: no se toca.
+      ('todo_el_dia',) el producto no tiene turnos (se vende a cualquier hora).
+      ('horario', nombre, desde, hasta, dias_por_campo)  un horario propio.
+    Lanza DisponibilidadInvalida si el horario no sirve.
     """
     modo = request.POST.get('disponibilidad', 'mantener')
+    if modo == 'todo_el_dia':
+        return ('todo_el_dia',)
+    if modo != 'horario':
+        return ('mantener',)
+
+    nombre = request.POST.get('turno_nombre', '').strip()[:50]
+    desde = _hora_o_none(request.POST.get('turno_desde'))
+    hasta = _hora_o_none(request.POST.get('turno_hasta'))
+    if desde is None or hasta is None:
+        raise DisponibilidadInvalida('Indica la hora desde y hasta.')
+
+    dias = _dias_del_formulario(request, 'turno_dias')
+    dias_por_campo = {campo: (i in dias) for i, campo in enumerate(Turno.CAMPOS_DIAS)}
+    try:
+        Turno(nombre=nombre, hora_inicio=desde, hora_fin=hasta, **dias_por_campo).clean()
+    except ValidationError as error:
+        raise DisponibilidadInvalida(error.messages[0])
+
+    _turno_igual(nombre, desde, hasta, dias_por_campo)   # falla si el nombre ya lo usa otro horario
+    return ('horario', nombre, desde, hasta, dias_por_campo)
+
+
+def _turno_igual(nombre, desde, hasta, dias_por_campo):
+    """El turno que se puede reutilizar para ese horario y esos días (y ese nombre, si se puso uno).
+
+    Devuelve None si hay que crear uno nuevo, y lanza DisponibilidadInvalida si el nombre ya lo usa
+    un turno que no corresponde reutilizar.
+
+    Un turno desactivado en /admin/ no restringe a sus productos (se venden todo el día). Reactivarlo
+    los restringiría de golpe aunque nadie los haya tocado, así que solo se reutiliza si es ACTIVO o si
+    ningún producto lo usa. Si lo usan otros productos, se crea un turno independiente.
+    """
+    iguales = Turno.objects.filter(hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
+    if nombre:
+        iguales = iguales.filter(nombre__iexact=nombre)
+
+    activo = iguales.filter(activo=True).first()
+    if activo is not None:
+        return activo
+    sin_uso = iguales.filter(activo=False).annotate(usos=Count('productos')).filter(usos=0).first()
+    if sin_uso is not None:
+        return sin_uso    # desactivado y sin productos: reactivarlo no afecta a nadie
+
+    if nombre:
+        existente = Turno.objects.filter(nombre__iexact=nombre).first()
+        if existente is not None and not existente.activo:
+            raise DisponibilidadInvalida(
+                f'Ya existe un turno desactivado llamado "{nombre}" que usan otros productos. '
+                'Actívalo en /admin/ o usa otro nombre.'
+            )
+        if existente is not None:
+            raise DisponibilidadInvalida(
+                f'Ya existe un turno llamado "{nombre}" con otro horario o días. '
+                'Usa otro nombre o déjalo en blanco.'
+            )
+    return None
+
+
+def _aplicar_disponibilidad(producto, plan):
+    """Guarda el plan que devolvió _disponibilidad_del_formulario. Debe correr en la misma transacción
+    que el producto: si algo falla, no queda un producto a medio configurar.
+
+    Nunca se modifica un turno que usan otros productos: se reutiliza uno igual o se crea uno nuevo.
+    """
+    modo = plan[0]
     if modo == 'todo_el_dia':
         producto.turnos.clear()
         return
     if modo != 'horario':
         return
 
-    nombre = request.POST.get('turno_nombre', '').strip()[:50]
-    desde = _hora_o_none(request.POST.get('turno_desde'))
-    hasta = _hora_o_none(request.POST.get('turno_hasta'))
-    dias = _dias_del_formulario(request, 'turno_dias')
-    if desde is None or hasta is None:
-        messages.error(request, 'Disponibilidad: indica la hora desde y hasta. No se cambió.')
-        return
-
-    dias_por_campo = {campo: (i in dias) for i, campo in enumerate(Turno.CAMPOS_DIAS)}
-    candidato = Turno(nombre=nombre, hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
-    try:
-        candidato.clean()
-    except ValidationError as error:
-        messages.error(request, f'Disponibilidad: {error.messages[0]} No se cambió.')
-        return
-
-    # ¿Ya hay un turno con exactamente ese horario y esos días (y ese nombre, si se puso uno)?
-    iguales = Turno.objects.filter(hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
-    if nombre:
-        iguales = iguales.filter(nombre__iexact=nombre)
-    turno = iguales.first()
-
+    _, nombre, desde, hasta, dias_por_campo = plan
+    turno = _turno_igual(nombre, desde, hasta, dias_por_campo)   # se revisa de nuevo, ya en la transacción
     if turno is None:
-        if nombre and Turno.objects.filter(nombre__iexact=nombre).exists():
-            messages.error(
-                request,
-                f'Ya existe un turno llamado "{nombre}" con otro horario o días. '
-                'Usa otro nombre o déjalo en blanco. No se cambió.',
-            )
-            return
+        candidato = Turno(nombre=nombre, hora_inicio=desde, hora_fin=hasta, **dias_por_campo)
         # Sin nombre, el turno se llama como su horario: "10:00 a 13:00 (sábado y domingo)".
         base = nombre or f'{candidato.horario_texto} ({candidato.dias_texto})'[:50]
         candidato.nombre = base
@@ -1334,10 +1429,17 @@ def _guardar_disponibilidad_del_producto(request, producto):
         while Turno.objects.filter(nombre__iexact=candidato.nombre).exists():
             candidato.nombre = f'{base[:45]} #{sufijo}'
             sufijo += 1
-        candidato.save()
+        try:
+            with transaction.atomic():
+                candidato.save()
+        except IntegrityError:
+            raise DisponibilidadInvalida(
+                'Otro administrador creó un turno con ese nombre al mismo tiempo. Intenta de nuevo.'
+            )
         turno = candidato
 
     if not turno.activo:
+        # Solo llega aquí un turno desactivado que ningún producto usa (ver _turno_igual).
         turno.activo = True
         turno.save(update_fields=['activo'])
     producto.turnos.set([turno])
@@ -1355,7 +1457,7 @@ def crear_producto(request):
     stock_critico = request.POST.get('stock_critico', 10)
     unidad_medida = request.POST.get('unidad_medida', 'unid')
     descripcion = request.POST.get('descripcion', '').strip()
-    imagen_url = request.POST.get('imagen_url', '').strip()  # Captura la imagen
+    imagen_url = request.POST.get('imagen_url', '').strip()
 
     if not nombre or not categoria_id:
         messages.error(request, 'El nombre y la categoría del producto son obligatorios.')
@@ -1378,18 +1480,26 @@ def crear_producto(request):
     except (ValueError, TypeError):
         stock_critico = 10
 
-    producto = Producto.objects.create(
-        nombre=nombre,
-        categoria=categoria,
-        precio=precio,
-        stock=stock,
-        stock_critico=stock_critico,
-        unidad_medida=unidad_medida,
-        descripcion=descripcion,
-        imagen_url=imagen_url,
-        activo=True
-    )
-    _guardar_disponibilidad_del_producto(request, producto)
+    # La disponibilidad se valida ANTES de crear nada: un horario inválido no puede dejar un producto
+    # recién creado y disponible todo el día. El producto y su disponibilidad se guardan juntos.
+    try:
+        disponibilidad = _disponibilidad_del_formulario(request)
+        with transaction.atomic():
+            producto = Producto.objects.create(
+                nombre=nombre,
+                categoria=categoria,
+                precio=precio,
+                stock=stock,
+                stock_critico=stock_critico,
+                unidad_medida=unidad_medida,
+                descripcion=descripcion,
+                imagen_url=imagen_url,
+                activo=True
+            )
+            _aplicar_disponibilidad(producto, disponibilidad)
+    except DisponibilidadInvalida as error:
+        messages.error(request, f'Disponibilidad: {error} No se creó el producto.')
+        return redirect(next_url)
     messages.success(request, f'Producto "{nombre}" agregado exitosamente al catálogo.')
     return redirect(next_url)
 
@@ -1415,6 +1525,13 @@ def editar_producto(request, pk):
         messages.error(request, 'El nombre del producto no puede quedar vacío.')
         return redirect(next_url)
 
+    # Primero se valida la disponibilidad: si no sirve, no se cambia nada del producto.
+    try:
+        disponibilidad = _disponibilidad_del_formulario(request)
+    except DisponibilidadInvalida as error:
+        messages.error(request, f'Disponibilidad: {error} No se guardó ningún cambio.')
+        return redirect(next_url)
+
     if categoria_id:
         producto.categoria = get_object_or_404(Categoria, pk=categoria_id)
 
@@ -1438,8 +1555,13 @@ def editar_producto(request, pk):
     producto.descripcion = descripcion
     producto.imagen_url = imagen_url
     producto.activo = activo
-    producto.save()
-    _guardar_disponibilidad_del_producto(request, producto)
+    try:
+        with transaction.atomic():
+            producto.save()
+            _aplicar_disponibilidad(producto, disponibilidad)
+    except DisponibilidadInvalida as error:
+        messages.error(request, f'Disponibilidad: {error} No se guardó ningún cambio.')
+        return redirect(next_url)
 
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
     return redirect(next_url)

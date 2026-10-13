@@ -1,11 +1,18 @@
 /* Búsqueda en vivo del catálogo (/pedir/): al escribir se actualizan los resultados sin recargar.
    El servidor devuelve solo la zona de resultados cuando recibe ?parcial=1 (core/views.py, pedir).
-   Sin JavaScript el formulario funciona igual, con el botón "Buscar". */
+   Sin JavaScript el formulario funciona igual, con el botón "Buscar".
+
+   Si una búsqueda falla, los resultados que quedan en pantalla son los de la búsqueda anterior: se avisa
+   con un mensaje visible, se marcan como desactualizados y se ofrece reintentar (también se reintenta sola
+   cuando vuelve la conexión). */
 (function () {
   var form = document.querySelector('form.buscador');
   var campo = document.getElementById('buscar-producto');
   var zona = document.getElementById('resultados');
   var estado = document.getElementById('buscador-estado');
+  var aviso = document.getElementById('buscador-aviso');
+  var avisoTexto = aviso ? aviso.querySelector('[data-texto]') : null;
+  var reintentar = aviso ? aviso.querySelector('[data-reintentar]') : null;
   var limpiar = form ? form.querySelector('.buscador__limpiar') : null;
   if (!form || !campo || !zona || !window.fetch || !window.AbortController) { return; }
 
@@ -17,7 +24,9 @@
   var ESPERA_MS = 250;      // tiempo sin teclear antes de buscar
   var temporizador = null;
   var peticion = null;
-  var ultimaBusqueda = campo.value.trim();
+  // La búsqueda a la que corresponden los resultados que hay en pantalla. No es "la última que se intentó":
+  // si una búsqueda falla, esto no cambia, y por eso se sabe que lo que se ve está desactualizado.
+  var mostrada = campo.value.trim();
 
   // Arma la dirección con lo que lleva el formulario: la búsqueda más los filtros activos
   // (campos ocultos "turno" y "categoria"), para buscar dentro del turno y la categoría elegidos.
@@ -37,10 +46,29 @@
     estado.textContent = resumen ? resumen.getAttribute('data-resumen') : '';
   }
 
-  function buscar() {
+  function ocultarAviso() {
+    if (aviso) { aviso.hidden = true; }
+    zona.removeAttribute('data-desactualizado');
+  }
+
+  function mostrarAviso(texto, causa) {
+    zona.setAttribute('data-desactualizado', 'true');
+    if (!aviso || !avisoTexto) { return; }
+    var buscado = texto ? '«' + texto + '»' : 'todo el catálogo';
+    var viendo = mostrada ? '«' + mostrada + '»' : 'todo el catálogo';
+    var motivo = causa === 'servidor' ? 'El servidor no respondió.' : 'No hay conexión.';
+    avisoTexto.textContent = motivo + ' No pudimos buscar ' + buscado +
+      '; estás viendo los resultados de ' + viendo + ', que no están actualizados.';
+    aviso.hidden = false;
+  }
+
+  // `forzar` repite la búsqueda aunque el texto sea el mismo que el de la última que se mostró.
+  function buscar(forzar) {
     var texto = campo.value.trim();
-    if (texto === ultimaBusqueda) { return; }
-    ultimaBusqueda = texto;
+    if (forzar !== true && texto === mostrada) {
+      ocultarAviso();   // volvió al texto de lo que se ve: no hay nada desactualizado
+      return;
+    }
 
     if (peticion) { peticion.abort(); }   // una búsqueda nueva descarta la anterior
     var actual = new AbortController();
@@ -58,13 +86,15 @@
         var nodos = new DOMParser().parseFromString(html, 'text/html').body.childNodes;
         zona.replaceChildren.apply(zona, Array.prototype.slice.call(nodos));
         zona.setAttribute('aria-busy', 'false');
+        mostrada = texto;
+        ocultarAviso();
         history.replaceState(null, '', direccion(texto, false));  // recargar o compartir conserva la búsqueda
         anunciar();
       })
       .catch(function (error) {
         if (error.name === 'AbortError') { return; }  // la reemplazó otra búsqueda
-        zona.setAttribute('aria-busy', 'false');       // sin conexión: quedan los resultados anteriores
-        ultimaBusqueda = null;                         // y se podrá reintentar con el mismo texto
+        zona.setAttribute('aria-busy', 'false');
+        mostrarAviso(texto, /^HTTP/.test(error.message || '') ? 'servidor' : 'red');
       });
   }
 
@@ -92,6 +122,18 @@
     clearTimeout(temporizador);
     buscar();
     campo.focus();
+  });
+
+  if (reintentar) {
+    reintentar.addEventListener('click', function () {
+      clearTimeout(temporizador);
+      buscar(true);
+    });
+  }
+
+  // Si estaba desactualizado por falta de conexión, al volver la conexión se vuelve a intentar sola.
+  window.addEventListener('online', function () {
+    if (aviso && !aviso.hidden) { buscar(true); }
   });
 
   mostrarLimpiar();

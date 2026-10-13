@@ -212,7 +212,7 @@
         </p>
         {# Explica por qué el botón está bloqueado cuando la dirección no sirve para despachar (static/js/zona_despacho.js) #}
         <p class="zona__aviso-envio" id="zona-aviso-envio" hidden></p>
-        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock or sin_horas_por_productos %} disabled{% endif %}>Pagar con Webpay / Confirmar Pedido</button>
+        <button class="boton boton--primario" type="submit"{% if not carrito_tiene_stock or sin_horas_por_productos %} disabled data-bloqueo-servidor="1"{% endif %}>Pagar con Webpay / Confirmar Pedido</button>
       </form>
     {% else %}
       <p class="vacio">Tu carrito está vacío. <a href="{% url 'pedir' %}">Ver productos</a></p>
@@ -227,5 +227,6 @@
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script src="{% static 'js/zona_despacho.js' %}"></script>
     <script src="{% static 'js/retiro_agenda.js' %}"></script>
+    <script src="{% static 'js/carrito_estado.js' %}"></script>
   {% endif %}
 {% endblock %}

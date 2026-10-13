@@ -758,6 +758,22 @@ main { flex: 1; }
 .turno__detalle { margin: 0 0 16px; color: var(--texto-suave); font-size: 0.92rem; }
 #resultados { transition: opacity 0.15s ease; }
 #resultados[aria-busy="true"] { opacity: 0.55; }
+/* Los resultados de una búsqueda anterior, porque la nueva falló: se ven apagados junto al aviso */
+#resultados[data-desactualizado="true"] { opacity: 0.5; filter: grayscale(0.6); }
+.buscador__aviso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  color: #7a2e12;
+  background: #fbe3d8;
+  border-left: 4px solid var(--terracota);
+  border-radius: 6px;
+}
+.buscador__aviso[hidden] { display: none; }
+.buscador__aviso-texto { flex: 1 1 260px; margin: 0; font-size: 0.92rem; line-height: 1.4; }
 
 /* Página Local: datos de la tienda y mapa de cobertura */
 .local {
@@ -3185,10 +3201,11 @@ body:has(dialog.modal-producto[open]) { overflow: hidden; }
 .detalle__stock { margin: 0; font-size: 0.92rem; }
 
 .detalle__disponibilidad { margin-top: 4px; padding: 14px; background: var(--crema); border: 1px solid var(--borde); border-radius: 10px; }
-.detalle__disponibilidad h3 { margin: 0 0 8px; font-size: 0.95rem; }
+.detalle__disponibilidad h2, .detalle__disponibilidad h3 { margin: 0 0 8px; font-size: 0.95rem; }
 .detalle__estado { display: inline-block; margin: 0 0 8px; padding: 4px 12px; border-radius: 999px; font-size: 0.85rem; font-weight: 700; }
 .detalle__estado--si { color: #1f4d2b; background: #dff0e1; }
 .detalle__estado--no { color: #663b18; background: #fff2d9; }
+.detalle__todo-el-dia + .detalle__turnos { margin-top: 8px; }
 .detalle__turnos { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 0.92rem; }
 .detalle__turnos li { display: flex; flex-wrap: wrap; gap: 2px 8px; }
 .detalle__turnos span { color: var(--texto-suave); }
