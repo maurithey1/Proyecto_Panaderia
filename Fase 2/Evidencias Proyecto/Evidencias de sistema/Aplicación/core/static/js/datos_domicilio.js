@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const getVal = (id) => document.getElementById(id)?.value.trim() || '';
 
-    const rut = getVal('id_rut');
+    const rut = getVal('id_username');
     const nombre = getVal('id_first_name');
     const apellidos = getVal('id_last_name');
     const email = getVal('id_email');
