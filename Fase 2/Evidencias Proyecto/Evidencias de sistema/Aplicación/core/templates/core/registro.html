@@ -36,6 +36,8 @@
         <svg class="icono"><use href="#i-espiga"/></svg>
       </span>
 
+      <div id="js-alerta" class="alerta" style="display: none;" role="alert"></div>
+
       <form method="POST" action="{% url 'registro' %}" id="form-registro" novalidate>
         {% csrf_token %}
 
@@ -46,7 +48,7 @@
           <h1 id="registro-titulo" class="registro-titulo">Crear cuenta nueva</h1>
 
           <div class="campo">
-            <label for="id_rut">Nombre de usuario</label>
+            <label for="id_username">Nombre de usuario</label>
             <input 
               type="text" 
               name="username" 

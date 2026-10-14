@@ -15,6 +15,7 @@ from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
+from django.core.validators import validate_email
 from django.conf import settings
 from django.core.cache import cache
 
@@ -1576,6 +1577,12 @@ def registro_view(request):
         if not (username and first_name and last_name and email and telefono and password and password_confirm and region and comuna and direccion1):
             errores.append('Por favor completa todos los campos obligatorios.')
 
+        if email:
+            try:
+                validate_email(email)
+            except ValidationError:
+                errores.append('Ingresa un correo electrónico válido.')
+        
         if password != password_confirm:
             errores.append('Las contraseñas no coinciden.')
 

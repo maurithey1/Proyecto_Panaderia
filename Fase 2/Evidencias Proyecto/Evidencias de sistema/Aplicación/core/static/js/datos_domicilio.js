@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const getVal = (id) => document.getElementById(id)?.value.trim() || '';
 
-    const rut = getVal('id_username');
+    const usuario = getVal('id_username');
     const nombre = getVal('id_first_name');
     const apellidos = getVal('id_last_name');
     const email = getVal('id_email');
@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pass = document.getElementById('id_password')?.value || '';
     const passConf = document.getElementById('id_password_confirm')?.value || '';
 
-    if (!rut || !nombre || !apellidos || !email || !telefono || !pass || !passConf) {
+    if (!usuario || !nombre || !apellidos || !email || !telefono || !pass || !passConf) {
       mostrarError('Por favor completa todos los campos obligatorios del Paso 1.');
       return;
     }

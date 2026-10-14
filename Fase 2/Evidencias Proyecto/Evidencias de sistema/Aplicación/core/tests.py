@@ -2697,3 +2697,22 @@ class InicioDePagoWebpayTests(TestCase):
         pedido.refresh_from_db()
         self.assertEqual(pedido.estado, 'PENDIENTE')
         self.assertEqual(Producto.objects.get(pk=self.producto.pk).stock, 8)
+
+class ArregloRegistroTests(TestCase):
+    """El registro usa el campo que existe y valida el correo en el servidor."""
+
+    def test_el_js_usa_el_campo_de_usuario(self):
+        html = self.client.get(reverse('registro')).content.decode()
+        js = (settings.BASE_DIR / 'core/static/js/datos_domicilio.js').read_text(encoding='utf-8')
+        self.assertIn('id="id_username"', html)
+        self.assertIn('id="js-alerta"', html)
+        self.assertIn("getVal('id_username')", js)
+        self.assertNotIn('id_rut', js)
+
+    def test_rechaza_un_correo_con_formato_invalido(self):
+        self.client.post(reverse('registro'), {
+            'username': 'nuevo', 'first_name': 'Ana', 'last_name': 'Pérez', 'email': 'esto-no-es-un-correo',
+            'telefono': '912345678', 'password': 'clave-larga-123', 'password_confirm': 'clave-larga-123',
+            'region': 'Metropolitana', 'comuna': 'La Florida', 'direccion1': 'Calle 1 123',
+        })
+        self.assertFalse(Usuario.objects.filter(username='nuevo').exists())
