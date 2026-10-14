@@ -1055,11 +1055,22 @@ def gestion_inventario(request):
     )
     categorias_productos = Categoria.objects.all().order_by('nombre')
 
+    dias_semana = [
+        ('L', 'Lunes'),
+        ('M', 'Martes'),
+        ('X', 'Miércoles'),
+        ('J', 'Jueves'),
+        ('V', 'Viernes'),
+        ('S', 'Sábado'),
+        ('D', 'Domingo'),
+    ]
+
     contexto = {
         'insumos': insumos,
         'siguiente_id': siguiente_id,
         'todos_los_productos': todos_los_productos,
         'categorias_productos': categorias_productos,
+        'dias_semana': dias_semana,
     }
     return render(request, 'core/tabla_crud_insumos.html', contexto)
 
