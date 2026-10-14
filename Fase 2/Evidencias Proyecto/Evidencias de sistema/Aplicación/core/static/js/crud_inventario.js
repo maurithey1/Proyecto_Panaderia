@@ -89,7 +89,12 @@ function cerrarModalEliminarInsumo() {
 // ==========================================
 function abrirModalAgregarProducto() {
   const modal = document.getElementById('modalAgregarProducto');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    if (typeof cargarDisponibilidad === 'function') {
+      cargarDisponibilidad(modal, null);
+    }
+  }
 }
 
 function cerrarModalAgregarProducto() {
@@ -132,7 +137,8 @@ function abrirModalEditarProductoBtn(btn) {
         console.error("Error al parsear disponibilidad:", e);
       }
     }
-    cargarDisponibilidad(document.getElementById('edit_prod_disponibilidad'), dispObj);
+    const contenedorDisp = document.getElementById('edit_prod_disponibilidad') || document.getElementById('modalEditarProducto');
+    cargarDisponibilidad(contenedorDisp, dispObj);
   }
 
   const modal = document.getElementById('modalEditarProducto');
@@ -185,4 +191,102 @@ function abrirModalAgregarCategoria() {
 function cerrarModalAgregarCategoria() {
   const modal = document.getElementById('modalAgregarCategoria');
   if (modal) modal.style.display = 'none';
+}
+
+// ==========================================
+// 4. CONTROL DE DISPONIBILIDAD Y TURNOS
+// ==========================================
+
+// Escuchador global de cambios en radios "disponibilidad"
+document.addEventListener('change', function (evento) {
+  const radio = evento.target;
+  if (radio.name !== 'disponibilidad') return;
+
+  const contenedor = radio.closest('[data-disponibilidad]') || radio.closest('.modal') || document;
+  if (!contenedor) return;
+
+  const bloqueHorario = contenedor.querySelector('[data-horario]');
+  const bloqueVarios = contenedor.querySelector('[data-varios]');
+
+  if (radio.value === 'horario') {
+    if (bloqueHorario) bloqueHorario.hidden = false;
+    if (bloqueVarios) bloqueVarios.hidden = true;
+  } else if (radio.value === 'todo_el_dia') {
+    if (bloqueHorario) bloqueHorario.hidden = true;
+    if (bloqueVarios) bloqueVarios.hidden = true;
+  } else if (radio.value === 'mantener') {
+    if (bloqueHorario) bloqueHorario.hidden = true;
+    if (bloqueVarios) bloqueVarios.hidden = false;
+  }
+});
+
+/**
+ * Rellena o resetea los campos de disponibilidad en un modal/contenedor
+ */
+function cargarDisponibilidad(contenedorElemento, datosDisponibilidad) {
+  let contenedor = typeof contenedorElemento === 'string'
+    ? document.getElementById(contenedorElemento)
+    : contenedorElemento;
+
+  if (!contenedor) {
+    contenedor = document.getElementById('modalEditarProducto') || document;
+  }
+
+  let datos = datosDisponibilidad;
+  if (typeof datos === 'string' && datos.trim() !== '') {
+    try {
+      datos = JSON.parse(datos);
+    } catch (e) {
+      console.error("Error al parsear disponibilidad:", e);
+      datos = null;
+    }
+  }
+
+  const radioTodoElDia = contenedor.querySelector('input[name="disponibilidad"][value="todo_el_dia"]');
+  const radioHorario = contenedor.querySelector('input[name="disponibilidad"][value="horario"]');
+  const radioMantener = contenedor.querySelector('input[name="disponibilidad"][value="mantener"]');
+
+  const bloqueHorario = contenedor.querySelector('[data-horario]');
+  const bloqueVarios = contenedor.querySelector('[data-varios]');
+
+  const inputNombre = contenedor.querySelector('[name="turno_nombre"]');
+  const inputDesde = contenedor.querySelector('[name="turno_desde"]');
+  const inputHasta = contenedor.querySelector('[name="turno_hasta"]');
+  const checkboxesDias = contenedor.querySelectorAll('[name="turno_dias"]');
+
+  // Resetear checkboxes de días
+  checkboxesDias.forEach(chk => { chk.checked = false; });
+
+  if (!datos) {
+    // Caso 1: Todo el día
+    if (radioTodoElDia) radioTodoElDia.checked = true;
+    if (bloqueHorario) bloqueHorario.hidden = true;
+    if (bloqueVarios) bloqueVarios.hidden = true;
+
+    if (inputNombre) inputNombre.value = '';
+    if (inputDesde) inputDesde.value = '';
+    if (inputHasta) inputHasta.value = '';
+
+  } else if (datos.varios) {
+    // Caso 2: Varios turnos asociados
+    if (radioMantener) radioMantener.checked = true;
+    if (bloqueHorario) bloqueHorario.hidden = true;
+    if (bloqueVarios) bloqueVarios.hidden = false;
+
+  } else {
+    // Caso 3: Horario único
+    if (radioHorario) radioHorario.checked = true;
+    if (bloqueHorario) bloqueHorario.hidden = false;
+    if (bloqueVarios) bloqueVarios.hidden = true;
+
+    if (inputNombre) inputNombre.value = datos.nombre || '';
+    if (inputDesde) inputDesde.value = datos.desde || '';
+    if (inputHasta) inputHasta.value = datos.hasta || '';
+
+    if (Array.isArray(datos.dias)) {
+      checkboxesDias.forEach(chk => {
+        chk.checked = datos.dias.includes(parseInt(chk.value, 10));
+      });
+    }
+  }
 }
