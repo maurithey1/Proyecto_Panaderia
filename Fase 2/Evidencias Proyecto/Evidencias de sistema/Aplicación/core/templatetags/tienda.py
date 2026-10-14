@@ -71,9 +71,9 @@ TIENDA = {
     'despacho_valor': 2500,
     'despacho_zona': 'La Florida',
 
-    'telefono': '+56 9 0000 0000',
-    'telefono_enlace': '+56900000000',
-    'correo': 'contacto@ejemplo.cl',
+    'telefono': '+56 9 5168 1342',
+    'telefono_enlace': '+56951681342',
+    'correo': 'contacto@LosTresSpa.cl',
 }
 
 
