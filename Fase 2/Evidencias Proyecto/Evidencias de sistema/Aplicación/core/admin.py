@@ -150,5 +150,7 @@ class CajaAdmin(admin.ModelAdmin):
 
 @admin.register(CierreCaja)
 class CierreCajaAdmin(admin.ModelAdmin):
-    list_display = ('caja', 'monto_inicial', 'monto_ventas_sistema', 'monto_contado', 'diferencia', 'estado_cuadratura', 'fecha_cierre')
+    list_display = ('caja', 'monto_inicial', 'monto_ventas_sistema', 'monto_contado', 'diferencia', 'estado_cuadratura', 'observacion', 'fecha_cierre')
     list_filter = ('estado_cuadratura', 'fecha_cierre')
+    search_fields = ('caja__numero', 'caja__cajero__user__username', 'observacion')
+

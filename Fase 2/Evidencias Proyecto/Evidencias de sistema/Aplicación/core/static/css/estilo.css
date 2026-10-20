@@ -3734,6 +3734,10 @@ a.historial-paginacion__enlace--actual:hover {
 }
 .apertura-insignia--cerrada { background: var(--crema-2); color: var(--cafe-oscuro); }
 .apertura-insignia--abierta { background: #e3f1e6; color: #1f6b35; }
+.apertura-insignia--cuadrada { background: #e3f1e6; color: #1f6b35; }
+.apertura-insignia--sobrante { background: #e8f4fd; color: #0c5460; }
+.apertura-insignia--faltante { background: #fbeee6; color: #7a2f12; }
+
 
 .apertura-separador {
   margin: 0;
@@ -3806,6 +3810,41 @@ a.historial-paginacion__enlace--actual:hover {
   background: #fbeee6;
   border-left: 4px solid var(--terracota);
 }
+
+/* RESUMEN FINANCIERO DEL TURNO (CIERRE DE CAJA) */
+.cierre-resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--crema-2);
+  border-radius: 8px;
+  border: 1px solid var(--borde);
+}
+.cierre-resumen__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cierre-resumen__etiqueta {
+  font-size: 0.88rem;
+  color: var(--texto-suave);
+}
+.cierre-resumen__valor {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.cierre-cuadratura-en-vivo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-top: 6px;
+}
+
 
 @media (max-width: 480px) {
   .apertura-tarjeta { padding: 18px 16px; }

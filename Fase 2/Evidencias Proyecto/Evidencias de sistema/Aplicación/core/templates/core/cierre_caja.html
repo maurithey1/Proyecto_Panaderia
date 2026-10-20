@@ -1,0 +1,209 @@
+{% extends 'core/base_cajero.html' %}
+{% load static formato l10n %}
+
+{% block titulo %}Cierre de caja{% endblock %}
+
+{% block contenido %}
+<section class="apertura" aria-labelledby="cierre-titulo">
+  <h1 class="apertura-titulo" id="cierre-titulo">Cierre de caja</h1>
+
+  <div class="apertura-tarjeta">
+
+    <!-- ESTADO DE LA CAJA DEL TURNO -->
+    <dl class="apertura-estado">
+      <div class="apertura-estado__fila">
+        <dt>Estado actual:</dt>
+        <dd>
+          {% if caja %}
+            <span class="apertura-insignia apertura-insignia--abierta">
+              Caja abierta
+              <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>
+            </span>
+          {% else %}
+            <span class="apertura-insignia apertura-insignia--cerrada">
+              Caja cerrada
+              <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Caja:</dt>
+        <dd class="apertura-cifra">N° {% if caja %}{{ caja.numero }}{% else %}{{ numero_caja }}{% endif %}</dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Fecha de turno:</dt>
+        <dd class="apertura-cifra">{% if caja %}{{ caja.fecha_apertura|date:"d/m/Y" }}{% else %}{{ ahora|date:"d/m/Y" }}{% endif %}</dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Hora de apertura:</dt>
+        <dd class="apertura-cifra">{% if caja %}{{ caja.fecha_apertura|time:"H:i" }}{% else %}—{% endif %}</dd>
+      </div>
+      {% if caja %}
+      <div class="apertura-estado__fila">
+        <dt>Hora de cierre:</dt>
+        <dd class="apertura-cifra">{{ ahora|time:"H:i" }}</dd>
+      </div>
+      {% endif %}
+    </dl>
+
+    <hr class="apertura-separador">
+
+    {% if error %}
+      <div class="apertura-aviso apertura-aviso--error" role="alert" id="cierreError">
+        <p>{{ error }}</p>
+      </div>
+    {% endif %}
+
+    {% if caja %}
+      <!-- RESUMEN FINANCIERO DEL TURNO -->
+      <div class="cierre-resumen">
+        <div class="cierre-resumen__item">
+          <span class="cierre-resumen__etiqueta">Fondo inicial:</span>
+          <strong class="cierre-resumen__valor">{{ caja.monto_inicial|clp }}</strong>
+        </div>
+        <div class="cierre-resumen__item">
+          <span class="cierre-resumen__etiqueta">Ventas en efectivo ({{ ventas.total_pedidos }} venta{{ ventas.total_pedidos|pluralize }}):</span>
+          <strong class="cierre-resumen__valor">{{ ventas.ventas_efectivo|clp }}</strong>
+        </div>
+        {% if ventas.ventas_tarjeta > 0 %}
+        <div class="cierre-resumen__item">
+          <span class="cierre-resumen__etiqueta">Ventas con tarjeta:</span>
+          <strong class="cierre-resumen__valor">{{ ventas.ventas_tarjeta|clp }}</strong>
+        </div>
+        {% endif %}
+        <div class="cierre-resumen__item">
+          <span class="cierre-resumen__etiqueta">Monto esperado en caja:</span>
+          <strong class="cierre-resumen__valor" style="color: var(--cafe);">{{ ventas.monto_esperado|clp }}</strong>
+        </div>
+      </div>
+
+      <hr class="apertura-separador">
+
+      <!-- FORMULARIO DE CIERRE -->
+      <form method="post" action="{% url 'cierre_caja' %}" class="apertura-formulario" id="formCierreCaja"
+            data-numero-caja="{{ numero_caja|unlocalize }}"
+            data-monto-esperado="{{ ventas.monto_esperado|unlocalize }}">
+        {% csrf_token %}
+
+        <div class="apertura-campo">
+          <label for="inputMontoCierre">Ingresar monto físico contado en caja</label>
+          <input type="text" inputmode="numeric" autocomplete="off" id="inputMontoCierre" name="monto"
+                 class="apertura-input" placeholder="$0" value="{{ monto_ingresado }}" required
+                 pattern="[0-9]{1,3}(\.[0-9]{3})*|[0-9]+" title="Solo números, por ejemplo 20.000"
+                 {% if error %}aria-describedby="cierreError"{% endif %}>
+
+          <!-- INDICADOR DE CUADRATURA EN TIEMPO REAL -->
+          <div id="contenedorCuadratura" class="cierre-cuadratura-en-vivo" hidden>
+            <span id="badgeCuadratura" class="apertura-insignia"></span>
+            <span id="textoDiferencia"></span>
+          </div>
+        </div>
+
+        <div class="apertura-campo">
+          <label for="inputObservacionCierre">
+            Observaciones
+            <span class="apertura-campo__ayuda" id="ayudaObservacion">
+              (opcional si la caja cuadra)
+            </span>
+          </label>
+          <textarea id="inputObservacionCierre" name="observacion" class="apertura-textarea" rows="3"
+                    maxlength="{{ largo_observacion }}" placeholder="Escribe aquí si hubo algún descuadre, billetes deteriorados u otra incidencia...">{{ observacion }}</textarea>
+          <p class="apertura-campo__aviso" id="avisoObservacionCierre" hidden>
+            La caja no cuadra con el monto esperado del sistema: la observación es obligatoria.
+          </p>
+        </div>
+
+        <button type="submit" class="apertura-boton" id="btnCerrarCaja">
+          <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          Cerrar caja
+        </button>
+      </form>
+
+      <!-- CONFIRMACIÓN DEL CIERRE (reemplaza el confirm() nativo) -->
+      <dialog class="confirmacion-modal" id="modalConfirmarCierre"
+              aria-labelledby="confirmarCierreTitulo" aria-describedby="confirmarCierreTexto">
+        <div class="confirmacion-modal__caja">
+          <header class="confirmacion-modal__cabecera">
+            <h2 class="confirmacion-modal__titulo" id="confirmarCierreTitulo" tabindex="-1" autofocus>Confirmar cierre de caja</h2>
+          </header>
+          <div class="confirmacion-modal__cuerpo">
+            <p id="confirmarCierreTexto">Vas a cerrar la <strong>Caja <span data-confirmar-caja>{{ numero_caja }}</span></strong> con este arqueo contado:</p>
+            <p class="confirmacion-modal__monto" data-confirmar-monto></p>
+            <div id="modalDetalleCuadratura" style="margin-bottom: 12px; font-size: 0.95rem;"></div>
+            <p class="confirmacion-modal__nota">Al cerrar la caja, tu turno finalizará y no se podrán registrar más ventas hasta abrir un nuevo turno.</p>
+          </div>
+          <footer class="confirmacion-modal__pie">
+            <button type="button" class="confirmacion-modal__boton confirmacion-modal__boton--secundario" data-cancelar>Cancelar</button>
+            <button type="button" class="confirmacion-modal__boton" data-aceptar>Cerrar caja</button>
+          </footer>
+        </div>
+      </dialog>
+
+    {% else %}
+      <!-- CAJA YA CERRADA -->
+      {% if ultimo_cierre %}
+        <div class="apertura-estado">
+          <p style="margin: 0; color: var(--texto-suave);">Tu turno actual se encuentra cerrado. A continuación puedes ver el resumen de tu último arqueo:</p>
+        </div>
+
+        <div class="cierre-resumen">
+          <div class="cierre-resumen__item">
+            <span class="cierre-resumen__etiqueta">Fondo inicial:</span>
+            <strong class="cierre-resumen__valor">{{ ultimo_cierre.monto_inicial|clp }}</strong>
+          </div>
+          <div class="cierre-resumen__item">
+            <span class="cierre-resumen__etiqueta">Ventas en efectivo:</span>
+            <strong class="cierre-resumen__valor">{{ ultimo_cierre.monto_ventas_sistema|clp }}</strong>
+          </div>
+          <div class="cierre-resumen__item">
+            <span class="cierre-resumen__etiqueta">Total esperado:</span>
+            <strong class="cierre-resumen__valor">{{ ultimo_cierre.monto_esperado|clp }}</strong>
+          </div>
+          <div class="cierre-resumen__item">
+            <span class="cierre-resumen__etiqueta">Monto contado:</span>
+            <strong class="cierre-resumen__valor">{{ ultimo_cierre.monto_contado|clp }}</strong>
+          </div>
+        </div>
+
+        <dl class="apertura-estado">
+          <div class="apertura-estado__fila">
+            <dt>Cuadratura:</dt>
+            <dd>
+              <span class="apertura-insignia {% if ultimo_cierre.estado_cuadratura == 'Cuadrada' %}apertura-insignia--cuadrada{% elif ultimo_cierre.estado_cuadratura == 'Sobrante' %}apertura-insignia--sobrante{% else %}apertura-insignia--faltante{% endif %}">
+                {{ ultimo_cierre.estado_cuadratura }}
+                {% if ultimo_cierre.diferencia != 0 %}
+                  ({{ ultimo_cierre.diferencia|clp }})
+                {% endif %}
+              </span>
+            </dd>
+          </div>
+          <div class="apertura-estado__fila">
+            <dt>Fecha y hora de cierre:</dt>
+            <dd class="apertura-cifra">{{ ultimo_cierre.fecha_cierre|date:"d/m/Y H:i" }}</dd>
+          </div>
+          {% if ultimo_cierre.observacion %}
+          <div class="apertura-estado__fila apertura-estado__fila--columna">
+            <dt>Observación registrada:</dt>
+            <dd>{{ ultimo_cierre.observacion }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+      {% else %}
+        <div class="apertura-aviso" role="alert">
+          <p>Actualmente no tienes ninguna caja abierta para cerrar.</p>
+        </div>
+      {% endif %}
+
+      <a class="apertura-boton" href="{% url 'apertura_caja' %}">
+        <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>
+        Ir a apertura de caja
+      </a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/cierre_caja.js' %}"></script>
+{% endblock %}

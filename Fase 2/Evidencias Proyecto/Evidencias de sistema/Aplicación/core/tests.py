@@ -3216,3 +3216,95 @@ class AperturaCajaTests(TestCase):
         cliente = Usuario.objects.create_user('cliente-caja', password='clave-larga-123', rol='CLIENTE')
         self.client.force_login(cliente)
         self.assertRedirects(self.client.get(reverse('apertura_caja')), reverse('inicio'), fetch_redirect_response=False)
+
+
+class CierreCajaTests(TestCase):
+    """Cierre de caja: al terminar el turno, el cajero declara el dinero contado y realiza la cuadratura (HU-EP004-002)."""
+
+    AHORA = datetime(2026, 8, 19, 18, 0, tzinfo=ZONA_HORARIA)   # fin de turno
+
+    def setUp(self):
+        parche = mock.patch('django.utils.timezone.now')
+        self.reloj = parche.start()
+        self.addCleanup(parche.stop)
+        self.reloj.return_value = self.AHORA
+
+        categoria = Categoria.objects.create(nombre='Panes caja cierre')
+        self.pan = Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('1000.00'), stock=100, activo=True,
+        )
+        self.cajero = self._cajero('cajero-cierre', caja=1, nombre='Carlos', apellido='Pérez')
+        self.client.force_login(self.cajero.user)
+
+    def _cajero(self, usuario, caja=1, nombre='', apellido=''):
+        from .models import Cajero
+        user = Usuario.objects.create_user(
+            usuario, password='clave-larga-123', rol='CAJERO', first_name=nombre, last_name=apellido,
+        )
+        return Cajero.objects.create(user=user, num_caja_asignada=caja)
+
+    def _abrir(self, monto='10000'):
+        return self.client.post(reverse('apertura_caja'), {'monto': monto, 'observacion': ''})
+
+    def _cerrar(self, monto, observacion=''):
+        return self.client.post(reverse('cierre_caja'), {'monto': monto, 'observacion': observacion})
+
+    def _vender(self, cantidad=1, metodo='EFECTIVO', monto_efectivo=1000):
+        return self.client.post(
+            reverse('finalizar_venta_pos'),
+            data=json.dumps({
+                'items': [{'id': self.pan.pk, 'cantidad': cantidad}],
+                'metodo_pago': metodo,
+                'monto_efectivo': monto_efectivo,
+            }),
+            content_type='application/json',
+        )
+
+    def test_sin_caja_abierta_pantalla_de_cierre_muestra_aviso(self):
+        respuesta = self.client.get(reverse('cierre_caja'))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'Caja cerrada')
+        self.assertContains(respuesta, 'no tienes ninguna caja abierta')
+
+    def test_cierre_exitoso_cuadrado(self):
+        self._abrir('10000')
+        self._vender(cantidad=2, metodo='EFECTIVO', monto_efectivo=2000)   # $2.000 ventas
+        # Monto esperado: $10.000 inicial + $2.000 ventas = $12.000
+        respuesta = self._cerrar('12000')
+        self.assertRedirects(respuesta, reverse('cierre_caja'), fetch_redirect_response=False)
+        from .models import Caja, CierreCaja
+        caja = Caja.objects.get(cajero=self.cajero)
+        self.assertEqual(caja.estado, 'CERRADA')
+        self.assertIsNotNone(caja.fecha_cierre)
+        cierre = CierreCaja.objects.get(caja=caja)
+        self.assertEqual(cierre.monto_contado, Decimal('12000'))
+        self.assertEqual(cierre.diferencia, Decimal('0'))
+        self.assertEqual(cierre.estado_cuadratura, 'Cuadrada')
+
+    def test_cierre_con_diferencia_exige_observacion(self):
+        self._abrir('10000')
+        # Esperado: $10.000. Contado: $9.000 (faltante de $1.000) sin observación
+        sin_obs = self._cerrar('9000', observacion='')
+        self.assertEqual(sin_obs.status_code, 400)
+        self.assertContains(sin_obs, 'La caja no cuadra', status_code=400)
+
+
+        # Con observación se acepta el faltante
+        con_obs = self._cerrar('9000', observacion='Falta billete de mil extraviado')
+        self.assertRedirects(con_obs, reverse('cierre_caja'), fetch_redirect_response=False)
+        from .models import CierreCaja
+        cierre = CierreCaja.objects.get(caja__cajero=self.cajero)
+        self.assertEqual(cierre.estado_cuadratura, 'Faltante')
+        self.assertEqual(cierre.diferencia, Decimal('-1000'))
+        self.assertEqual(cierre.observacion, 'Falta billete de mil extraviado')
+
+    def test_cierre_con_sobrante_se_registra_correctamente(self):
+        self._abrir('10000')
+        # Esperado: $10.000. Contado: $15.000 (sobrante de $5.000)
+        respuesta = self._cerrar('15000', observacion='Propina dejada por cliente')
+        self.assertRedirects(respuesta, reverse('cierre_caja'), fetch_redirect_response=False)
+        from .models import CierreCaja
+        cierre = CierreCaja.objects.get(caja__cajero=self.cajero)
+        self.assertEqual(cierre.estado_cuadratura, 'Sobrante')
+        self.assertEqual(cierre.diferencia, Decimal('5000'))
+

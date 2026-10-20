@@ -19,16 +19,18 @@ from datetime import datetime
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 
-from .models import Caja, Cajero, CierreCaja
+from .models import Caja, Cajero, CierreCaja, Pedido, Pago
 from .templatetags.formato import clp
 
 ABIERTA = 'ABIERTA'
 CERRADA = 'CERRADA'
 MONTO_MAXIMO_APERTURA = 500000    # tope para atrapar errores de tipeo ($3.000.000 en vez de $30.000)
+MONTO_MAXIMO_CIERRE = 10000000    # tope para cierre ($10.000.000)
 LARGO_MAXIMO_OBSERVACION = 500
+
 
 # "17500", "17.500" o "$17.500": pesos enteros, con o sin puntos de miles
 _MONTO = re.compile(r'^\$?(\d{1,3}(\.\d{3})+|\d+)$')
@@ -36,6 +38,11 @@ _MONTO = re.compile(r'^\$?(\d{1,3}(\.\d{3})+|\d+)$')
 
 class AperturaInvalida(Exception):
     """La apertura no se puede hacer; el mensaje es para el cajero."""
+
+
+class CierreInvalido(Exception):
+    """El cierre no se puede hacer; el mensaje es para el cajero."""
+
 
 
 def _inicio_de_hoy():
@@ -53,19 +60,20 @@ def _nombre(cajero):
     return cajero.user.get_full_name() or cajero.user.username
 
 
-def leer_monto(texto):
-    """Monto declarado por el cajero -> Decimal en pesos enteros. Lanza AperturaInvalida si no sirve."""
+def leer_monto(texto, maximo=MONTO_MAXIMO_APERTURA, tipo_error=AperturaInvalida):
+    """Monto declarado por el cajero -> Decimal en pesos enteros. Lanza tipo_error si no sirve."""
     limpio = str(texto or '').replace(' ', '')
     if not limpio:
-        raise AperturaInvalida('Ingresa el monto físico que hay en la caja.')
+        raise tipo_error('Ingresa el monto físico que hay en la caja.')
     if not _MONTO.match(limpio):
-        raise AperturaInvalida('El monto debe ser un número entero de pesos, sin decimales.')
-    monto = int(limpio.lstrip('$').replace('.', ''))
-    if monto > MONTO_MAXIMO_APERTURA:
-        raise AperturaInvalida(
-            f'El monto supera el máximo de apertura ({clp(MONTO_MAXIMO_APERTURA)}). Revisa que esté bien escrito.'
+        raise tipo_error('El monto debe ser un número entero de pesos, sin decimales.')
+    monto = int(limpio.lstrip('$').replace('.', '') or '0')
+    if maximo and monto > maximo:
+        raise tipo_error(
+            f'El monto supera el límite permitido ({clp(maximo)}). Revisa que esté bien escrito.'
         )
     return Decimal(monto)
+
 
 
 def caja_del_cajero(cajero):
@@ -152,3 +160,125 @@ def abrir_caja(cajero, monto_texto, observacion=''):
             observacion_apertura=observacion,
             estado=ABIERTA,
         )
+
+
+def resumen_ventas_turno(caja):
+    """
+    Calcula el resumen de ventas del turno actual de la caja.
+    Retorna un diccionario con:
+      - 'ventas_efectivo': total recaudado en efectivo (Decimal)
+      - 'ventas_tarjeta': total recaudado con tarjeta / Webpay (Decimal)
+      - 'total_ventas': suma de todas las ventas del turno (Decimal)
+      - 'total_pedidos': cantidad de pedidos pagados (int)
+      - 'monto_esperado': monto inicial + ventas_efectivo (Decimal)
+    """
+    if caja is None or not caja.cajero:
+        cero = Decimal('0.00')
+        return {
+            'ventas_efectivo': cero,
+            'ventas_tarjeta': cero,
+            'total_ventas': cero,
+            'total_pedidos': 0,
+            'monto_esperado': cero,
+        }
+
+    pedidos_turno = Pedido.objects.filter(
+        cajero=caja.cajero,
+        canal='POS',
+        fecha__gte=caja.fecha_apertura,
+    )
+    if caja.fecha_cierre:
+        pedidos_turno = pedidos_turno.filter(fecha__lte=caja.fecha_cierre)
+
+    pagos_pagados = Pago.objects.filter(
+        pedido__in=pedidos_turno,
+        estado='PAGADO',
+    )
+
+    ventas_efectivo = (
+        pagos_pagados.filter(metodo__iexact='Efectivo')
+        .aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
+    )
+    ventas_tarjeta = (
+        pagos_pagados.exclude(metodo__iexact='Efectivo')
+        .aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
+    )
+    total_ventas = ventas_efectivo + ventas_tarjeta
+    total_pedidos = pedidos_turno.filter(estado='PAGADO').count()
+    monto_esperado = caja.monto_inicial + ventas_efectivo
+
+    return {
+        'ventas_efectivo': ventas_efectivo,
+        'ventas_tarjeta': ventas_tarjeta,
+        'total_ventas': total_ventas,
+        'total_pedidos': total_pedidos,
+        'monto_esperado': monto_esperado,
+    }
+
+
+def ultimo_cierre_cajero(cajero):
+    """Devuelve el último CierreCaja realizado por el cajero o en su caja física."""
+    if cajero is None:
+        return None
+    return (
+        CierreCaja.objects.filter(Q(caja__cajero=cajero) | Q(caja__numero=cajero.num_caja_asignada))
+        .select_related('caja', 'caja__cajero__user')
+        .order_by('-fecha_cierre', '-pk')
+        .first()
+    )
+
+
+def cerrar_caja(cajero, monto_contado_texto, observacion=''):
+    """
+    Realiza el cierre de la caja abierta del cajero.
+    Comprueba cuadratura y registra el CierreCaja correspondiente.
+    """
+    monto_contado = leer_monto(monto_contado_texto, maximo=MONTO_MAXIMO_CIERRE, tipo_error=CierreInvalido)
+    observacion = (observacion or '').strip()
+    if len(observacion) > LARGO_MAXIMO_OBSERVACION:
+        raise CierreInvalido(f'La observación puede tener hasta {LARGO_MAXIMO_OBSERVACION} caracteres.')
+
+    with transaction.atomic():
+        # Bloquear la caja del cajero
+        caja = (
+            Caja.objects.select_for_update()
+            .filter(cajero=cajero, estado=ABIERTA)
+            .order_by('-fecha_apertura')
+            .first()
+        )
+        if caja is None:
+            raise CierreInvalido('No tienes ninguna caja abierta para cerrar.')
+
+        ventas = resumen_ventas_turno(caja)
+        monto_esperado = ventas['monto_esperado']
+        diferencia = monto_contado - monto_esperado
+
+        if diferencia == 0:
+            estado_cuadratura = 'Cuadrada'
+        elif diferencia > 0:
+            estado_cuadratura = 'Sobrante'
+        else:
+            estado_cuadratura = 'Faltante'
+
+        if diferencia != 0 and not observacion:
+            tipo_dif = 'un sobrante' if diferencia > 0 else 'un faltante'
+            raise CierreInvalido(
+                f'La caja no cuadra ({tipo_dif} de {clp(abs(diferencia))}): '
+                'escribe una observación que explique la diferencia antes de cerrar.'
+            )
+
+        caja.estado = CERRADA
+        caja.fecha_cierre = timezone.now()
+        caja.save(update_fields=['estado', 'fecha_cierre'])
+
+        cierre = CierreCaja.objects.create(
+            caja=caja,
+            monto_inicial=caja.monto_inicial,
+            monto_ventas_sistema=ventas['ventas_efectivo'],
+            monto_contado=monto_contado,
+            diferencia=diferencia,
+            estado_cuadratura=estado_cuadratura,
+            observacion=observacion,
+        )
+        return cierre
+

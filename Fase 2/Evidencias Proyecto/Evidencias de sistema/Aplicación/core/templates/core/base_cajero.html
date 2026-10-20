@@ -110,7 +110,7 @@
           <svg class="icono" aria-hidden="true"><use href="#i-caja"/></svg>
           <span>Apertura de caja</span>
         </a>
-        <a href="#" class="cajero-sidebar__link">
+        <a href="{% url 'cierre_caja' %}" class="cajero-sidebar__link{% if request.resolver_match.url_name == 'cierre_caja' %} activo{% endif %}"{% if request.resolver_match.url_name == 'cierre_caja' %} aria-current="page"{% endif %}>
           <svg class="icono" aria-hidden="true"><use href="#i-caja"/></svg>
           <span>Cierre de caja</span>
         </a>

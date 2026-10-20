@@ -502,11 +502,17 @@ class CierreCaja(models.Model):
     monto_contado = models.DecimalField(max_digits=10, decimal_places=2)
     diferencia = models.DecimalField(max_digits=10, decimal_places=2)
     estado_cuadratura = models.CharField(max_length=50)
+    observacion = models.TextField(blank=True, default='', verbose_name='Observación del cierre')
     fecha_cierre = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Cierre de Caja"
         verbose_name_plural = "Cierres de Caja"
 
+    @property
+    def monto_esperado(self):
+        return self.monto_inicial + self.monto_ventas_sistema
+
     def __str__(self):
         return f"Cierre Caja #{self.caja.id} - {self.estado_cuadratura} (Dif: ${self.diferencia})"
+

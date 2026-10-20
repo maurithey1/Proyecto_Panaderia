@@ -1648,8 +1648,58 @@ def apertura_caja(request):
 
 
 @cajero_required
+@require_http_methods(['GET', 'POST'])
+def cierre_caja(request):
+    """
+    Cierre de caja: al finalizar el turno, el cajero cuenta el dinero físico de la caja
+    y lo registra para la cuadratura del turno (HU-EP004-002).
+    """
+    cajero = getattr(request.user, 'perfil_cajero', None)
+    if cajero is None:
+        messages.error(request, 'Solo un cajero con una caja asignada puede cerrar caja.')
+        return redirect('inicio_admin' if request.user.es_administrador else 'inicio')
+
+    error = None
+    monto_ingresado = ''
+    observacion = ''
+
+    if request.method == 'POST':
+        monto_ingresado = request.POST.get('monto', '').strip()
+        observacion = request.POST.get('observacion', '')
+        try:
+            cierre = caja_pos.cerrar_caja(cajero, monto_ingresado, observacion)
+        except caja_pos.CierreInvalido as motivo:
+            error = str(motivo)
+        else:
+            messages.success(
+                request,
+                f'Caja {cierre.caja.numero} cerrada con éxito. Estado de cuadratura: {cierre.estado_cuadratura} '
+                f'(Contado: {clp(cierre.monto_contado)} | Diferencia: {clp(cierre.diferencia)}).'
+            )
+            return redirect('cierre_caja')
+
+    caja_abierta = caja_pos.caja_del_cajero(cajero)
+    ventas = caja_pos.resumen_ventas_turno(caja_abierta) if caja_abierta else None
+    ultimo_cierre = caja_pos.ultimo_cierre_cajero(cajero) if not caja_abierta else None
+
+    contexto = {
+        'caja': caja_abierta,
+        'numero_caja': cajero.num_caja_asignada,
+        'ventas': ventas,
+        'ultimo_cierre': ultimo_cierre,
+        'ahora': timezone.localtime(),
+        'error': error,
+        'monto_ingresado': monto_ingresado,
+        'observacion': observacion,
+        'largo_observacion': caja_pos.LARGO_MAXIMO_OBSERVACION,
+    }
+    return render(request, 'core/cierre_caja.html', contexto, status=400 if error else 200)
+
+
+@cajero_required
 @caja_abierta_required
 def inicio_cajero(request):
+
     """
     Vista dedicada para la Terminal POS del Cajero.
     Carga todas las categorías activas y productos disponibles
