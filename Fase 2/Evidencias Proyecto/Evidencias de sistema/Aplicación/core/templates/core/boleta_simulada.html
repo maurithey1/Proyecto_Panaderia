@@ -1,14 +1,14 @@
-{% extends "core/base.html" %}
-{% load formato %}
+{% extends template_base|default:"core/base.html" %}
+{% load static formato %}
 
-{% block titulo %}Comprobante de demostración{% endblock %}
+{% block titulo %}Comprobante de pago{% endblock %}
 
 {% block contenido %}
 <section class="pagina" aria-labelledby="boleta-titulo">
   <div class="contenedor compra">
     <div class="boleta">
       <p class="boleta__estado">Compra de demostración completada</p>
-      <h1 id="boleta-titulo">Comprobante simulado</h1>
+      <h1 id="boleta-titulo">Comprobante N° {{ pedido.pk }}</h1>
       <p class="compra__aviso-legal">
         Este documento es ficticio. No es una boleta tributaria y no acredita un pago real.
       </p>
@@ -55,7 +55,13 @@
         </table>
       </div>
 
-      <a class="boton boton--primario" href="{% url 'pedir' %}">Volver a los productos</a>
+      <div style="margin-top: 1.5rem;">
+        {% if request.user.is_authenticated and request.user.es_cajero or request.user.is_authenticated and request.user.es_administrador %}
+          <a class="boton boton--primario" href="{% url 'inicio_cajero' %}">Volver a la Terminal POS</a>
+        {% else %}
+          <a class="boton boton--primario" href="{% url 'pedir' %}">Volver a los productos</a>
+        {% endif %}
+      </div>
     </div>
   </div>
 </section>

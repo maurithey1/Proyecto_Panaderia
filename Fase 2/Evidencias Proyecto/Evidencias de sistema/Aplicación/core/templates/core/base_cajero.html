@@ -13,6 +13,29 @@
   <link rel="stylesheet" href="{% static 'css/estilo.css' %}">
 </head>
 <body class="cajero-body">
+
+  {# Contenedor global de notificaciones flotantes (Toasts) #}
+  <div class="notificaciones-flotantes" id="notificaciones-contenedor" aria-live="polite" aria-atomic="true">
+    {% if messages %}
+      {% for message in messages %}
+        <div class="notificacion-toast notificacion-toast--{{ message.tags }}">
+          <div class="notificacion-toast__contenido">
+            <span class="notificacion-toast__icono">
+              {% if message.tags == 'success' %}
+                ✓
+              {% elif message.tags == 'error' %}
+                ✕
+              {% else %}
+                ℹ
+              {% endif %}
+            </span>
+            <span class="notificacion-toast__texto">{{ message }}</span>
+          </div>
+          <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()" aria-label="Cerrar notificación">&times;</button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
   {# Iconos SVG para el Sistema POS #}
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <symbol id="i-espiga" viewBox="0 0 24 24"><path d="M12 21V8"/><path d="M12 3v2"/><path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z"/><path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6"/></symbol>
@@ -27,6 +50,7 @@
     <symbol id="i-efectivo" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></symbol>
     <symbol id="i-tarjeta" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></symbol>
     <symbol id="i-reloj" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-mas" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
   </svg>
 
   <a class="saltar" href="#contenido">Saltar al contenido</a>

@@ -1,6 +1,7 @@
 import re
 import time
 import unicodedata
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
@@ -742,40 +743,80 @@ def webpay_confirmar(request):
     tbk_token = request.POST.get('TBK_TOKEN') or request.GET.get('TBK_TOKEN')
     tbk_orden_compra = request.POST.get('TBK_ORDEN_COMPRA') or request.GET.get('TBK_ORDEN_COMPRA')
 
+    # Recuperar ID de pedido desde session o token
+    pedido_id_session = request.session.get('webpay_pedido_id')
+
+    # Helper interno para determinar si redirigir al Terminal POS o al Carrito Web
+    def _redirigir_segun_origen(pedido_obj=None, mensaje="", tipo_msg="warning"):
+        if mensaje:
+            if tipo_msg == 'error':
+                messages.error(request, mensaje)
+            elif tipo_msg == 'info':
+                messages.info(request, mensaje)
+            elif tipo_msg == 'success':
+                messages.success(request, mensaje)
+            else:
+                messages.warning(request, mensaje)
+
+        es_pos = False
+        if pedido_obj and getattr(pedido_obj, 'canal', None) == 'POS':
+            es_pos = True
+        elif request.user.is_authenticated and (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)):
+            es_pos = True
+
+        return redirect('inicio_cajero' if es_pos else 'carrito')
+
+    # 1. Pago cancelado voluntariamente por el usuario en Transbank
     if tbk_token:
         tokens = [t for t in (tbk_token, token_ws) if t]
-        pedido_id = (
+        pedido = (
             Pedido.objects.filter(estado='PENDIENTE', pago__codigo_autorizacion__in=tokens)
-            .values_list('pk', flat=True)
             .first()
         )
-        if pedido_id is not None:
-            pedidos.cancelar_pendiente(pedido_id, 'CANCELADO')
-        request.session.pop('webpay_pedido_id', None)
-        messages.warning(
-            request,
-            'El pago no se completó en Webpay. No se realizó ningún cobro y tus productos '
-            'se mantienen en el carrito: puedes intentarlo de nuevo.',
-        )
-        return redirect('carrito')
+        if not pedido and pedido_id_session:
+            pedido = Pedido.objects.filter(pk=pedido_id_session, estado='PENDIENTE').first()
 
+        if pedido:
+            pedidos.cancelar_pendiente(pedido.pk, 'CANCELADO')
+        
+        request.session.pop('webpay_pedido_id', None)
+        return _redirigir_segun_origen(
+            pedido,
+            'El pago no se completó en Webpay. Se canceló la operación y el stock reservado ha vuelto al inventario.',
+            'warning'
+        )
+
+    # 2. Tiempo de espera agotado (Timeout en Transbank)
     if not token_ws and not tbk_token and tbk_orden_compra:
         pedido_id = None
         if tbk_orden_compra.startswith('ORD-'):
             pedido_id = _entero_o_none(tbk_orden_compra[len('ORD-'):])
-        if pedido_id is not None and pedido_id == request.session.get('webpay_pedido_id'):
-            pedidos.cancelar_pendiente(pedido_id, 'EXPIRADO')
-        request.session.pop('webpay_pedido_id', None)
-        messages.warning(
-            request,
-            'Se agotó el tiempo para pagar en Webpay. No se realizó ningún cobro '
-            'y tus productos se mantienen en el carrito.',
-        )
-        return redirect('carrito')
+        if not pedido_id:
+            pedido_id = pedido_id_session
 
+        pedido = Pedido.objects.filter(pk=pedido_id, estado='PENDIENTE').first() if pedido_id else None
+        if pedido:
+            pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+        
+        request.session.pop('webpay_pedido_id', None)
+        return _redirigir_segun_origen(
+            pedido,
+            'Se agotó el tiempo límite para pagar en Webpay. La compra fue anulada y el stock está disponible.',
+            'warning'
+        )
+
+    # 3. Sin token de confirmación de Transbank (Retorno con error o expirado)
     if not token_ws:
-        messages.error(request, 'No se recibió el token de confirmación de Transbank.')
-        return redirect('carrito')
+        pedido = Pedido.objects.filter(pk=pedido_id_session, estado='PENDIENTE').first() if pedido_id_session else None
+        if pedido:
+            pedidos.cancelar_pendiente(pedido.pk, 'EXPIRADO')
+        
+        request.session.pop('webpay_pedido_id', None)
+        return _redirigir_segun_origen(
+            pedido,
+            'No se recibió el token de confirmación de Transbank. La transacción fue anulada y el stock restaurado.',
+            'error'
+        )
 
     tx = obtener_transaccion_webpay()
     try:
@@ -783,12 +824,12 @@ def webpay_confirmar(request):
     except Exception:
         response = _respuesta_resuelta_webpay(tx, token_ws)
         if response is None:
-            messages.warning(
-                request,
-                'Estamos confirmando tu pago con Transbank. Espera unos segundos y revisa tu '
-                'pedido; no lo pagues de nuevo.',
+            pedido = Pedido.objects.filter(pk=pedido_id_session, estado='PENDIENTE').first() if pedido_id_session else None
+            return _redirigir_segun_origen(
+                pedido,
+                'Estamos confirmando tu pago con Transbank. Espera unos segundos y revisa el estado de tu pedido.',
+                'info'
             )
-            return redirect('carrito')
 
     buy_order = response.get('buy_order', '')
     pedido_id = None
@@ -798,14 +839,16 @@ def webpay_confirmar(request):
         except ValueError:
             pass
     if not pedido_id:
-        pedido_id = request.session.get('webpay_pedido_id')
+        pedido_id = pedido_id_session
 
     if not pedido_id or not Pedido.objects.filter(pk=pedido_id).exists():
         raise Http404
 
+    pedido = Pedido.objects.get(pk=pedido_id)
     response_code = response.get('response_code')
     status = response.get('status')
 
+    # 4. Pago Aprobado Exitosamente
     if response_code == 0 and status == 'AUTHORIZED':
         metodo, cod_autorizacion = _datos_de_pago(response)
         monto = response.get('amount', 0)
@@ -822,30 +865,29 @@ def webpay_confirmar(request):
                 boletas.append(pedido.pk)
             request.session['boletas_simuladas'] = boletas
 
-            messages.success(request, f'¡Pago aprobado con éxito! Código de autorización: {cod_autorizacion}')
+            messages.success(request, f'¡Pago aprobado con éxito en Webpay! Venta N° {pedido.pk} realizada. Autorización: {cod_autorizacion}')
+            
+            # Si la venta se hizo desde la Terminal POS, vuelve a la Terminal del Cajero
+            if pedido.canal == 'POS' or getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False):
+                return redirect('inicio_cajero')
+
             return redirect('boleta_simulada', pedido_id=pedido.pk)
 
+        # Reembolso en caso de pago tardío o descalce
         reembolsado = _reembolsar_pago(tx, pedido.pk, token_ws, monto)
         request.session.pop('webpay_pedido_id', None)
-        if resultado == pedidos.SIN_STOCK:
-            motivo = ('Tu pago llegó cuando el tiempo del pedido ya había vencido y esos productos se '
-                      'vendieron a otra persona.')
-        else:
-            motivo = 'El monto cobrado no coincide con el de tu pedido.'
-        if reembolsado:
-            messages.warning(request, f'{motivo} Te devolvimos el pago automáticamente; puedes volver a intentarlo.')
-        else:
-            messages.error(
-                request,
-                f'{motivo} No pudimos devolver el pago automáticamente: contáctanos indicando el pedido '
-                f'N° {pedido.pk} y te lo reembolsamos.',
-            )
-        return redirect('carrito')
+        motivo = 'El tiempo del pedido venció' if resultado == pedidos.SIN_STOCK else 'El monto no coincide'
+        msg_final = f'{motivo}. Se devolvió el pago automáticamente.' if reembolsado else f'{motivo}. Contacta soporte con la Orden N° {pedido.pk}.'
+        return _redirigir_segun_origen(pedido, msg_final, 'warning' if reembolsado else 'error')
 
-    pedidos.cancelar_pendiente(pedido_id, 'RECHAZADO')
+    # 5. Pago Rechazado por Transbank / Banco
+    pedidos.cancelar_pendiente(pedido.pk, 'RECHAZADO')
     request.session.pop('webpay_pedido_id', None)
-    messages.error(request, 'El pago fue rechazado por Webpay o tu banco. Por favor intenta nuevamente.')
-    return redirect('carrito')
+    return _redirigir_segun_origen(
+        pedido,
+        'El pago fue rechazado por Webpay o el banco emisor. La venta fue anulada y el stock restaurado.',
+        'error'
+    )
 
 
 def boleta_simulada(request, pedido_id):
@@ -856,6 +898,9 @@ def boleta_simulada(request, pedido_id):
             pk=pedido_id,
             cliente__user=request.user,
         ).exists()
+    if not autorizada and (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)):
+        autorizada = True
+
     if not autorizada:
         raise Http404
 
@@ -863,7 +908,14 @@ def boleta_simulada(request, pedido_id):
         Pedido.objects.prefetch_related('detalles__producto').select_related('pago'),
         pk=pedido_id,
     )
-    return render(request, 'core/boleta_simulada.html', {'pedido': pedido})
+
+    # Si un Cajero o Administrador intenta ver una boleta simulada, usa el layout base_cajero
+    template_base = 'core/base_cajero.html' if (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)) else 'core/base.html'
+
+    return render(request, 'core/boleta_simulada.html', {
+        'pedido': pedido,
+        'template_base': template_base,
+    })
 
 
 def producto_detalle(request, pk):
@@ -881,10 +933,16 @@ def producto_detalle(request, pk):
         'vuelve': vuelve,
     })
 
+# ==========================================
+# FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
+# ==========================================
+
+# Pagina informativa del local, con mapa y datos de contacto
 
 def local(request):
     return render(request, 'core/local.html')
 
+# Funcion de redireccionamiento según el rol del usuario autenticado
 
 def redireccionar_por_rol(user):
     if getattr(user, 'es_administrador', False):
@@ -893,6 +951,9 @@ def redireccionar_por_rol(user):
         return redirect('inicio_cajero')
     return redirect('inicio')
 
+# ==========================================
+# FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO Y REPORTES
+# ==========================================
 
 def admin_required(view_func):
     def _wrapped_view(request, *args, **kwargs):
@@ -1494,6 +1555,13 @@ def crear_categoria(request):
 
     return redirect(next_url)
 
+# ==========================================
+# FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO Y REPORTES
+# ==========================================
+
+# ==========================================
+# FUNCIONES DE CAJERO: TERMINAL POS, APERTURA Y CIERRE DE CAJA, VENTAS
+# ==========================================
 
 def cajero_required(view_func):
     def _wrapped_view(request, *args, **kwargs):
@@ -1509,8 +1577,15 @@ def cajero_required(view_func):
 
 @cajero_required
 def inicio_cajero(request):
+    """
+    Vista dedicada para la Terminal POS del Cajero.
+    Carga todas las categorías activas y productos disponibles
+    para permitir el filtrado instantáneo en el Frontend.
+    """
+    # 1. Obtener categorías disponibles
     categorias = Categoria.objects.all().order_by('nombre')
-    productos = Producto.objects.filter(activo=True).order_by('nombre')
+    # 2. Obtener productos activos e incluir la relación con su categoría
+    productos = Producto.objects.filter(activo=True).select_related('categoria').order_by('nombre')
 
     contexto = {
         'categorias': categorias,
@@ -1518,6 +1593,154 @@ def inicio_cajero(request):
     }
     return render(request, 'core/inicio_cajero.html', contexto)
 
+@cajero_required
+@require_POST
+def finalizar_venta_pos(request):
+    """
+    Procesa la venta presencial desde la Terminal POS.
+    Soporta Pago en Efectivo y Pago con Tarjeta (Webpay Plus).
+    """
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        data = request.POST
+
+    carrito_items = data.get('items', [])
+    metodo_pago = data.get('metodo_pago', 'EFECTIVO').upper()
+    try:
+        monto_efectivo = Decimal(str(data.get('monto_efectivo', 0)))
+    except Exception:
+        monto_efectivo = Decimal('0.00')
+
+    if not carrito_items:
+        return JsonResponse({'ok': False, 'error': 'El ticket de venta está vacío.'}, status=400)
+
+    # Validar cantidades
+    cantidades = {}
+    for item in carrito_items:
+        try:
+            p_id = int(item.get('id'))
+            cant = int(item.get('cantidad'))
+            if p_id > 0 and cant > 0:
+                cantidades[p_id] = cant
+        except (TypeError, ValueError):
+            continue
+
+    if not cantidades:
+        return JsonResponse({'ok': False, 'error': 'No hay productos válidos en la venta.'}, status=400)
+
+    with transaction.atomic():
+        productos = list(
+            Producto.objects.select_for_update()
+            .filter(pk__in=cantidades.keys(), activo=True)
+            .order_by('pk')
+        )
+        if len(productos) != len(cantidades):
+            return JsonResponse({'ok': False, 'error': 'Uno o más productos seleccionados ya no están disponibles.'}, status=400)
+
+        faltantes = [p.nombre for p in productos if p.stock < cantidades[p.pk]]
+        if faltantes:
+            return JsonResponse({
+                'ok': False, 
+                'error': f'Stock insuficiente para: {", ".join(faltantes)}.'
+            }, status=400)
+
+        total = sum(p.precio * cantidades[p.pk] for p in productos)
+
+        if metodo_pago == 'EFECTIVO' and monto_efectivo < total:
+            return JsonResponse({
+                'ok': False,
+                'error': f'El efectivo ingresado ({clp(monto_efectivo)}) es menor al total ({clp(total)}).'
+            }, status=400)
+
+        es_webpay = (metodo_pago in ['TARJETA', 'WEBPAY', 'DEBITO'])
+
+        pedido = Pedido.objects.create(
+            cliente=None,
+            estado='PENDIENTE' if es_webpay else 'PAGADO',
+            canal='POS',
+            tipo_entrega='RETIRO',
+            direccion_despacho='Venta presencial en Caja',
+            total=total,
+        )
+
+        for producto in productos:
+            cant = cantidades[producto.pk]
+            subtotal = producto.precio * cant
+            DetallePedido.objects.create(
+                pedido=pedido,
+                producto=producto,
+                cantidad=cant,
+                precio_unitario=producto.precio,
+                subtotal=subtotal,
+            )
+            producto.stock -= cant
+            producto.save(update_fields=['stock'])
+
+        # --- CASO 1: PAGO EN EFECTIVO ---
+        if not es_webpay:
+            vuelto = monto_efectivo - total if monto_efectivo > total else Decimal('0.00')
+            Pago.objects.create(
+                pedido=pedido,
+                monto=total,
+                metodo='Efectivo',
+                estado='PAGADO',
+                codigo_autorizacion=f'POS-{pedido.pk:08d}',
+            )
+            return JsonResponse({
+                'ok': True,
+                'metodo': 'efectivo',
+                'pedido_id': pedido.pk,
+                'total_clp': clp(total),
+                'vuelto_clp': clp(vuelto),
+                'mensaje': f'¡Venta N° {pedido.pk} registrada! Total: {clp(total)} | Vuelto: {clp(vuelto)}'
+            })
+
+        # --- CASO 2: PAGO CON TARJETA (WEBPAY PLUS) ---
+        pago = Pago.objects.create(
+            pedido=pedido,
+            monto=total,
+            metodo='Webpay Plus',
+            estado='PENDIENTE',
+            codigo_autorizacion='',
+        )
+
+        buy_order = f"ORD-{pedido.pk}"
+        if not request.session.session_key:
+            request.session.save()
+        session_id = request.session.session_key
+        amount = int(round(float(total)))
+        return_url = request.build_absolute_uri('/carrito/webpay-confirmar/')
+
+        tx = obtener_transaccion_webpay()
+        try:
+            response = tx.create(buy_order, session_id, amount, return_url)
+        except Exception:
+            pedidos.cancelar_pendiente(pedido.pk, 'FALLIDO')
+            return JsonResponse({'ok': False, 'error': 'No se pudo conectar con Transbank Webpay.'}, status=500)
+
+        token_ws = response.get('token')
+        pago.codigo_autorizacion = token_ws
+        pago.save(update_fields=['codigo_autorizacion'])
+
+        request.session['webpay_pedido_id'] = pedido.pk
+        request.session['webpay_token'] = token_ws
+
+        return JsonResponse({
+            'ok': True,
+            'metodo': 'tarjeta',
+            'pedido_id': pedido.pk,
+            'url_webpay': f"{response['url']}?token_ws={token_ws}",
+            'mensaje': 'Conectando con Transbank Webpay...'
+        })
+
+# ==========================================
+# FUNCIONES DE CAJERO: TERMINAL POS, APERTURA Y CIERRE DE CAJA, VENTAS
+# ==========================================
+
+# ==========================================
+# FUNCIONES DE INICIO Y REGISTRO DE USUARIOS
+# ==========================================
 
 def login_view(request):
     if request.user.is_authenticated:
@@ -1665,6 +1888,11 @@ def registro_view(request):
 
     return render(request, 'core/registro.html')
 
+# ==========================================
+# FUNCIONES DE INICIO Y REGISTRO DE USUARIOS
+# ==========================================
+
+# Vistas de páginas informativas: Términos y Condiciones, Políticas de Privacidad
 
 def terminos_condiciones(request):
     return render(request, 'core/terminos_condiciones.html')

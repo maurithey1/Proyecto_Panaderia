@@ -4,6 +4,7 @@
 {% block titulo %}Terminal POS{% endblock %}
 
 {% block contenido %}
+{% csrf_token %}
 <div class="cajero-pos-grid">
 
   <!-- COLUMNA IZQUIERDA Y CENTRAL: CATÁLOGO DE PRODUCTOS DINÁMICO -->
@@ -12,43 +13,65 @@
     <!-- Buscador Superior -->
     <div class="cajero-buscar-box">
       <svg class="icono cajero-buscar-icon" aria-hidden="true"><use href="#i-buscar"/></svg>
-      <input type="text" class="cajero-buscar-input" placeholder="Buscar producto..." id="inputBuscar">
+      <input type="text" class="cajero-buscar-input" placeholder="Buscar producto por nombre..." id="inputBuscar" autocomplete="off">
     </div>
 
     <!-- Filtros de Categorías Dinámicos -->
-    <div class="cajero-categorias-row">
-      <button class="cajero-chip activo" type="button">Todos</button>
+    <div class="cajero-categorias-row" id="contenedorCategorias">
+      <button class="cajero-chip activo" type="button" data-categoria="todas">Todos</button>
       {% for cat in categorias %}
-        <button class="cajero-chip" type="button">{{ cat.nombre }}</button>
+        <button class="cajero-chip" type="button" data-categoria="{{ cat.id }}">{{ cat.nombre }}</button>
       {% empty %}
         <button class="cajero-chip" type="button" disabled>Sin categorías</button>
       {% endfor %}
     </div>
 
-    <!-- Grilla de Productos Dinámica (Alimentada desde la BBDD) -->
-    <div class="cajero-productos-grid">
+    <!-- Grilla de Productos Dinámica -->
+    <div class="cajero-productos-grid" id="gridProductosCajero">
       {% for producto in productos %}
-        <article class="cajero-prod-card">
+        <article class="cajero-prod-card {% if producto.stock <= 0 %}agotado{% endif %}" 
+                data-categoria="{{ producto.categoria.id }}" 
+                data-nombre="{{ producto.nombre }}"
+                data-id="{{ producto.id }}"
+                data-stock="{{ producto.stock }}"
+                data-precio="{{ producto.precio|floatformat:'0u' }}">
+          
           <div class="cajero-prod-card__img">
+            <!-- Badge de Stock en la esquina superior de la imagen -->
+            {% if producto.stock > 0 %}
+              <span class="cajero-badge-stock {% if producto.stock <= producto.stock_critico %}bajo{% endif %}">
+                Stock: {{ producto.stock }}
+              </span>
+            {% else %}
+              <span class="cajero-badge-stock sin-stock">Agotado</span>
+            {% endif %}
+
             {% if producto.imagen_url %}
               <img src="{{ producto.imagen_url }}" alt="{{ producto.nombre }}">
             {% else %}
               <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
             {% endif %}
           </div>
+
           <h3 class="cajero-prod-card__nombre">{{ producto.nombre }}</h3>
-          <p class="cajero-prod-card__precio">${{ producto.precio|floatformat:0 }} / Un</p>
+          <p class="cajero-prod-card__precio">${{ producto.precio|floatformat:0 }} / {% if producto.unidad_medida == "kg" %}kg{% else %}{{ producto.unidad_medida }}{% endif %}</p>
           
-          {% if producto.stock > 0 %}
-            <button type="button" class="cajero-btn-agregar">Agregar</button>
-          {% else %}
-            <button type="button" class="cajero-btn-agregar agotado" disabled>Agotado</button>
-          {% endif %}
+          <!-- Contenedor dinámico de acciones (Cápsula izquierda) -->
+          <div class="cajero-prod-acciones" data-producto-id="{{ producto.id }}">
+            {% if producto.stock > 0 %}
+              <button type="button" class="agregar" onclick="agregarUnidadPos({{ producto.id }})" aria-label="Agregar {{ producto.nombre }}">
+                <svg class="icono" aria-hidden="true"><use href="#i-mas"/></svg>
+              </button>
+            {% else %}
+              <button type="button" class="cajero-btn-agregar agotado" disabled>Sin Stock</button>
+            {% endif %}
+          </div>
         </article>
       {% empty %}
-        <!-- Mensaje de estado vacío en caso de no haber productos en la BBDD -->
         <p class="cajero-vacio">No hay productos registrados disponibles para venta.</p>
       {% endfor %}
+
+      <p class="cajero-vacio d-none" id="msgSinResultados">No se encontraron productos para esta búsqueda.</p>
     </div>
 
   </section>
@@ -60,22 +83,20 @@
       <h2>Registrar Venta</h2>
     </div>
 
-    <!-- Tabla de ítems en carrito -->
+    <!-- Tabla de ítems en carrito optimizada para POS -->
     <div class="cajero-cart-table-wrapper">
       <table class="cajero-cart-table">
         <thead>
           <tr>
             <th>Producto</th>
-            <th>Cantidad</th>
-            <th>P. Unit</th>
-            <th>Total</th>
+            <th class="text-center">Cant.</th>
+            <th class="text-right">Total</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="carritoPosBody">
-          <!-- Se poblará dinámicamente con los productos seleccionados -->
           <tr>
-            <td colspan="5" class="cajero-vacio-tabla">Sin productos seleccionados</td>
+            <td colspan="4" class="cajero-vacio-tabla">Sin productos seleccionados</td>
           </tr>
         </tbody>
       </table>
@@ -84,34 +105,40 @@
     <!-- Bloque Destacado de TOTAL -->
     <div class="cajero-box-total">
       <span>TOTAL</span>
-      <strong>$0</strong>
+      <strong id="posMontoTotal">$0</strong>
     </div>
 
     <!-- Selección de Método de Pago -->
     <div class="cajero-pago-seccion">
-      <label class="cajero-pago-label">Metodo de Pago</label>
+      <label class="cajero-pago-label">Método de Pago</label>
       <div class="cajero-pago-opciones">
-        <button type="button" class="cajero-btn-pago activo">
+        <button type="button" class="cajero-btn-pago activo" id="btnPagoEfectivo" data-metodo="efectivo">
           <svg class="icono" aria-hidden="true"><use href="#i-efectivo"/></svg>
           <span>Efectivo</span>
         </button>
-        <button type="button" class="cajero-btn-pago">
+        <button type="button" class="cajero-btn-pago" id="btnPagoTarjeta" data-metodo="tarjeta">
           <svg class="icono" aria-hidden="true"><use href="#i-tarjeta"/></svg>
           <span>Tarjeta</span>
         </button>
       </div>
     </div>
 
+    <!-- Bloque de Ingreso Efectivo (Paga con) -->
+    <div class="cajero-pago-seccion" id="seccionPagaCon">
+      <label for="inputPagaCon" class="cajero-pago-label">Paga con (Efectivo recibido):</label>
+      <input type="number" id="inputPagaCon" class="cajero-buscar-input" placeholder="$0" min="0" step="100">
+    </div>
+
     <!-- Bloque Destacado de VUELTO -->
     <div class="cajero-box-vuelto">
       <span>Vuelto</span>
-      <strong>$ 0</strong>
+      <strong id="posMontoVuelto">$0</strong>
     </div>
 
     <!-- Botones de Acción Finales -->
     <div class="cajero-cart-acciones">
-      <button type="button" class="cajero-btn-finalizar">Finalizar Venta</button>
-      <button type="button" class="cajero-btn-cancelar">Cancelar Venta</button>
+      <button type="button" class="cajero-btn-finalizar" id="btnFinalizarVenta">Finalizar Venta</button>
+      <button type="button" class="cajero-btn-cancelar" id="btnCancelarVenta">Cancelar Venta</button>
     </div>
   </aside>
 

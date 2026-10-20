@@ -33,6 +33,7 @@ urlpatterns = [
     path('panel-admin/productos/produccion/<int:pk>/', views.registrar_produccion, name='registrar_produccion'),
     path('panel-admin/categorias/crear/', views.crear_categoria, name='crear_categoria'),
     path('pos/', views.inicio_cajero, name='inicio_cajero'),
+    path('pos/finalizar-venta/', views.finalizar_venta_pos, name='finalizar_venta_pos'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('registro/', views.registro_view, name='registro'),
