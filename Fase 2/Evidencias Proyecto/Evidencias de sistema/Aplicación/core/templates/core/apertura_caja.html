@@ -1,0 +1,143 @@
+{% extends 'core/base_cajero.html' %}
+{% load static formato l10n %}
+
+{% block titulo %}Apertura de caja{% endblock %}
+
+{% block contenido %}
+<section class="apertura" aria-labelledby="apertura-titulo">
+  <h1 class="apertura-titulo" id="apertura-titulo">Apertura de caja</h1>
+
+  <div class="apertura-tarjeta">
+
+    <!-- ESTADO DE LA CAJA DEL TURNO -->
+    <dl class="apertura-estado">
+      <div class="apertura-estado__fila">
+        <dt>Estado actual:</dt>
+        <dd>
+          {% if caja %}
+            <span class="apertura-insignia apertura-insignia--abierta">
+              Caja abierta
+              <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>
+            </span>
+          {% else %}
+            <span class="apertura-insignia apertura-insignia--cerrada">
+              Caja cerrada
+              <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            </span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Caja:</dt>
+        <dd class="apertura-cifra">N° {% if caja %}{{ caja.numero }}{% else %}{{ numero_caja }}{% endif %}</dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Fecha de turno:</dt>
+        <dd class="apertura-cifra">{% if caja %}{{ caja.fecha_apertura|date:"d/m/Y" }}{% else %}{{ ahora|date:"d/m/Y" }}{% endif %}</dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Hora de apertura:</dt>
+        <dd class="apertura-cifra">{% if caja %}{{ caja.fecha_apertura|time:"H:i" }}{% else %}{{ ahora|time:"H:i" }}{% endif %}</dd>
+      </div>
+    </dl>
+
+    <hr class="apertura-separador">
+
+    {% if error and error != bloqueo %}
+      <div class="apertura-aviso apertura-aviso--error" role="alert" id="aperturaError">
+        <p>{{ error }}</p>
+      </div>
+    {% endif %}
+
+    {% if caja %}
+      <!-- CAJA YA ABIERTA HOY: PUEDE VENDER -->
+      <dl class="apertura-estado">
+        <div class="apertura-estado__fila">
+          <dt>Monto inicial declarado:</dt>
+          <dd class="apertura-cifra">{{ caja.monto_inicial|clp }}</dd>
+        </div>
+        {% if caja.observacion_apertura %}
+          <div class="apertura-estado__fila apertura-estado__fila--columna">
+            <dt>Observación:</dt>
+            <dd>{{ caja.observacion_apertura }}</dd>
+          </div>
+        {% endif %}
+      </dl>
+      <a class="apertura-boton" href="{% url 'inicio_cajero' %}">Ir a vender</a>
+
+    {% elif bloqueo %}
+      <!-- UNA CAJA QUEDÓ ABIERTA: NO SE PUEDE ABRIR NI VENDER -->
+      <div class="apertura-aviso apertura-aviso--error" role="alert">
+        <p>{{ bloqueo }}</p>
+        <p>Avisa al administrador para que cierre esa caja.</p>
+      </div>
+
+    {% else %}
+      <!-- FORMULARIO DE APERTURA -->
+      <form method="post" action="{% url 'apertura_caja' %}" class="apertura-formulario" id="formAperturaCaja"
+            data-numero-caja="{{ numero_caja|unlocalize }}" data-monto-anterior="{{ monto_anterior_entero|unlocalize }}">
+        {% csrf_token %}
+
+        <p class="apertura-anterior">
+          Monto físico del turno anterior:
+          {% if monto_anterior is not None %}
+            <strong class="apertura-cifra">{{ monto_anterior|clp }}</strong>
+          {% else %}
+            <strong>Sin turno anterior (primera apertura)</strong>
+          {% endif %}
+        </p>
+
+        <div class="apertura-campo">
+          <label for="inputMontoApertura">Ingresar monto físico actual en caja</label>
+          <input type="text" inputmode="numeric" autocomplete="off" id="inputMontoApertura" name="monto"
+                 class="apertura-input" placeholder="$0" value="{{ monto_ingresado }}" required
+                 pattern="[0-9]{1,3}(\.[0-9]{3})*|[0-9]+" title="Solo números, por ejemplo 20.000"
+                 {% if error %}aria-describedby="aperturaError"{% endif %}>
+        </div>
+
+        <div class="apertura-campo">
+          <label for="inputObservacionApertura">
+            Observaciones
+            <span class="apertura-campo__ayuda">
+              {% if monto_anterior is not None %}(obligatorio si el monto no cuadra con el turno anterior){% else %}(opcional){% endif %}
+            </span>
+          </label>
+          <textarea id="inputObservacionApertura" name="observacion" class="apertura-textarea" rows="3"
+                    maxlength="{{ largo_observacion }}">{{ observacion }}</textarea>
+          <p class="apertura-campo__aviso" id="avisoObservacion" hidden>
+            El monto no cuadra con el turno anterior: la observación es obligatoria.
+          </p>
+        </div>
+
+        <button type="submit" class="apertura-boton" id="btnAbrirCaja">
+          <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/></svg>
+          Abrir caja
+        </button>
+      </form>
+
+      <!-- CONFIRMACIÓN DE LA APERTURA (reemplaza el confirm() del navegador) -->
+      <dialog class="confirmacion-modal" id="modalConfirmarApertura"
+              aria-labelledby="confirmarAperturaTitulo" aria-describedby="confirmarAperturaTexto">
+        <div class="confirmacion-modal__caja">
+          <header class="confirmacion-modal__cabecera">
+            <h2 class="confirmacion-modal__titulo" id="confirmarAperturaTitulo" tabindex="-1" autofocus>Confirmar apertura</h2>
+          </header>
+          <div class="confirmacion-modal__cuerpo">
+            <p id="confirmarAperturaTexto">Vas a abrir la <strong>Caja <span data-confirmar-caja>{{ numero_caja }}</span></strong> con este monto inicial:</p>
+            <p class="confirmacion-modal__monto" data-confirmar-monto></p>
+            <p class="confirmacion-modal__nota">Revisa que sea el dinero físico que hay en la caja: no se puede cambiar después.</p>
+          </div>
+          <footer class="confirmacion-modal__pie">
+            <button type="button" class="confirmacion-modal__boton confirmacion-modal__boton--secundario" data-cancelar>Cancelar</button>
+            <button type="button" class="confirmacion-modal__boton" data-aceptar>Abrir caja</button>
+          </footer>
+        </div>
+      </dialog>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/apertura_caja.js' %}"></script>
+{% endblock %}

@@ -2795,6 +2795,9 @@ class HistorialVentasPosTests(TestCase):
     # --- La venta guarda quién la registró ---
 
     def test_la_venta_en_efectivo_del_pos_guarda_al_cajero_que_la_registro(self):
+        from .models import Caja
+
+        Caja.objects.create(cajero=self.cajero, numero=1, monto_inicial=Decimal('0'))   # sin caja abierta no se vende
         respuesta = self.client.post(
             reverse('finalizar_venta_pos'),
             data=json.dumps({
@@ -2812,7 +2815,8 @@ class HistorialVentasPosTests(TestCase):
         self.assertEqual(self._ids(self._historial()), [pedido.pk])
         self.assertTrue(self._detalle(pedido.pk).json()['ok'])
 
-    def test_la_venta_de_un_admin_sin_perfil_de_cajero_queda_sin_cajero(self):
+    def test_un_admin_sin_perfil_de_cajero_no_vende_en_el_pos(self):
+        # Vender exige abrir una caja, y solo un cajero con caja asignada puede abrirla
         admin = Usuario.objects.create_user('admin-pos', password='clave-larga-123', rol='ADMINISTRADOR')
         self.client.force_login(admin)
 
@@ -2826,8 +2830,9 @@ class HistorialVentasPosTests(TestCase):
             content_type='application/json',
         )
 
-        self.assertTrue(respuesta.json()['ok'])
-        self.assertIsNone(Pedido.objects.get().cajero)
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertFalse(respuesta.json()['ok'])
+        self.assertFalse(Pedido.objects.exists())
 
     # --- Acceso ---
 
@@ -2998,3 +3003,216 @@ class HistorialVentasPosTests(TestCase):
         detalle = self._detalle(a_las_0010_del_20.pk).json()['venta']
         self.assertEqual((detalle['fecha'], detalle['hora']), ('20/08/2026', '00:10'))
         self._assert_no_encontrada(self._detalle(a_las_2330.pk))
+
+
+class AperturaCajaTests(TestCase):
+    """Apertura de caja: el cajero declara el dinero físico de su caja y solo entonces puede vender."""
+
+    AHORA = datetime(2026, 8, 19, 7, 55, tzinfo=ZONA_HORARIA)   # miércoles, comienzo del turno
+
+    def setUp(self):
+        # Reloj fijo: "hoy" y la hora de apertura no dependen de cuándo se corran las pruebas
+        parche = mock.patch('django.utils.timezone.now')
+        self.reloj = parche.start()
+        self.addCleanup(parche.stop)
+        self.reloj.return_value = self.AHORA
+
+        categoria = Categoria.objects.create(nombre='Panes caja')
+        self.pan = Producto.objects.create(
+            categoria=categoria, nombre='Hallulla', precio=Decimal('500.00'), stock=50, activo=True,
+        )
+        self.cajero = self._cajero('cajero-patricia', caja=1, nombre='Patricia', apellido='Guzmán')
+        self.client.force_login(self.cajero.user)
+
+    def _cajero(self, usuario, caja=1, nombre='', apellido=''):
+        from .models import Cajero
+
+        user = Usuario.objects.create_user(
+            usuario, password='clave-larga-123', rol='CAJERO', first_name=nombre, last_name=apellido,
+        )
+        return Cajero.objects.create(user=user, num_caja_asignada=caja)
+
+    def _abrir(self, monto, observacion=''):
+        return self.client.post(reverse('apertura_caja'), {'monto': monto, 'observacion': observacion})
+
+    def _vender(self):
+        return self.client.post(
+            reverse('finalizar_venta_pos'),
+            data=json.dumps({
+                'items': [{'id': self.pan.pk, 'cantidad': 2}],
+                'metodo_pago': 'EFECTIVO',
+                'monto_efectivo': 1000,
+            }),
+            content_type='application/json',
+        )
+
+    def _caja(self, cajero, numero=1, estado='ABIERTA', abierta_hace=None):
+        """Una caja de `cajero`; abierta_hace: timedelta antes de AHORA (por omisión, ahora)."""
+        from .models import Caja
+
+        caja = Caja.objects.create(cajero=cajero, numero=numero, monto_inicial=Decimal('10000'), estado=estado)
+        if abierta_hace is not None:
+            Caja.objects.filter(pk=caja.pk).update(fecha_apertura=self.AHORA - abierta_hace)
+        return caja
+
+    def _turno_anterior(self, monto_contado, numero=1):
+        """Una caja física ya cerrada, con su cierre (lo que hará el cierre de caja, HU-EP004-002)."""
+        from .models import CierreCaja
+
+        anterior = self._cajero(f'cajero-anterior-{numero}', caja=numero)
+        caja = self._caja(anterior, numero=numero, estado='CERRADA', abierta_hace=timedelta(days=1))
+        CierreCaja.objects.create(
+            caja=caja, monto_inicial=Decimal('10000'), monto_contado=Decimal(monto_contado),
+            diferencia=Decimal('0'), estado_cuadratura='Cuadrada',
+        )
+
+    def _cajas_propias(self):
+        from .models import Caja
+
+        return Caja.objects.filter(cajero=self.cajero)
+
+    # --- Sin caja abierta no se vende ---
+
+    def test_sin_caja_abierta_el_pos_manda_a_la_apertura(self):
+        respuesta = self.client.get(reverse('inicio_cajero'))
+
+        self.assertRedirects(respuesta, reverse('apertura_caja'), fetch_redirect_response=False)
+        mensajes = [str(m) for m in get_messages(respuesta.wsgi_request)]
+        self.assertIn('Antes de vender, declara el monto inicial de tu caja.', mensajes)
+
+    def test_sin_caja_abierta_la_venta_se_rechaza_y_no_descuenta_stock(self):
+        respuesta = self._vender()
+
+        self.assertEqual(respuesta.status_code, 409)
+        self.assertEqual(respuesta.json()['error'], 'Antes de vender, declara el monto inicial de tu caja.')
+        self.assertFalse(Pedido.objects.exists())
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 50)
+
+    # --- Apertura ---
+
+    def test_primera_apertura_sin_turno_anterior_y_luego_puede_vender(self):
+        pantalla = self.client.get(reverse('apertura_caja'))
+        self.assertContains(pantalla, 'Caja cerrada')
+        self.assertContains(pantalla, 'Sin turno anterior (primera apertura)')
+        self.assertContains(pantalla, '19/08/2026')
+        self.assertContains(pantalla, '07:55')
+
+        respuesta = self._abrir('20.000')
+
+        self.assertRedirects(respuesta, reverse('inicio_cajero'), fetch_redirect_response=False)
+        caja = self._cajas_propias().get()
+        self.assertEqual(
+            (caja.numero, caja.monto_inicial, caja.estado, caja.observacion_apertura),
+            (1, Decimal('20000'), 'ABIERTA', ''),
+        )
+        self.assertEqual(self.client.get(reverse('inicio_cajero')).status_code, 200)
+        venta = self._vender()
+        self.assertTrue(venta.json()['ok'])
+        self.assertEqual(Pedido.objects.get().cajero, self.cajero)
+
+    def test_con_la_caja_abierta_la_apertura_muestra_el_turno_en_curso(self):
+        self._abrir('$20.000')
+
+        pantalla = self.client.get(reverse('apertura_caja'))
+
+        self.assertContains(pantalla, 'Caja abierta')
+        self.assertContains(pantalla, '$20.000')
+        self.assertContains(pantalla, 'Ir a vender')
+        self.assertNotContains(pantalla, 'name="monto"')
+
+    def test_el_monto_debe_ser_un_entero_de_pesos_dentro_del_tope(self):
+        for monto in ['', 'abc', '-500', '17500.5', '17,5', '1.50', '600000']:
+            with self.subTest(monto=monto):
+                respuesta = self._abrir(monto)
+                self.assertEqual(respuesta.status_code, 400)
+                self.assertFalse(self._cajas_propias().exists())
+
+    def test_no_se_abre_dos_veces_la_misma_caja(self):
+        self._abrir('20000')
+
+        respuesta = self._abrir('20000')
+
+        self.assertContains(respuesta, 'Ya tienes la Caja 1 abierta.', status_code=400)
+        self.assertEqual(self._cajas_propias().count(), 1)
+
+    # --- Turno anterior de la caja física ---
+
+    def test_si_no_cuadra_con_el_ultimo_cierre_exige_observacion(self):
+        self._turno_anterior('17500')
+        self.assertContains(self.client.get(reverse('apertura_caja')), '$17.500')
+
+        sin_observacion = self._abrir('17.000')
+        self.assertContains(sin_observacion, 'no coincide con el del turno anterior ($17.500)', status_code=400)
+        self.assertFalse(self._cajas_propias().exists())
+
+        con_observacion = self._abrir('17.000', '  Faltan $500: se usaron para cambio  ')
+        self.assertRedirects(con_observacion, reverse('inicio_cajero'), fetch_redirect_response=False)
+        caja = self._cajas_propias().get()
+        self.assertEqual(
+            (caja.monto_inicial, caja.observacion_apertura),
+            (Decimal('17000'), 'Faltan $500: se usaron para cambio'),
+        )
+
+    def test_si_cuadra_con_el_ultimo_cierre_no_pide_observacion(self):
+        self._turno_anterior('17500')
+
+        respuesta = self._abrir('$17.500')
+
+        self.assertRedirects(respuesta, reverse('inicio_cajero'), fetch_redirect_response=False)
+        self.assertEqual(self._cajas_propias().get().monto_inicial, Decimal('17500'))
+
+    def test_el_turno_anterior_es_de_la_misma_caja_fisica(self):
+        self._turno_anterior('30000', numero=2)
+
+        self.assertContains(self.client.get(reverse('apertura_caja')), 'Sin turno anterior (primera apertura)')
+        self.assertRedirects(self._abrir('5000'), reverse('inicio_cajero'), fetch_redirect_response=False)
+
+    # --- Cajas que quedaron abiertas ---
+
+    def test_una_caja_propia_abierta_de_ayer_bloquea_la_apertura_y_la_venta(self):
+        self._caja(self.cajero, abierta_hace=timedelta(days=1))
+
+        pantalla = self.client.get(reverse('apertura_caja'))
+        self.assertContains(pantalla, 'Tu Caja 1 sigue abierta desde el 18/08/2026')
+        self.assertNotContains(pantalla, 'name="monto"')
+        self.assertEqual(self._abrir('20000').status_code, 400)
+        self.assertRedirects(
+            self.client.get(reverse('inicio_cajero')), reverse('apertura_caja'), fetch_redirect_response=False,
+        )
+        self.assertEqual(self._vender().status_code, 409)
+        self.assertEqual(self._cajas_propias().count(), 1)
+
+    def test_la_caja_fisica_abierta_por_otro_cajero_bloquea_la_apertura(self):
+        juan = self._cajero('cajero-juan', caja=1, nombre='Juan', apellido='Pérez')
+        self._caja(juan, numero=1)
+
+        self.assertContains(self.client.get(reverse('apertura_caja')), 'La Caja 1 ya está abierta por Juan Pérez.')
+        self.assertEqual(self._abrir('20000').status_code, 400)
+        self.assertFalse(self._cajas_propias().exists())
+
+    def test_otra_caja_fisica_abierta_no_bloquea(self):
+        self._caja(self._cajero('cajero-juan', caja=2), numero=2)
+
+        self.assertRedirects(self._abrir('20000'), reverse('inicio_cajero'), fetch_redirect_response=False)
+
+    # --- Acceso ---
+
+    def test_un_admin_sin_perfil_de_cajero_no_abre_caja_ni_vende(self):
+        admin = Usuario.objects.create_user('admin-caja', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(admin)
+
+        for nombre in ('apertura_caja', 'inicio_cajero'):
+            with self.subTest(vista=nombre):
+                self.assertRedirects(
+                    self.client.get(reverse(nombre)), reverse('inicio_admin'), fetch_redirect_response=False,
+                )
+        self.assertEqual(self._vender().status_code, 409)
+
+    def test_anonimo_y_cliente_no_entran_a_la_apertura(self):
+        self.client.logout()
+        self.assertRedirects(self.client.get(reverse('apertura_caja')), reverse('login'), fetch_redirect_response=False)
+
+        cliente = Usuario.objects.create_user('cliente-caja', password='clave-larga-123', rol='CLIENTE')
+        self.client.force_login(cliente)
+        self.assertRedirects(self.client.get(reverse('apertura_caja')), reverse('inicio'), fetch_redirect_response=False)

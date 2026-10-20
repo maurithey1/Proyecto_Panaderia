@@ -15,7 +15,7 @@ from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Val
 from django.db.models.functions import Coalesce
 from django.http import Http404, JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.core.validators import validate_email
 from django.conf import settings
@@ -29,6 +29,7 @@ from .models import (
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
 from . import pedidos
+from . import caja as caja_pos
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -1576,7 +1577,78 @@ def cajero_required(view_func):
     return _wrapped_view
 
 
+def caja_abierta_required(view_func):
+    """
+    Solo se vende con la caja abierta: sin caja, la Terminal POS manda a la apertura de caja
+    y una venta (POST) se rechaza. Va debajo de @cajero_required.
+    """
+    def _wrapped_view(request, *args, **kwargs):
+        cajero = getattr(request.user, 'perfil_cajero', None)
+        if cajero is None:
+            caja, bloqueo = None, 'El punto de venta es solo para cajeros con una caja asignada.'
+        else:
+            caja, bloqueo = caja_pos.situacion(cajero)
+
+        if caja is None:
+            mensaje = bloqueo or 'Antes de vender, declara el monto inicial de tu caja.'
+            if request.method == 'POST':
+                return JsonResponse({'ok': False, 'error': mensaje}, status=409)
+            if cajero is None:
+                messages.error(request, mensaje)
+                return redirect('inicio_admin' if request.user.es_administrador else 'inicio')
+            if not bloqueo:
+                messages.info(request, mensaje)    # el bloqueo ya se explica en la pantalla de apertura
+            return redirect('apertura_caja')
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+
 @cajero_required
+@require_http_methods(['GET', 'POST'])
+def apertura_caja(request):
+    """
+    Apertura de caja: al empezar el turno, el cajero declara el dinero físico que hay en su caja.
+    Hasta abrirla no puede vender. El monto se compara con lo contado en el último cierre de esa
+    caja física; si no coincide, la observación es obligatoria (reglas en core/caja.py).
+    """
+    cajero = getattr(request.user, 'perfil_cajero', None)
+    if cajero is None:
+        messages.error(request, 'Solo un cajero con una caja asignada puede abrir caja.')
+        return redirect('inicio_admin' if request.user.es_administrador else 'inicio')
+
+    error = None
+    monto_ingresado = ''
+    observacion = ''
+    if request.method == 'POST':
+        monto_ingresado = request.POST.get('monto', '').strip()
+        observacion = request.POST.get('observacion', '')
+        try:
+            caja = caja_pos.abrir_caja(cajero, monto_ingresado, observacion)
+        except caja_pos.AperturaInvalida as motivo:
+            error = str(motivo)
+        else:
+            messages.success(request, f'Caja {caja.numero} abierta con {clp(caja.monto_inicial)}. ¡Buen turno!')
+            return redirect('inicio_cajero')
+
+    caja, bloqueo = caja_pos.situacion(cajero)
+    monto_anterior = caja_pos.monto_turno_anterior(cajero.num_caja_asignada)
+    contexto = {
+        'caja': caja,                 # su caja abierta hoy (ya puede vender)
+        'bloqueo': bloqueo,           # no puede abrir: una caja quedó abierta
+        'numero_caja': cajero.num_caja_asignada,
+        'monto_anterior': monto_anterior,
+        'monto_anterior_entero': int(monto_anterior) if monto_anterior is not None else '',
+        'ahora': timezone.localtime(),
+        'error': error,
+        'monto_ingresado': monto_ingresado,
+        'observacion': observacion,
+        'largo_observacion': caja_pos.LARGO_MAXIMO_OBSERVACION,
+    }
+    return render(request, 'core/apertura_caja.html', contexto, status=400 if error else 200)
+
+
+@cajero_required
+@caja_abierta_required
 def inicio_cajero(request):
     """
     Vista dedicada para la Terminal POS del Cajero.
@@ -1595,6 +1667,7 @@ def inicio_cajero(request):
     return render(request, 'core/inicio_cajero.html', contexto)
 
 @cajero_required
+@caja_abierta_required
 @require_POST
 def finalizar_venta_pos(request):
     """

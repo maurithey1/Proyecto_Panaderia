@@ -36,6 +36,7 @@ urlpatterns = [
     path('pos/finalizar-venta/', views.finalizar_venta_pos, name='finalizar_venta_pos'),
     path('pos/historial/', views.historial_ventas_pos, name='historial_ventas_pos'),
     path('pos/historial/<int:pedido_id>/detalle/', views.detalle_venta_pos, name='detalle_venta_pos'),
+    path('pos/apertura/', views.apertura_caja, name='apertura_caja'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
     path('registro/', views.registro_view, name='registro'),

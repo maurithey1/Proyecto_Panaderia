@@ -145,8 +145,8 @@ class PagoAdmin(admin.ModelAdmin):
 # ==========================================
 @admin.register(Caja)
 class CajaAdmin(admin.ModelAdmin):
-    list_display = ('id', 'cajero', 'monto_inicial', 'estado', 'fecha_apertura', 'fecha_cierre')
-    list_filter = ('estado', 'fecha_apertura')
+    list_display = ('id', 'numero', 'cajero', 'monto_inicial', 'estado', 'fecha_apertura', 'fecha_cierre')
+    list_filter = ('estado', 'numero', 'fecha_apertura')
 
 @admin.register(CierreCaja)
 class CierreCajaAdmin(admin.ModelAdmin):

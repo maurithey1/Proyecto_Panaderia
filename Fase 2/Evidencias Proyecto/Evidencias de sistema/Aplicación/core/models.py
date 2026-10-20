@@ -480,9 +480,11 @@ class Pago(models.Model):
 # ==========================================
 class Caja(models.Model):
     cajero = models.ForeignKey(Cajero, on_delete=models.SET_NULL, null=True, related_name='cajas')
+    numero = models.IntegerField(default=1, verbose_name='Número de caja')
     fecha_apertura = models.DateTimeField(auto_now_add=True)
     fecha_cierre = models.DateTimeField(null=True, blank=True)
     monto_inicial = models.DecimalField(max_digits=10, decimal_places=2)
+    observacion_apertura = models.TextField(blank=True, default='', verbose_name='Observación de apertura')
     estado = models.CharField(max_length=20, default='ABIERTA')
 
     class Meta:

@@ -3674,3 +3674,228 @@ a.historial-paginacion__enlace--actual:hover {
   .historial-modal__tabla td { padding: 8px; }
   .historial-modal__cerrar { width: 100%; }
 }
+
+/* ==========================================================
+   APERTURA DE CAJA (POS)
+   (core/templates/core/apertura_caja.html, static/js/apertura_caja.js)
+   ========================================================== */
+.apertura {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 680px;
+  min-width: 0;
+}
+
+.apertura-titulo {
+  font-size: 1.3rem;
+  color: var(--cafe-oscuro);
+}
+
+.apertura-tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 24px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+/* ESTADO, CAJA, FECHA Y HORA DEL TURNO */
+.apertura-estado {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+
+.apertura-estado__fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.apertura-estado__fila--columna { flex-direction: column; align-items: flex-start; }
+.apertura-estado dt { min-width: 150px; font-size: 0.95rem; color: var(--texto-suave); }
+.apertura-estado dd { margin: 0; font-weight: 700; color: var(--cafe-oscuro); }
+
+/* Cifras rectas (fecha, hora y montos), como en el historial */
+.apertura-cifra { font-variant-numeric: lining-nums tabular-nums; }
+
+.apertura-insignia {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.apertura-insignia--cerrada { background: var(--crema-2); color: var(--cafe-oscuro); }
+.apertura-insignia--abierta { background: #e3f1e6; color: #1f6b35; }
+
+.apertura-separador {
+  margin: 0;
+  border: none;
+  border-top: 1.5px solid var(--borde);
+}
+
+/* FORMULARIO */
+.apertura-formulario { display: flex; flex-direction: column; gap: 16px; }
+
+.apertura-anterior { margin: 0; color: var(--texto-suave); }
+.apertura-anterior strong { margin-left: 4px; color: var(--cafe-oscuro); }
+
+.apertura-campo { display: flex; flex-direction: column; gap: 6px; }
+.apertura-campo label { font-weight: 700; color: var(--cafe-oscuro); }
+.apertura-campo__ayuda { font-weight: 400; font-size: 0.88rem; color: var(--texto-suave); }
+.apertura-campo__aviso { margin: 0; font-size: 0.88rem; font-weight: 500; color: var(--terracota); }
+
+.apertura-input,
+.apertura-textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: #fff;
+  font: 400 1rem/1.4 var(--fuente-texto);
+  color: var(--cafe-oscuro);
+}
+.apertura-input {
+  max-width: 260px;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.apertura-textarea { resize: vertical; min-height: 84px; }
+.apertura-input:focus,
+.apertura-textarea:focus { border-color: var(--cafe); outline: 2px solid var(--trigo-claro); outline-offset: 0; }
+
+.apertura-boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: center;
+  min-height: 44px;
+  min-width: 200px;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 8px;
+  background: var(--cafe);
+  font: 700 1rem/1 var(--fuente-texto);
+  color: var(--crema);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+.apertura-boton:hover { background: var(--cafe-hover); }
+.apertura-boton:disabled { opacity: 0.6; cursor: wait; }
+
+/* AVISOS (error de validación o caja que quedó abierta) */
+.apertura-aviso {
+  padding: 12px 14px;
+  border-radius: 6px;
+}
+.apertura-aviso p { margin: 0; }
+.apertura-aviso p + p { margin-top: 6px; }
+.apertura-aviso--error {
+  font-weight: 500;
+  color: #7a2f12;
+  background: #fbeee6;
+  border-left: 4px solid var(--terracota);
+}
+
+@media (max-width: 480px) {
+  .apertura-tarjeta { padding: 18px 16px; }
+  .apertura-estado dt { min-width: 0; }
+  .apertura-input { max-width: none; }
+  .apertura-boton { width: 100%; }
+}
+
+/* ==========================================================
+   MODAL DE CONFIRMACIÓN DEL SISTEMA (reemplaza el confirm() del navegador)
+   Mismo aspecto que el modal del historial. Hoy lo usa la apertura de caja.
+   ========================================================== */
+.confirmacion-modal {
+  width: min(92vw, 440px);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--cafe-oscuro);
+  box-shadow: 0 24px 60px rgba(62, 42, 29, 0.35);
+}
+.confirmacion-modal::backdrop { background: rgba(62, 42, 29, 0.55); }
+
+/* La caja cubre todo el <dialog>: un clic fuera de ella es un clic en el fondo */
+.confirmacion-modal__caja {
+  display: flex;
+  flex-direction: column;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.confirmacion-modal__cabecera {
+  padding: 18px 20px 14px;
+  border-bottom: 1.5px solid var(--borde);
+}
+.confirmacion-modal__titulo { font-size: 1.3rem; color: var(--cafe-oscuro); }
+.confirmacion-modal__titulo:focus { outline: none; }
+
+.confirmacion-modal__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px;
+}
+.confirmacion-modal__cuerpo p { margin: 0; }
+
+/* El monto como los precios del catálogo: terracota y cifras rectas */
+.confirmacion-modal__monto {
+  padding: 12px 18px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--crema-2);
+  font-size: 1.6rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--terracota);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.confirmacion-modal__nota { font-size: 0.88rem; color: var(--texto-suave); }
+
+.confirmacion-modal__pie {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1.5px solid var(--borde);
+}
+
+.confirmacion-modal__boton {
+  min-height: 40px;
+  padding: 10px 22px;
+  border: 1.5px solid var(--cafe);
+  border-radius: 8px;
+  background: var(--cafe);
+  font: 700 0.95rem/1 var(--fuente-texto);
+  color: var(--crema);
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.confirmacion-modal__boton:hover { background: var(--cafe-hover); border-color: var(--cafe-hover); }
+.confirmacion-modal__boton--secundario {
+  border-color: var(--borde);
+  background: var(--papel);
+  color: var(--cafe-oscuro);
+}
+.confirmacion-modal__boton--secundario:hover { background: var(--crema-2); border-color: var(--cafe); }
+
+@media (max-width: 480px) {
+  .confirmacion-modal__pie { flex-direction: column-reverse; }
+  .confirmacion-modal__boton { width: 100%; }
+}
