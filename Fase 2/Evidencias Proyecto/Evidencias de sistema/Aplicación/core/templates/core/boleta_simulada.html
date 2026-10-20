@@ -7,16 +7,13 @@
 <section class="pagina" aria-labelledby="boleta-titulo">
   <div class="contenedor compra">
     <div class="boleta">
-      <p class="boleta__estado">Compra de demostración completada</p>
+      <p class="boleta__estado">Compra completada con éxito</p>
       <h1 id="boleta-titulo">Comprobante N° {{ pedido.pk }}</h1>
-      <p class="compra__aviso-legal">
-        Este documento es ficticio. No es una boleta tributaria y no acredita un pago real.
-      </p>
 
       <dl class="boleta__datos">
         <div><dt>Número de pedido</dt><dd>#{{ pedido.pk }}</dd></div>
         <div><dt>Fecha</dt><dd>{{ pedido.fecha|date:"d/m/Y H:i" }}</dd></div>
-        <div><dt>Estado de la demostración</dt><dd>Ejecutada correctamente</dd></div>
+        <div><dt>Estado del pedido</dt><dd>{{ pedido.get_estado_display }}</dd></div>
         <div><dt>Entrega</dt><dd>{{ pedido.get_tipo_entrega_display }}</dd></div>
         {% if pedido.tipo_entrega == 'RETIRO' %}
           <div><dt>Retiro en</dt><dd>{{ tienda.direccion }}, {{ tienda.comuna }}</dd></div>
@@ -26,7 +23,16 @@
         {% elif pedido.direccion_despacho %}
           <div><dt>Dirección de despacho</dt><dd>{{ pedido.direccion_despacho }}</dd></div>
         {% endif %}
-        <div><dt>Pago</dt><dd>Simulado; no se realizó ningún cobro</dd></div>
+        <div>
+          <dt>Método de pago</dt>
+          <dd>
+            {% if pedido.pago %}
+              {{ pedido.pago.metodo }}
+            {% else %}
+              Confirmado
+            {% endif %}
+          </dd>
+        </div>
       </dl>
 
       <div class="compra__tabla-contenedor">
@@ -50,19 +56,66 @@
             {% endfor %}
           </tbody>
           <tfoot>
-            <tr><th scope="row" colspan="3">Total de demostración</th><td><strong>{{ pedido.total|clp }}</strong></td></tr>
+            <tr><th scope="row" colspan="3">Total</th><td><strong>{{ pedido.total|clp }}</strong></td></tr>
           </tfoot>
         </table>
       </div>
 
-      <div style="margin-top: 1.5rem;">
-        {% if request.user.is_authenticated and request.user.es_cajero or request.user.is_authenticated and request.user.es_administrador %}
-          <a class="boton boton--primario" href="{% url 'inicio_cajero' %}">Volver a la Terminal POS</a>
-        {% else %}
-          <a class="boton boton--primario" href="{% url 'pedir' %}">Volver a los productos</a>
-        {% endif %}
+      <div class="boleta__acciones" style="margin-top: 1.75rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div>
+          {% if request.user.is_authenticated and request.user.es_cajero or request.user.is_authenticated and request.user.es_administrador %}
+            <a class="boton boton--contorno" href="{% url 'inicio_cajero' %}">Volver a la Terminal POS</a>
+          {% else %}
+            <a class="boton boton--contorno" href="{% url 'pedir' %}">Volver a los productos</a>
+          {% endif %}
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <button type="button" class="boton boton--contorno" onclick="window.print();" title="Imprimir este comprobante" id="btn-imprimir">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 9 6 2 18 2 18 9"/>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+              <rect x="6" y="14" width="12" height="8"/>
+            </svg>
+            <span>Imprimir</span>
+          </button>
+
+          <a class="boton boton--primario" href="{% url 'descargar_comprobante_pdf' pedido.pk %}?descargar=1" download="comprobante_pedido_{{ pedido.pk }}.pdf" id="btn-descargar-pdf">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>Descargar Comprobante en PDF</span>
+          </a>
+        </div>
       </div>
+
     </div>
   </div>
 </section>
+
+<style>
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  .cabecera, .pie, .boleta__acciones, nav, footer, header {
+    display: none !important;
+  }
+  .pagina {
+    padding: 0 !important;
+  }
+  .contenedor.compra {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .boleta {
+    box-shadow: none !important;
+    border: none !important;
+    padding: 0 !important;
+  }
+}
+</style>
 {% endblock %}

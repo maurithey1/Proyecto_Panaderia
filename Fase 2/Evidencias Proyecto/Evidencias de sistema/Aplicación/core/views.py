@@ -13,7 +13,8 @@ from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
+
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_exempt
@@ -33,6 +34,7 @@ from . import caja as caja_pos
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
+from .comprobante_pdf import generar_comprobante_pdf
 
 # ==========================================
 # FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
@@ -549,8 +551,8 @@ def finalizar_compra(request):
                 boletas = []
             boletas.append(pedido.pk)
             request.session['boletas_simuladas'] = boletas
-            messages.success(request, 'Compra de demostración completada correctamente.')
-            return redirect('boleta_simulada', pedido_id=pedido.pk)
+            messages.success(request, f'¡Compra completada con éxito! Comprobante N° {pedido.pk}.')
+            return redirect('comprobante_pedido', pedido_id=pedido.pk)
 
         pago = Pago.objects.create(
             pedido=pedido,
@@ -700,7 +702,7 @@ def iniciar_pago_webpay(request, pedido_id=None):
 
     if pedido.estado == 'PAGADO':
         messages.info(request, 'Este pedido ya se encuentra pagado.')
-        return redirect('boleta_simulada', pedido_id=pedido.pk)
+        return redirect('comprobante_pedido', pedido_id=pedido.pk)
     if pedido.estado != 'PENDIENTE':
         messages.error(request, 'Este pedido ya no está disponible para pagar. Vuelve a armar tu carrito.')
         return redirect('carrito')
@@ -873,7 +875,7 @@ def webpay_confirmar(request):
             if pedido.canal == 'POS' or getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False):
                 return redirect('inicio_cajero')
 
-            return redirect('boleta_simulada', pedido_id=pedido.pk)
+            return redirect('comprobante_pedido', pedido_id=pedido.pk)
 
         # Reembolso en caso de pago tardío o descalce
         reembolsado = _reembolsar_pago(tx, pedido.pk, token_ws, monto)
@@ -892,7 +894,10 @@ def webpay_confirmar(request):
     )
 
 
-def boleta_simulada(request, pedido_id):
+def comprobante_pedido(request, pedido_id):
+    """
+    Muestra la página con el comprobante formal de la compra o pedido realizado.
+    """
     boletas = request.session.get('boletas_simuladas', [])
     autorizada = isinstance(boletas, list) and pedido_id in boletas
     if not autorizada and request.user.is_authenticated:
@@ -911,13 +916,49 @@ def boleta_simulada(request, pedido_id):
         pk=pedido_id,
     )
 
-    # Si un Cajero o Administrador intenta ver una boleta simulada, usa el layout base_cajero
+    # Si un Cajero o Administrador intenta ver un comprobante, usa el layout base_cajero
     template_base = 'core/base_cajero.html' if (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)) else 'core/base.html'
 
     return render(request, 'core/boleta_simulada.html', {
         'pedido': pedido,
         'template_base': template_base,
     })
+
+
+# Alias para mantener compatibilidad histórica
+boleta_simulada = comprobante_pedido
+
+
+def descargar_comprobante_pdf(request, pedido_id):
+    """
+    Genera y permite descargar el comprobante en formato PDF para el pedido especificado.
+    Aplica las mismas políticas de acceso y autorización que la vista boleta_simulada.
+    """
+    boletas = request.session.get('boletas_simuladas', [])
+    autorizada = isinstance(boletas, list) and pedido_id in boletas
+    if not autorizada and request.user.is_authenticated:
+        autorizada = Pedido.objects.filter(
+            pk=pedido_id,
+            cliente__user=request.user,
+        ).exists()
+    if not autorizada and (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)):
+        autorizada = True
+
+    if not autorizada:
+        raise Http404
+
+    pedido = get_object_or_404(
+        Pedido.objects.prefetch_related('detalles__producto').select_related('pago', 'cliente__user'),
+        pk=pedido_id,
+    )
+
+    pdf_bytes = generar_comprobante_pdf(pedido, TIENDA)
+
+    respuesta = HttpResponse(pdf_bytes, content_type='application/pdf')
+    # Permite forzar la descarga directa si se especifica ?descargar=1, o visualizarlo en el navegador
+    disposicion = 'attachment' if request.GET.get('descargar') == '1' else 'inline'
+    respuesta['Content-Disposition'] = f'{disposicion}; filename="comprobante_pedido_{pedido.pk}.pdf"'
+    return respuesta
 
 
 def producto_detalle(request, pk):

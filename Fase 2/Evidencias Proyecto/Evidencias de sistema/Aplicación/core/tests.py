@@ -77,8 +77,16 @@ class CarritoCompraTests(TestCase):
         self.assertEqual(self.client.session['carrito'], {})
 
         boleta = self.client.get(respuesta.url)
-        self.assertContains(boleta, 'Comprobante simulado')
-        self.assertContains(boleta, 'no acredita un pago real')
+        self.assertContains(boleta, 'Comprobante')
+        self.assertContains(boleta, 'Compra completada con éxito')
+        self.assertContains(boleta, reverse('descargar_comprobante_pdf', args=[pedido.pk]))
+
+        # Verifica la descarga del comprobante en formato PDF
+        url_pdf = reverse('descargar_comprobante_pdf', args=[pedido.pk])
+        resp_pdf = self.client.get(url_pdf)
+        self.assertEqual(resp_pdf.status_code, 200)
+        self.assertEqual(resp_pdf['Content-Type'], 'application/pdf')
+        self.assertTrue(resp_pdf.content.startswith(b'%PDF-'))
 
     def test_no_finaliza_si_no_hay_stock_suficiente(self):
         sesion = self.client.session
@@ -102,8 +110,13 @@ class CarritoCompraTests(TestCase):
         respuesta = self.client.get(
             reverse('boleta_simulada', args=[pedido.pk])
         )
-
         self.assertEqual(respuesta.status_code, 404)
+
+        resp_pdf = self.client.get(
+            reverse('descargar_comprobante_pdf', args=[pedido.pk])
+        )
+        self.assertEqual(resp_pdf.status_code, 404)
+
 
 
 class CatalogoDesdeBaseDeDatosTests(TestCase):
