@@ -2716,3 +2716,285 @@ class ArregloRegistroTests(TestCase):
             'region': 'Metropolitana', 'comuna': 'La Florida', 'direccion1': 'Calle 1 123',
         })
         self.assertFalse(Usuario.objects.filter(username='nuevo').exists())
+
+
+class HistorialVentasPosTests(TestCase):
+    """El historial del POS es la libreta del cajero: solo las ventas presenciales cobradas que él registró hoy."""
+
+    AHORA = datetime(2026, 8, 19, 11, 34, tzinfo=ZONA_HORARIA)   # miércoles; en agosto Chile está en UTC-4
+
+    def setUp(self):
+        # Reloj fijo: "hoy" no depende de la hora en que se corran las pruebas (y fecha, que es
+        # auto_now_add, queda en la hora fijada).
+        parche = mock.patch('django.utils.timezone.now')
+        self.reloj = parche.start()
+        self.addCleanup(parche.stop)
+        self._fijar_hora(self.AHORA)
+
+        categoria = Categoria.objects.create(nombre='Panes POS')
+        self.amasado = Producto.objects.create(
+            categoria=categoria, nombre='Pan amasado', precio=Decimal('500.00'), stock=500, activo=True,
+        )
+        self.marraqueta = Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('1900.00'), stock=500,
+            unidad_medida='kg', activo=True,
+        )
+        self.cajero = self._cajero('cajero-ana')
+        self.otro_cajero = self._cajero('cajero-beto')
+        self.client.force_login(self.cajero.user)
+
+    def _fijar_hora(self, momento):
+        self.reloj.return_value = momento
+
+    def _cajero(self, nombre):
+        from .models import Cajero
+
+        usuario = Usuario.objects.create_user(nombre, password='clave-larga-123', rol='CAJERO')
+        return Cajero.objects.create(user=usuario, num_caja_asignada=1)
+
+    def _venta(self, cajero, momento=None, canal='POS', estado='PAGADO', estado_pago='PAGADO',
+               metodo='Efectivo', lineas=None):
+        """Una venta como la deja la Terminal POS (con su pago). momento: hora de la venta (por omisión, ahora)."""
+        lineas = lineas or [(self.amasado, 2)]
+        total = sum((producto.precio * cantidad for producto, cantidad in lineas), Decimal('0'))
+        pedido = Pedido.objects.create(
+            cliente=None, cajero=cajero, estado=estado, canal=canal, tipo_entrega='RETIRO',
+            direccion_despacho='Venta presencial en Caja', total=total,
+        )
+        for producto, cantidad in lineas:
+            DetallePedido.objects.create(
+                pedido=pedido, producto=producto, cantidad=cantidad,
+                precio_unitario=producto.precio, subtotal=producto.precio * cantidad,
+            )
+        Pago.objects.create(
+            pedido=pedido, monto=total, metodo=metodo, estado=estado_pago,
+            codigo_autorizacion=f'POS-{pedido.pk:08d}',
+        )
+        if momento is not None:
+            Pedido.objects.filter(pk=pedido.pk).update(fecha=momento)
+        return pedido
+
+    def _hora(self, dia, hora, minuto=0):
+        return datetime(2026, 8, dia, hora, minuto, tzinfo=ZONA_HORARIA)
+
+    def _historial(self, **params):
+        respuesta = self.client.get(reverse('historial_ventas_pos'), params)
+        self.assertEqual(respuesta.status_code, 200)
+        return respuesta
+
+    def _ids(self, respuesta):
+        return [venta.pk for venta in respuesta.context['page_obj']]
+
+    def _detalle(self, pedido_id):
+        return self.client.get(reverse('detalle_venta_pos', args=[pedido_id]))
+
+    def _assert_no_encontrada(self, respuesta):
+        self.assertEqual(respuesta.status_code, 404)
+        self.assertEqual(respuesta.json(), {'ok': False, 'error': 'Venta no encontrada.'})
+
+    # --- La venta guarda quién la registró ---
+
+    def test_la_venta_en_efectivo_del_pos_guarda_al_cajero_que_la_registro(self):
+        respuesta = self.client.post(
+            reverse('finalizar_venta_pos'),
+            data=json.dumps({
+                'items': [{'id': self.amasado.pk, 'cantidad': 6}],
+                'metodo_pago': 'EFECTIVO',
+                'monto_efectivo': 5000,
+            }),
+            content_type='application/json',
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.json()['ok'])
+        pedido = Pedido.objects.get(pk=respuesta.json()['pedido_id'])
+        self.assertEqual(pedido.cajero, self.cajero)
+        self.assertEqual(self._ids(self._historial()), [pedido.pk])
+        self.assertTrue(self._detalle(pedido.pk).json()['ok'])
+
+    def test_la_venta_de_un_admin_sin_perfil_de_cajero_queda_sin_cajero(self):
+        admin = Usuario.objects.create_user('admin-pos', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(admin)
+
+        respuesta = self.client.post(
+            reverse('finalizar_venta_pos'),
+            data=json.dumps({
+                'items': [{'id': self.amasado.pk, 'cantidad': 1}],
+                'metodo_pago': 'EFECTIVO',
+                'monto_efectivo': 500,
+            }),
+            content_type='application/json',
+        )
+
+        self.assertTrue(respuesta.json()['ok'])
+        self.assertIsNone(Pedido.objects.get().cajero)
+
+    # --- Acceso ---
+
+    def test_anonimo_va_al_login_y_un_cliente_no_entra(self):
+        venta = self._venta(self.cajero)
+        urls = [reverse('historial_ventas_pos'), reverse('detalle_venta_pos', args=[venta.pk])]
+
+        self.client.logout()
+        for url in urls:
+            self.assertRedirects(self.client.get(url), reverse('login'), fetch_redirect_response=False)
+
+        cliente = Usuario.objects.create_user('cliente-pos', password='clave-larga-123', rol='CLIENTE')
+        self.client.force_login(cliente)
+        for url in urls:
+            self.assertRedirects(self.client.get(url), reverse('inicio'), fetch_redirect_response=False)
+
+    def test_solo_acepta_get(self):
+        venta = self._venta(self.cajero)
+
+        self.assertEqual(self.client.post(reverse('historial_ventas_pos')).status_code, 405)
+        self.assertEqual(self.client.post(reverse('detalle_venta_pos', args=[venta.pk])).status_code, 405)
+
+    def test_un_admin_sin_perfil_de_cajero_ve_la_lista_vacia(self):
+        self._venta(self.cajero)
+        admin = Usuario.objects.create_user('admin-historial', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(admin)
+
+        respuesta = self._historial()
+
+        self.assertEqual(self._ids(respuesta), [])
+        self.assertEqual(respuesta.context['cantidad_ventas'], 0)
+        self.assertEqual(respuesta.context['total_ventas'], Decimal('0'))
+
+    # --- Qué ventas aparecen ---
+
+    def test_muestra_solo_las_ventas_cobradas_que_el_cajero_registro_hoy(self):
+        efectivo = self._venta(self.cajero, self._hora(19, 9, 0))
+        tarjeta = self._venta(
+            self.cajero, self._hora(19, 10, 0), estado_pago='APROBADO', metodo='Webpay Plus',
+            lineas=[(self.marraqueta, 1)],
+        )
+        presencial_entregada = self._venta(
+            self.cajero, self._hora(19, 10, 30), canal='PRESENCIAL', estado='ENTREGADO',
+        )
+        # No son de su libreta de hoy
+        self._venta(self.otro_cajero, self._hora(19, 9, 30))
+        self._venta(None, self._hora(19, 9, 45))
+        self._venta(self.cajero, self._hora(19, 9, 50), canal='WEB')
+        self._venta(self.cajero, self._hora(19, 11, 0), estado='PENDIENTE', estado_pago='PENDIENTE',
+                    metodo='Webpay Plus')
+        self._venta(self.cajero, self._hora(19, 11, 5), estado='CANCELADO', estado_pago='RECHAZADO',
+                    metodo='Webpay Plus')
+        self._venta(self.cajero, self.AHORA - timedelta(days=1))
+
+        respuesta = self._historial()
+
+        self.assertEqual(self._ids(respuesta), [presencial_entregada.pk, tarjeta.pk, efectivo.pk])
+        self.assertEqual(respuesta.context['fecha'], self.AHORA.date())
+        self.assertEqual(respuesta.context['cantidad_ventas'], 3)
+        self.assertEqual(respuesta.context['total_ventas'], Decimal('3900.00'))   # 1000 + 1900 + 1000
+        self.assertContains(respuesta, '19/08/2026')
+        self.assertContains(respuesta, '$3.900')
+
+    def test_resumen_del_dia_completo_y_paginacion_de_15(self):
+        ventas = [self._venta(self.cajero, self._hora(19, 8, minuto)) for minuto in range(17)]
+        self._venta(self.otro_cajero, self._hora(19, 8, 30))
+
+        pagina_1 = self._historial()
+        pagina_2 = self._historial(page=2)
+
+        for respuesta in (pagina_1, pagina_2):
+            self.assertEqual(respuesta.context['cantidad_ventas'], 17)
+            self.assertEqual(respuesta.context['total_ventas'], Decimal('17000.00'))
+            self.assertEqual(respuesta.context['page_obj'].paginator.num_pages, 2)
+        recientes_primero = [venta.pk for venta in reversed(ventas)]
+        self.assertEqual(self._ids(pagina_1), recientes_primero[:15])
+        self.assertEqual(self._ids(pagina_2), recientes_primero[15:])
+        # Una página que no existe muestra la última, como Paginator.get_page
+        self.assertEqual(self._ids(self._historial(page=99)), recientes_primero[15:])
+
+    def test_cada_venta_trae_numero_resumen_de_productos_y_medio_de_pago(self):
+        mixta = self._venta(
+            self.cajero, self._hora(19, 9, 0), lineas=[(self.amasado, 6), (self.marraqueta, 2)],
+        )
+        con_tarjeta = self._venta(self.cajero, self._hora(19, 9, 10), estado_pago='APROBADO', metodo='Webpay Plus')
+        en_mayusculas = self._venta(self.cajero, self._hora(19, 9, 20), metodo='EFECTIVO')
+
+        ventas = {venta.pk: venta for venta in self._historial().context['page_obj']}
+
+        self.assertEqual(ventas[mixta.pk].numero, f'#{mixta.pk:06d}')
+        self.assertEqual(ventas[mixta.pk].productos_resumen, 'Pan amasado (6 un), Marraqueta (2 kg)')
+        self.assertEqual(ventas[mixta.pk].medio_pago, 'Efectivo')
+        self.assertEqual(ventas[con_tarjeta.pk].productos_resumen, 'Pan amasado (2 un)')
+        self.assertEqual(ventas[con_tarjeta.pk].medio_pago, 'Tarjeta')
+        self.assertEqual(ventas[en_mayusculas.pk].medio_pago, 'Efectivo')
+
+    # --- Detalle (JSON del modal) ---
+
+    def test_detalle_de_una_venta_propia_de_hoy(self):
+        venta = self._venta(self.cajero, self.AHORA, lineas=[(self.amasado, 6), (self.marraqueta, 2)])
+
+        respuesta = self._detalle(venta.pk)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json(), {
+            'ok': True,
+            'venta': {
+                'id': venta.pk,
+                'numero': f'#{venta.pk:06d}',
+                'fecha': '19/08/2026',
+                'hora': '11:34',
+                'medio_pago': 'Efectivo',
+                'estado': 'Pagado',
+                'total': 6800,
+                'total_clp': '$6.800',
+                'items': [
+                    {'producto': 'Pan amasado', 'cantidad': 6, 'unidad': 'un',
+                     'precio_unitario_clp': '$500', 'subtotal_clp': '$3.000'},
+                    {'producto': 'Marraqueta', 'cantidad': 2, 'unidad': 'kg',
+                     'precio_unitario_clp': '$1.900', 'subtotal_clp': '$3.800'},
+                ],
+            },
+        })
+
+    def test_detalle_con_tarjeta_aprobada_por_webpay(self):
+        venta = self._venta(self.cajero, estado_pago='APROBADO', metodo='Webpay Plus')
+
+        datos = self._detalle(venta.pk).json()['venta']
+
+        self.assertEqual(datos['medio_pago'], 'Tarjeta')
+        self.assertEqual(datos['total'], 1000)
+
+    def test_detalle_da_404_si_la_venta_no_es_suya_de_hoy(self):
+        de_otro = self._venta(self.otro_cajero)
+        web = self._venta(self.cajero, canal='WEB')
+        de_ayer = self._venta(self.cajero, self.AHORA - timedelta(days=1))
+        pendiente = self._venta(self.cajero, estado='PENDIENTE', estado_pago='PENDIENTE', metodo='Webpay Plus')
+
+        for venta_id in (de_otro.pk, web.pk, de_ayer.pk, pendiente.pk, 999999):
+            with self.subTest(venta_id=venta_id):
+                self._assert_no_encontrada(self._detalle(venta_id))
+
+        # El otro cajero sí ve la suya
+        self.client.force_login(self.otro_cajero.user)
+        self.assertTrue(self._detalle(de_otro.pk).json()['ok'])
+
+    # --- El día se cuenta en hora de Chile ---
+
+    def test_el_dia_va_de_medianoche_a_medianoche_en_hora_de_chile(self):
+        # 23:30 del 19 en Chile son las 03:30 UTC del 20; 23:59 del 18 son las 03:59 UTC del 19
+        a_las_2330 = self._venta(self.cajero, self._hora(19, 23, 30))
+        a_las_0010_del_20 = self._venta(self.cajero, self._hora(20, 0, 10))
+        a_las_0005 = self._venta(self.cajero, self._hora(19, 0, 5))
+        a_las_2359_del_18 = self._venta(self.cajero, self._hora(18, 23, 59))
+
+        self._fijar_hora(self._hora(19, 23, 45))
+        respuesta = self._historial()
+        self.assertEqual(self._ids(respuesta), [a_las_2330.pk, a_las_0005.pk])
+        self.assertEqual(respuesta.context['cantidad_ventas'], 2)
+        self.assertEqual(self._detalle(a_las_2330.pk).json()['venta']['hora'], '23:30')
+        self._assert_no_encontrada(self._detalle(a_las_0010_del_20.pk))
+        self._assert_no_encontrada(self._detalle(a_las_2359_del_18.pk))
+
+        self._fijar_hora(self._hora(20, 0, 20))
+        respuesta = self._historial()
+        self.assertEqual(self._ids(respuesta), [a_las_0010_del_20.pk])
+        self.assertEqual(respuesta.context['fecha'], self._hora(20, 0).date())
+        detalle = self._detalle(a_las_0010_del_20.pk).json()['venta']
+        self.assertEqual((detalle['fecha'], detalle['hora']), ('20/08/2026', '00:10'))
+        self._assert_no_encontrada(self._detalle(a_las_2330.pk))

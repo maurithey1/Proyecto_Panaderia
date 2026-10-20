@@ -9,12 +9,13 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import ValidationError
+from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404, JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.core.validators import validate_email
 from django.conf import settings
@@ -1659,6 +1660,7 @@ def finalizar_venta_pos(request):
             cliente=None,
             estado='PENDIENTE' if es_webpay else 'PAGADO',
             canal='POS',
+            cajero=getattr(request.user, 'perfil_cajero', None),
             tipo_entrega='RETIRO',
             direccion_despacho='Venta presencial en Caja',
             total=total,
@@ -1733,6 +1735,121 @@ def finalizar_venta_pos(request):
             'url_webpay': f"{response['url']}?token_ws={token_ws}",
             'mensaje': 'Conectando con Transbank Webpay...'
         })
+
+
+# --- HISTORIAL DE VENTAS DEL CAJERO (la libreta de su turno) ---
+
+VENTAS_POR_PAGINA_POS = 15
+# Estados de una venta ya cobrada (PENDIENTE espera a Webpay; CANCELADO no cuenta)
+ESTADOS_VENTA_POS = ['PAGADO', 'PREPARACION', 'LISTO', 'ENTREGADO']
+# 'PAGADO' lo deja la venta en efectivo; 'APROBADO', Webpay al autorizar la tarjeta
+ESTADOS_PAGO_POS = ['PAGADO', 'APROBADO']
+
+
+def _ventas_pos_de_hoy(request):
+    """Ventas presenciales cobradas que registró hoy (hora de Chile) el cajero conectado.
+
+    Devuelve (fecha de hoy, queryset). Un administrador sin perfil de cajero no tiene ventas propias.
+    """
+    hoy = timezone.localdate()
+    # Rango del día y no fecha__date: en MySQL, __date con USE_TZ usa CONVERT_TZ y devuelve vacío si el
+    # servidor no tiene cargadas las tablas de zonas horarias. (datetime.min.time() es las 00:00: aquí
+    # `time` es el módulo que usa time.sleep.)
+    inicio = timezone.make_aware(datetime.combine(hoy, datetime.min.time()))
+    ventas = Pedido.objects.filter(
+        cajero__user=request.user,
+        canal__in=['POS', 'PRESENCIAL'],    # finalizar_venta_pos graba 'POS', que no está en CANALES
+        estado__in=ESTADOS_VENTA_POS,
+        pago__estado__in=ESTADOS_PAGO_POS,
+        fecha__gte=inicio,
+        fecha__lt=inicio + timedelta(days=1),
+    )
+    return hoy, ventas
+
+
+def _con_detalles(ventas):
+    """Precarga el pago y las líneas de cada venta (con su producto, en el orden en que se agregaron)."""
+    return ventas.select_related('pago').prefetch_related(
+        Prefetch('detalles', queryset=DetallePedido.objects.select_related('producto').order_by('pk'))
+    )
+
+
+def _unidad_venta_pos(producto):
+    return 'kg' if producto.unidad_medida == 'kg' else 'un'
+
+
+def _medio_de_pago_pos(pago):
+    """'Efectivo' o 'Tarjeta' (Webpay Plus, débito, crédito...)."""
+    return 'Efectivo' if (pago.metodo or '').strip().lower() == 'efectivo' else 'Tarjeta'
+
+
+@cajero_required
+@require_GET
+def historial_ventas_pos(request):
+    """
+    Historial de ventas del cajero: solo las ventas presenciales que él registró hoy.
+    El resumen (cantidad y total) es del día completo; la lista va paginada.
+    """
+    hoy, ventas = _ventas_pos_de_hoy(request)
+    resumen = ventas.aggregate(cantidad=Count('pk'), total=Sum('total'))
+
+    paginador = Paginator(_con_detalles(ventas).order_by('-fecha', '-pk'), VENTAS_POR_PAGINA_POS)
+    page_obj = paginador.get_page(request.GET.get('page'))
+    page_obj.object_list = list(page_obj.object_list)
+    for venta in page_obj.object_list:
+        venta.numero = f'#{venta.pk:06d}'
+        venta.productos_resumen = ', '.join(
+            f'{detalle.producto.nombre} ({detalle.cantidad} {_unidad_venta_pos(detalle.producto)})'
+            for detalle in venta.detalles.all()
+        )
+        venta.medio_pago = _medio_de_pago_pos(venta.pago)
+
+    contexto = {
+        'fecha': hoy,
+        'cantidad_ventas': resumen['cantidad'],
+        'total_ventas': resumen['total'] or Decimal('0'),
+        'page_obj': page_obj,
+    }
+    return render(request, 'core/historial_ventas_pos.html', contexto)
+
+
+@cajero_required
+@require_GET
+def detalle_venta_pos(request, pedido_id):
+    """
+    Detalle de una venta del historial, en JSON, para el modal "Ver detalle".
+    Solo responde por ventas del cajero conectado y de hoy: cualquier otra da 404.
+    """
+    _, ventas = _ventas_pos_de_hoy(request)
+    venta = _con_detalles(ventas).filter(pk=pedido_id).first()
+    if venta is None:
+        return JsonResponse({'ok': False, 'error': 'Venta no encontrada.'}, status=404)
+
+    momento = timezone.localtime(venta.fecha)
+    items = [
+        {
+            'producto': detalle.producto.nombre,
+            'cantidad': detalle.cantidad,
+            'unidad': _unidad_venta_pos(detalle.producto),
+            'precio_unitario_clp': clp(detalle.precio_unitario),
+            'subtotal_clp': clp(detalle.subtotal),
+        }
+        for detalle in venta.detalles.all()
+    ]
+    return JsonResponse({
+        'ok': True,
+        'venta': {
+            'id': venta.pk,
+            'numero': f'#{venta.pk:06d}',
+            'fecha': momento.strftime('%d/%m/%Y'),
+            'hora': momento.strftime('%H:%M'),
+            'medio_pago': _medio_de_pago_pos(venta.pago),
+            'estado': venta.get_estado_display(),
+            'total': int(round(venta.total)),
+            'total_clp': clp(venta.total),
+            'items': items,
+        },
+    })
 
 # ==========================================
 # FUNCIONES DE CAJERO: TERMINAL POS, APERTURA Y CIERRE DE CAJA, VENTAS

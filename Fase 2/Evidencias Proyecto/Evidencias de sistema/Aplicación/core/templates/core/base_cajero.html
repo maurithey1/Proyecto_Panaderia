@@ -102,7 +102,7 @@
           <svg class="icono" aria-hidden="true"><use href="#i-inicio"/></svg>
           <span>Inicio</span>
         </a>
-        <a href="#" class="cajero-sidebar__link">
+        <a href="{% url 'historial_ventas_pos' %}" class="cajero-sidebar__link{% if request.resolver_match.url_name == 'historial_ventas_pos' %} activo{% endif %}"{% if request.resolver_match.url_name == 'historial_ventas_pos' %} aria-current="page"{% endif %}>
           <svg class="icono" aria-hidden="true"><use href="#i-historial"/></svg>
           <span>Historial de ventas</span>
         </a>

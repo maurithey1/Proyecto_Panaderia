@@ -127,8 +127,8 @@ class DetallePedidoInline(admin.TabularInline):
 
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
-    list_display = ('id', 'cliente', 'canal', 'estado', 'tipo_entrega', 'total', 'fecha')
-    list_filter = ('estado', 'canal', 'tipo_entrega', 'fecha')
+    list_display = ('id', 'cliente', 'canal', 'cajero', 'estado', 'tipo_entrega', 'total', 'fecha')
+    list_filter = ('estado', 'canal', 'cajero', 'tipo_entrega', 'fecha')
     search_fields = ('id', 'cliente__user__username', 'direccion_despacho')
     ordering = ('-fecha',)
     inlines = [DetallePedidoInline]

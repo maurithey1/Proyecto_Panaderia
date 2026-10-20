@@ -1,0 +1,134 @@
+{% extends 'core/base_cajero.html' %}
+{% load static formato %}
+
+{% block titulo %}Historial de ventas{% endblock %}
+
+{% block contenido %}
+<section class="historial" aria-labelledby="historial-titulo">
+
+  <!-- ENCABEZADO: VENTAS DEL DÍA DEL CAJERO CONECTADO -->
+  <header class="historial-encabezado">
+    <h1 class="historial-titulo" id="historial-titulo">
+      Ventas del día: <time class="historial-cifra" datetime="{{ fecha|date:'Y-m-d' }}">{{ fecha|date:"d/m/Y" }}</time>
+    </h1>
+    <dl class="historial-resumen">
+      <div class="historial-resumen__dato">
+        <dt>Cantidad de ventas:</dt>
+        <dd>{{ cantidad_ventas }}</dd>
+      </div>
+      <div class="historial-resumen__dato">
+        <dt>Total ventas:</dt>
+        <dd>{{ total_ventas|clp }}</dd>
+      </div>
+    </dl>
+  </header>
+
+  {% if page_obj.object_list %}
+    <!-- Tabla de ventas (en pantallas angostas se desplaza dentro de su contenedor) -->
+    <div class="historial-tabla-contenedor">
+      <table class="historial-tabla">
+        <caption class="solo-lector">Ventas que registraste hoy{% if page_obj.has_other_pages %}, página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}{% endif %}</caption>
+        <colgroup>
+          <col class="historial-col--numero">
+          <col class="historial-col--fecha">
+          <col class="historial-col--hora">
+          <col>
+          <col class="historial-col--total">
+          <col class="historial-col--pago">
+          <col class="historial-col--acciones">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col">N° Venta</th>
+            <th scope="col">Fecha</th>
+            <th scope="col">Hora</th>
+            <th scope="col">Productos</th>
+            <th scope="col" class="historial-tabla__derecha">Total</th>
+            <th scope="col" class="historial-tabla__centro">Medio de pago</th>
+            <th scope="col" class="historial-tabla__centro">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for venta in page_obj %}
+            <tr>
+              <td class="historial-tabla__numero">{{ venta.numero }}</td>
+              <td>{{ venta.fecha|date:"d/m/Y" }}</td>
+              <td><time datetime="{{ venta.fecha|date:'c' }}">{{ venta.fecha|time:"H:i" }}</time></td>
+              <td class="historial-tabla__productos" title="{{ venta.productos_resumen }}">{{ venta.productos_resumen }}</td>
+              <td class="historial-tabla__derecha">{{ venta.total|clp }}</td>
+              <td class="historial-tabla__centro">
+                <span class="historial-pago">
+                  <svg class="icono" aria-hidden="true"><use href="{% if venta.medio_pago == 'Tarjeta' %}#i-tarjeta{% else %}#i-efectivo{% endif %}"/></svg>
+                  {{ venta.medio_pago }}
+                </span>
+              </td>
+              <td class="historial-tabla__centro">
+                <button type="button" class="historial-btn-detalle"
+                        data-url="{% url 'detalle_venta_pos' venta.pk %}"
+                        data-numero="{{ venta.numero }}"
+                        aria-haspopup="dialog" aria-controls="historial-modal"
+                        aria-label="Ver detalle de la venta {{ venta.numero }}">Ver detalle</button>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Paginación (solo si hay más de una página): primera, última y dos a cada lado de la actual -->
+    {% if page_obj.has_other_pages %}
+      <nav class="historial-paginacion" aria-label="Páginas del historial">
+        <ul class="historial-paginacion__lista">
+          <li>
+            {% if page_obj.has_previous %}
+              <a class="historial-paginacion__enlace" href="?page={{ page_obj.previous_page_number }}" aria-label="Página anterior">&laquo;</a>
+            {% else %}
+              <span class="historial-paginacion__enlace historial-paginacion__enlace--inactivo" aria-hidden="true">&laquo;</span>
+            {% endif %}
+          </li>
+          {% for numero in page_obj.paginator.page_range %}
+            {% if numero == page_obj.number %}
+              <li><a class="historial-paginacion__enlace historial-paginacion__enlace--actual" href="?page={{ numero }}" aria-current="page" aria-label="Página {{ numero }}">{{ numero }}</a></li>
+            {% elif numero == 1 or numero == page_obj.paginator.num_pages %}
+              <li><a class="historial-paginacion__enlace" href="?page={{ numero }}" aria-label="Página {{ numero }}">{{ numero }}</a></li>
+            {% elif numero >= page_obj.number|add:"-2" and numero <= page_obj.number|add:"2" %}
+              <li><a class="historial-paginacion__enlace" href="?page={{ numero }}" aria-label="Página {{ numero }}">{{ numero }}</a></li>
+            {% elif numero == page_obj.number|add:"-3" or numero == page_obj.number|add:"3" %}
+              <li><span class="historial-paginacion__salto" aria-hidden="true">…</span></li>
+            {% endif %}
+          {% endfor %}
+          <li>
+            {% if page_obj.has_next %}
+              <a class="historial-paginacion__enlace" href="?page={{ page_obj.next_page_number }}" aria-label="Página siguiente">&raquo;</a>
+            {% else %}
+              <span class="historial-paginacion__enlace historial-paginacion__enlace--inactivo" aria-hidden="true">&raquo;</span>
+            {% endif %}
+          </li>
+        </ul>
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="historial-vacio">Aún no registras ventas hoy.</p>
+  {% endif %}
+
+</section>
+
+<!-- MODAL CON EL DETALLE DE UNA VENTA (lo llena static/js/historial_ventas.js) -->
+<dialog class="historial-modal" id="historial-modal" aria-labelledby="historial-modal-titulo" data-url-login="{% url 'login' %}">
+  <div class="historial-modal__caja">
+    <div class="historial-modal__cabecera">
+      <h2 class="historial-modal__titulo" id="historial-modal-titulo" tabindex="-1" autofocus>Detalle de la venta</h2>
+    </div>
+    <div class="historial-modal__cuerpo" id="historial-modal-cuerpo" aria-live="polite">
+      <p class="historial-modal__mensaje">Cargando…</p>
+    </div>
+    <div class="historial-modal__pie">
+      <button type="button" class="historial-modal__cerrar" data-cerrar>Cerrar</button>
+    </div>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/historial_ventas.js' %}"></script>
+{% endblock %}

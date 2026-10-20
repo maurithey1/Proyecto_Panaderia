@@ -3308,3 +3308,369 @@ body:has(dialog.modal-producto[open]) { overflow: hidden; }
 .agenda__restricciones p { margin: 0 0 6px; }
 .agenda__restricciones ul { margin: 0; padding-left: 18px; }
 .compra__aviso--bloqueo { padding: 12px 14px; color: #7a2e12; background: #fbe3d8; border-left: 4px solid var(--terracota); border-radius: 6px; }
+
+
+/* ==========================================================
+   HISTORIAL DE VENTAS (POS)
+   (core/historial_ventas_pos.html, static/js/historial_ventas.js)
+   ========================================================== */
+.historial {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* ENCABEZADO: FECHA, CANTIDAD Y TOTAL DEL DÍA EN UNA FILA */
+.historial-encabezado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px 32px;
+  padding: 16px 20px;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.historial-titulo {
+  font-size: 1.3rem;
+  color: var(--cafe-oscuro);
+}
+
+/* Cifras dentro de los títulos (fecha del día, número de venta): Young Serif dibuja números antiguos
+   (ceros bajos, 3 que bajan de la línea), así que van en Figtree, como los precios del catálogo */
+.historial-cifra {
+  font-family: var(--fuente-texto);
+  font-weight: 700;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.historial-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+
+.historial-resumen__dato {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.historial-resumen dt { font-size: 0.95rem; color: var(--texto-suave); }
+.historial-resumen dd { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--cafe-oscuro); }
+
+/* TABLA DE VENTAS (se desplaza dentro de su contenedor, nunca la página) */
+.historial-tabla-contenedor {
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+/* Anchos fijos por columna: "Productos" toma el resto y se corta con "…" */
+.historial-tabla {
+  width: 100%;
+  min-width: 46rem;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+  text-align: left;
+}
+
+.historial-col--numero { width: 6rem; }
+.historial-col--fecha { width: 6.75rem; }
+.historial-col--hora { width: 4.25rem; }
+.historial-col--total { width: 6.5rem; }
+.historial-col--pago { width: 8.25rem; }
+.historial-col--acciones { width: 8rem; }
+
+.historial-tabla th,
+.historial-tabla td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--borde);
+  color: var(--cafe-oscuro);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.historial-tabla th {
+  background: var(--crema-2);
+  border-bottom: 1.5px solid var(--borde);
+  font-weight: 700;
+}
+
+/* Filas alternadas */
+.historial-tabla tbody tr:nth-child(even) { background: var(--crema); }
+.historial-tabla tbody tr:last-child td { border-bottom: 0; }
+
+.historial-tabla__numero { font-weight: 700; }
+.historial-tabla__derecha { text-align: right; font-variant-numeric: tabular-nums; }
+.historial-tabla__centro { text-align: center; }
+
+.historial-tabla__productos {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historial-pago {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+}
+.historial-pago .icono { color: var(--texto-suave); }
+
+/* Botón "Ver detalle" (cómodo para tablet) */
+.historial-btn-detalle {
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font: 500 0.88rem/1 var(--fuente-texto);
+  color: var(--cafe-oscuro);
+  white-space: nowrap;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background-color 0.18s ease, border-color 0.18s ease;
+}
+.historial-btn-detalle:hover { background: var(--crema-2); border-color: var(--cafe); }
+.historial-btn-detalle:focus-visible { outline-offset: 2px; }
+
+/* PAGINACIÓN ABAJO A LA DERECHA */
+.historial-paginacion { display: flex; justify-content: flex-end; }
+
+.historial-paginacion__lista {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.historial-paginacion__enlace {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font-weight: 500;
+  color: var(--cafe-oscuro);
+  text-decoration: none;
+  transition: background-color 0.18s ease;
+}
+a.historial-paginacion__enlace:hover { background: var(--crema-2); }
+
+.historial-paginacion__enlace--actual,
+a.historial-paginacion__enlace--actual:hover {
+  background: var(--cafe);
+  border-color: var(--cafe);
+  color: var(--crema);
+  font-weight: 700;
+}
+
+.historial-paginacion__enlace--inactivo { opacity: 0.45; }
+.historial-paginacion__salto { padding: 0 4px; color: var(--texto-suave); }
+
+/* Estado vacío */
+.historial-vacio {
+  margin: 0;
+  padding: 36px 20px;
+  text-align: center;
+  color: var(--texto-suave);
+  background: var(--papel);
+  border: 1.5px dashed var(--borde);
+  border-radius: var(--radio);
+}
+
+/* ------------------------------------------
+   MODAL: DETALLE DE UNA VENTA (<dialog> nativo)
+   ------------------------------------------ */
+/* Con el modal abierto la página de atrás no se desplaza */
+.cajero-body:has(.historial-modal[open]) { overflow: hidden; }
+
+.historial-modal {
+  width: min(92vw, 600px);
+  max-height: 88vh;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radio);
+  background: transparent;
+  color: var(--cafe-oscuro);
+  box-shadow: 0 24px 60px rgba(62, 42, 29, 0.35);
+}
+.historial-modal::backdrop { background: rgba(62, 42, 29, 0.55); }
+
+/* La caja cubre todo el <dialog>: un clic fuera de ella es un clic en el fondo */
+.historial-modal__caja {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  background: var(--papel);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+}
+
+.historial-modal__cabecera {
+  padding: 18px 20px 14px;
+  border-bottom: 1.5px solid var(--borde);
+}
+
+.historial-modal__titulo { font-size: 1.35rem; color: var(--cafe-oscuro); }
+/* El título recibe el foco al abrir el modal (así no aparece el anillo de foco en "Cerrar" al usar el mouse) */
+.historial-modal__titulo:focus { outline: none; }
+
+/* Si el detalle es largo se desplaza el cuerpo completo (cabecera y "Cerrar" quedan a la vista) */
+.historial-modal__cuerpo {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 16px;
+  padding: 16px 20px;
+}
+
+.historial-modal__mensaje {
+  margin: 0;
+  padding: 28px 12px;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.historial-modal__mensaje--error {
+  padding: 12px 14px;
+  text-align: left;
+  font-weight: 500;
+  color: #7a2f12;
+  background: #fbeee6;
+  border-left: 4px solid var(--terracota);
+  border-radius: 6px;
+}
+
+.historial-modal__enlace { color: var(--cafe); font-weight: 700; }
+
+/* Fecha, hora, medio de pago y estado */
+.historial-modal__datos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+
+.historial-modal__dato dt { font-size: 0.82rem; color: var(--texto-suave); }
+.historial-modal__dato dd { margin: 2px 0 0; font-weight: 700; }
+
+.historial-estado {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #663b18;
+  background: #fff2d9;
+}
+.historial-estado--pagado { color: #1f4d2b; background: #dff0e1; }
+
+/* Productos de la venta */
+.historial-modal__tabla-contenedor {
+  overflow-x: auto;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+}
+
+.historial-modal__tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.historial-modal__tabla th,
+.historial-modal__tabla td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--borde);
+  vertical-align: top;
+}
+
+.historial-modal__tabla th {
+  background: var(--crema-2);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.historial-modal__tabla tbody tr:last-child td { border-bottom: 0; }
+.historial-modal__tabla td.historial-tabla__derecha { white-space: nowrap; }
+/* El nombre se corta por palabras; en pantallas muy angostas la tabla se desplaza en su contenedor */
+.historial-modal__producto { min-width: 9rem; overflow-wrap: break-word; }
+.historial-modal__sin-items { text-align: center; color: var(--texto-suave); }
+
+/* Total destacado (mismo estilo que la caja TOTAL del punto de venta) */
+.historial-modal__total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 12px 18px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--crema-2);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro);
+}
+/* El monto como los precios del catálogo: terracota y cifras rectas */
+.historial-modal__total strong {
+  font-size: 1.35rem;
+  color: var(--terracota);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.historial-modal__pie {
+  display: flex;
+  justify-content: flex-end;
+  padding: 14px 20px;
+  border-top: 1.5px solid var(--borde);
+}
+
+.historial-modal__cerrar {
+  min-height: 40px;
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  background: var(--cafe);
+  font: 700 0.95rem/1 var(--fuente-texto);
+  color: var(--crema);
+  cursor: pointer;
+}
+.historial-modal__cerrar:hover { background: var(--cafe-hover); }
+
+/* ------------------------------------------
+   ADAPTACIÓN RESPONSIVA HISTORIAL
+   ------------------------------------------ */
+@media (max-width: 768px) {
+  .historial-encabezado { flex-direction: column; align-items: flex-start; }
+  .historial-resumen { flex-direction: column; gap: 4px; }
+}
+
+@media (max-width: 480px) {
+  .historial-modal__cabecera,
+  .historial-modal__cuerpo,
+  .historial-modal__pie { padding-left: 16px; padding-right: 16px; }
+  .historial-modal__tabla th,
+  .historial-modal__tabla td { padding: 8px; }
+  .historial-modal__cerrar { width: 100%; }
+}
