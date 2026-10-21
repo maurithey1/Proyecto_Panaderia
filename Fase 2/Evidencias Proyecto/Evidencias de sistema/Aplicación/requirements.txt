@@ -2,4 +2,4 @@ Django>=4.2
 mysqlclient
 python-dotenv
 transbank-sdk>=6.1.0
-reportlab>=4.0.0
+reportlab>=4.0.0
