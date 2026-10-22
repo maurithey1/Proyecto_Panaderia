@@ -3,6 +3,9 @@ services:
     image: mysql:8.0
     container_name: panaderia_db
     restart: always
+    # Asigna un perfil para que NO inicie automáticamente
+    profiles:
+      - local-db
     environment:
       MYSQL_DATABASE: ${DB_NAME}
       MYSQL_USER: ${DB_USER}
