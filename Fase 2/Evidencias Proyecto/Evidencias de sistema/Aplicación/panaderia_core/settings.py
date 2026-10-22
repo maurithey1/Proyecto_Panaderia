@@ -81,6 +81,13 @@ WSGI_APPLICATION = 'panaderia_core.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+ssl_ca = os.getenv('DB_SSL_CA')
+db_options = {'charset': 'utf8mb4'}
+
+# Si existe la variable DB_SSL_CA en el .env, adjunta el certificado ca.pem a la conexión
+if ssl_ca:
+    db_options['ssl'] = {'ca': str(BASE_DIR / ssl_ca)}
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
@@ -89,9 +96,7 @@ DATABASES = {
         'PASSWORD': os.getenv('DB_PASSWORD', 'TuPassword'),
         'HOST': os.getenv('DB_HOST', 'localhost'),
         'PORT': os.getenv('DB_PORT', '3306'),
-        'OPTIONS': {
-            'charset': 'utf8mb4',
-        },
+        'OPTIONS': db_options,
     }
 }
 

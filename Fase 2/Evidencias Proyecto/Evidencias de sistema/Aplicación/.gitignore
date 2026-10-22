@@ -4,3 +4,10 @@ __pycache__/
 .env
 db.sqlite3
 .vscode/
+
+# Certificados SSL y seguridad de la nube
+ca.pem
+
+# Respaldos y dumps de Base de Datos
+*.sql
+respaldo_panaderia.sql

@@ -1,3 +1,4 @@
+import os
 from django.core.management.base import BaseCommand
 from core.models import Usuario, Administrador
 
@@ -6,8 +7,11 @@ class Command(BaseCommand):
     help = 'Crea o actualiza el usuario administrador por defecto.'
 
     def handle(self, *args, **options):
-        usuario, creado = Usuario.objects.get_or_create(username='admin')
-        usuario.set_password('admin123456')
+        # Lee las variables desde el entorno con un valor por defecto si no existen
+        admin_user = os.getenv('ADMIN_USERNAME', 'admin')
+        admin_pass = os.getenv('ADMIN_PASSWORD', 'ClaveSegura2026!')
+        usuario, creado = Usuario.objects.get_or_create(username=admin_user)
+        usuario.set_password(admin_pass)
         usuario.rol = 'ADMINISTRADOR'
         usuario.is_staff = True
         usuario.is_superuser = True
@@ -21,6 +25,6 @@ class Command(BaseCommand):
         accion = 'creado' if creado else 'actualizado'
         self.stdout.write(
             self.style.SUCCESS(
-                f'Usuario administrador {accion} con éxito (Usuario: admin | Rol: ADMINISTRADOR).'
+                f'Usuario administrador {accion} con éxito (Usuario: {admin_user} | Rol: ADMINISTRADOR).'
             )
         )

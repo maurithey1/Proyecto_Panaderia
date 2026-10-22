@@ -22,25 +22,17 @@ services:
     build: .
     container_name: panaderia_web
     restart: always
-    # Ejecuta migraciones, carga datos iniciales, configura administrador e inicia el servidor
+    # Carga todas las variables de entorno definidas en el archivo .env
+    env_file:
+      - .env
     command: >
       sh -c "python manage.py makemigrations &&
              python manage.py migrate &&
-             python manage.py cargar_productos &&
-             python manage.py crear_admin &&
              python manage.py runserver 0.0.0.0:8000"
     volumes:
       - .:/app
     ports:
       - "8000:8000"
-    environment:
-      - DB_HOST=db
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-    depends_on:
-      db:
-        condition: service_healthy
 
 volumes:
   mysql_data:
