@@ -33,50 +33,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setInterval(actualizarReloj, 10000);
 });
 
-// Desvanecimiento automático de mensajes cargados por Django al iniciar la vista
-document.addEventListener('DOMContentLoaded', () => {
-  const toasts = document.querySelectorAll('.notificacion-toast');
-  toasts.forEach((toast) => {
-    setTimeout(() => {
-      toast.classList.add('notificacion-toast--ocultando');
-      toast.addEventListener('transitionend', () => toast.remove());
-    }, 3500);
-  });
-});
-
-// Función global para crear Toasts dinámicos en pantalla (AJAX / Fetch)
-function mostrarToast(mensaje, tipo = 'success') {
-  let contenedor = document.getElementById('notificaciones-contenedor');
-  if (!contenedor) {
-    contenedor = document.createElement('div');
-    contenedor.id = 'notificaciones-contenedor';
-    contenedor.className = 'notificaciones-flotantes';
-    contenedor.setAttribute('aria-live', 'polite');
-    contenedor.setAttribute('aria-atomic', 'true');
-    document.body.appendChild(contenedor);
-  }
-
-  const toast = document.createElement('div');
-  toast.className = `notificacion-toast notificacion-toast--${tipo}`;
-
-  const icono = tipo === 'success' ? '✓' : (tipo === 'error' ? '✕' : 'ℹ');
-  toast.innerHTML = `
-    <div class="notificacion-toast__contenido">
-      <span class="notificacion-toast__icono">${icono}</span>
-      <span class="notificacion-toast__texto">${mensaje}</span>
-    </div>
-    <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()" aria-label="Cerrar notificación">&times;</button>
-  `;
-
-  contenedor.appendChild(toast);
-
-  // Transición y remoción automática tras 3.5 segundos
-  setTimeout(() => {
-    toast.classList.add('notificacion-toast--ocultando');
-    toast.addEventListener('transitionend', () => toast.remove());
-  }, 3500);
-}
-
 document.addEventListener('DOMContentLoaded', function () {
     const inputBuscar = document.getElementById('inputBuscar');
     const chipsCategoria = document.querySelectorAll('#contenedorCategorias .cajero-chip');
@@ -175,36 +131,6 @@ function getCsrfToken() {
         }
     }
     return cookieValue || '';
-}
-
-// Sistema de Notificaciones Toast Flotantes
-function mostrarToast(mensaje, tipo = 'success') {
-    let contenedor = document.getElementById('notificaciones-contenedor');
-    if (!contenedor) {
-        contenedor = document.createElement('div');
-        contenedor.id = 'notificaciones-contenedor';
-        contenedor.className = 'notificaciones-flotantes';
-        document.body.appendChild(contenedor);
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `notificacion-toast notificacion-toast--${tipo}`;
-
-    const icono = tipo === 'success' ? '✓' : (tipo === 'error' ? '✕' : 'ℹ');
-    toast.innerHTML = `
-        <div class="notificacion-toast__contenido">
-            <span class="notificacion-toast__icono">${icono}</span>
-            <span class="notificacion-toast__texto">${mensaje}</span>
-        </div>
-        <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()">&times;</button>
-    `;
-
-    contenedor.appendChild(toast);
-
-    setTimeout(() => {
-        toast.classList.add('notificacion-toast--ocultando');
-        toast.addEventListener('transitionend', () => toast.remove());
-    }, 3200);
 }
 
 // Generador del HTML de la cápsula de control de cantidad

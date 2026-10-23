@@ -1,39 +1,64 @@
 // ==========================================
-// 1. CAMBIO DE PESTAÑAS (INSUMOS VS PRODUCTOS)
+// 1. CAMBIO DE PESTAÑAS (3 PESTAÑAS)
 // ==========================================
 function cambiarPestanaCrud(pestana) {
   const panelInsumos = document.getElementById('panelInsumos');
   const panelProductos = document.getElementById('panelProductos');
-  const tabBtnInsumos = document.getElementById('tabBtnInsumos');
-  const tabBtnProductos = document.getElementById('tabBtnProductos');
-  const btnAccionAgregarInsumo = document.getElementById('btnAccionAgregarInsumo');
-  const btnAccionAgregarProducto = document.getElementById('btnAccionAgregarProducto');
-  const crudTituloPrincipal = document.getElementById('crudTituloPrincipal');
+  const panelProveedores = document.getElementById('panelProveedores');
 
+  const tabInsumos = document.getElementById('tabBtnInsumos');
+  const tabProductos = document.getElementById('tabBtnProductos');
+  const tabProveedores = document.getElementById('tabBtnProveedores');
+
+  const btnInsumo = document.getElementById('btnAccionAgregarInsumo');
+  const btnProducto = document.getElementById('btnAccionAgregarProducto');
+  const btnProveedor = document.getElementById('btnAccionAgregarProveedor');
+
+  const titulo = document.getElementById('crudTituloPrincipal');
+
+  // Ocultar todos los paneles
+  if (panelInsumos) panelInsumos.style.display = 'none';
+  if (panelProductos) panelProductos.style.display = 'none';
+  if (panelProveedores) panelProveedores.style.display = 'none';
+
+  // Desactivar botones de pestañas
+  if (tabInsumos) tabInsumos.classList.remove('activa');
+  if (tabProductos) tabProductos.classList.remove('activa');
+  if (tabProveedores) tabProveedores.classList.remove('activa');
+
+  // Ocultar botones superiores de acción
+  if (btnInsumo) btnInsumo.style.display = 'none';
+  if (btnProducto) btnProducto.style.display = 'none';
+  if (btnProveedor) btnProveedor.style.display = 'none';
+
+  // Activar vista según pestaña seleccionada
   if (pestana === 'insumos') {
     if (panelInsumos) panelInsumos.style.display = 'block';
-    if (panelProductos) panelProductos.style.display = 'none';
-
-    if (tabBtnInsumos) tabBtnInsumos.classList.add('activa');
-    if (tabBtnProductos) tabBtnProductos.classList.remove('activa');
-
-    if (btnAccionAgregarInsumo) btnAccionAgregarInsumo.style.display = 'inline-block';
-    if (btnAccionAgregarProducto) btnAccionAgregarProducto.style.display = 'none';
-
-    if (crudTituloPrincipal) crudTituloPrincipal.textContent = 'Gestión de insumos y materias primas';
+    if (tabInsumos) tabInsumos.classList.add('activa');
+    if (btnInsumo) btnInsumo.style.display = 'inline-block';
+    if (titulo) titulo.textContent = 'Gestión de insumos y materias primas';
   } else if (pestana === 'productos') {
-    if (panelInsumos) panelInsumos.style.display = 'none';
     if (panelProductos) panelProductos.style.display = 'block';
-
-    if (tabBtnInsumos) tabBtnInsumos.classList.remove('activa');
-    if (tabBtnProductos) tabBtnProductos.classList.add('activa');
-
-    if (btnAccionAgregarInsumo) btnAccionAgregarInsumo.style.display = 'none';
-    if (btnAccionAgregarProducto) btnAccionAgregarProducto.style.display = 'inline-block';
-
-    if (crudTituloPrincipal) crudTituloPrincipal.textContent = 'Gestión de productos de la panadería';
+    if (tabProductos) tabProductos.classList.add('activa');
+    if (btnProducto) btnProducto.style.display = 'inline-block';
+    if (titulo) titulo.textContent = 'Gestión de productos de la panadería';
+  } else if (pestana === 'proveedores') {
+    if (panelProveedores) panelProveedores.style.display = 'block';
+    if (tabProveedores) tabProveedores.classList.add('activa');
+    if (btnProveedor) btnProveedor.style.display = 'inline-block';
+    if (titulo) titulo.textContent = 'Gestión de proveedores de materias primas';
   }
 }
+
+// Activar pestaña según el parámetro ?tab= de la URL
+document.addEventListener('DOMContentLoaded', function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const tab = urlParams.get('tab');
+  
+  if (tab && ['insumos', 'productos', 'proveedores'].includes(tab)) {
+    cambiarPestanaCrud(tab);
+  }
+});
 
 // ==========================================
 // 2. MODALES DE INSUMOS
@@ -50,7 +75,7 @@ function cerrarModalAgregarInsumo() {
 
 function abrirModalEditarInsumo(pk, codigo, nombre, stockSacos, kilosSaco, totalKg, proveedor, precioSaco) {
   const form = document.getElementById('formEditarInsumo');
-  if (form) form.action = `/panel-admin/insumos/editar/${pk}/`;
+  if (form) form.action = `/panel-admin/inventario/editar/${pk}/`;
 
   if (document.getElementById('edit_insumo_codigo')) document.getElementById('edit_insumo_codigo').value = codigo || '';
   if (document.getElementById('edit_insumo_nombre')) document.getElementById('edit_insumo_nombre').value = nombre || '';
@@ -70,7 +95,7 @@ function cerrarModalEditarInsumo() {
 
 function abrirModalEliminarInsumo(pk, codigo, nombre) {
   const form = document.getElementById('formEliminarInsumo');
-  if (form) form.action = `/panel-admin/insumos/eliminar/${pk}/`;
+  if (form) form.action = `/panel-admin/inventario/eliminar/${pk}/`;
 
   const txt = document.getElementById('eliminar_insumo_texto');
   if (txt) txt.textContent = `${codigo ? codigo + ' - ' : ''}${nombre}`;
@@ -194,7 +219,138 @@ function cerrarModalAgregarCategoria() {
 }
 
 // ==========================================
-// 4. CONTROL DE DISPONIBILIDAD Y TURNOS
+// 4. MODALES DE PROVEEDORES
+// ==========================================
+function abrirModalAgregarProveedor() {
+  const modal = document.getElementById('modalAgregarProveedor');
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalAgregarProveedor() {
+  const modal = document.getElementById('modalAgregarProveedor');
+  if (modal) modal.style.display = 'none';
+}
+
+function abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, costoFlete) {
+  const modal = document.getElementById('modalEditarProveedor');
+  const form = document.getElementById('formEditarProveedor');
+
+  if (form) form.action = `/panel-admin/proveedores/editar/${pk}/`;
+
+  if (document.getElementById('edit_prov_rut')) document.getElementById('edit_prov_rut').value = rut || '';
+  if (document.getElementById('edit_prov_nombre')) document.getElementById('edit_prov_nombre').value = nombre || '';
+  if (document.getElementById('edit_prov_email')) document.getElementById('edit_prov_email').value = email || '';
+  if (document.getElementById('edit_prov_telefono')) document.getElementById('edit_prov_telefono').value = telefono || '';
+  if (document.getElementById('edit_prov_dir')) document.getElementById('edit_prov_dir').value = direccion || '';
+  if (document.getElementById('edit_prov_flete')) document.getElementById('edit_prov_flete').value = costoFlete || '0';
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalEditarProveedor() {
+  const modal = document.getElementById('modalEditarProveedor');
+  if (modal) modal.style.display = 'none';
+}
+
+function abrirModalEliminarProveedor(pk, nombre) {
+  const modal = document.getElementById('modalEliminarProveedor');
+  const form = document.getElementById('formEliminarProveedor');
+
+  if (form) form.action = `/panel-admin/proveedores/eliminar/${pk}/`;
+
+  const texto = document.getElementById('eliminar_prov_texto');
+  if (texto) texto.textContent = nombre;
+
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalEliminarProveedor() {
+  const modal = document.getElementById('modalEliminarProveedor');
+  if (modal) modal.style.display = 'none';
+}
+
+// Función para dar formato al RUT (Ej: 761234567 -> 76.123.456-7)
+function formatearRut(rutRaw) {
+  // 1. Elimina cualquier carácter que no sea número ni 'K'/'k'
+  let limpio = rutRaw.replace(/[^0-9kK]/g, '').toUpperCase();
+  
+  if (limpio.length <= 1) return limpio;
+
+  // 2. Separa el cuerpo del dígito verificador
+  let cuerpo = limpio.slice(0, -1);
+  let dv = limpio.slice(-1);
+
+  // 3. Agrega puntos de miles al cuerpo
+  cuerpo = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+
+  return `${cuerpo}-${dv}`;
+}
+
+// Aplicar evento 'input' a los campos de RUT de los modales
+document.addEventListener('DOMContentLoaded', function() {
+  const inputsRut = document.querySelectorAll('.input-rut');
+  
+  inputsRut.forEach(input => {
+    input.addEventListener('input', function(e) {
+      e.target.value = formatearRut(e.target.value);
+    });
+  });
+});
+
+// Formateo de teléfono chileno (Ej: 912345678 -> +56 9 1234 5678)
+function formatearTelefono(val) {
+  // Limpiar todo lo que no sea número
+  let digitos = val.replace(/\D/g, '');
+  
+  // Si empieza con 56, se lo quitamos para no duplicar
+  if (digitos.startsWith('56')) {
+    digitos = digitos.slice(2);
+  }
+  
+  // Limitamos a 9 dígitos (formato estándar móvil chileno)
+  digitos = digitos.slice(0, 9);
+
+  if (digitos.length === 0) return '';
+  if (digitos.length <= 1) return `+56 ${digitos}`;
+  if (digitos.length <= 5) return `+56 ${digitos.slice(0, 1)} ${digitos.slice(1)}`;
+  
+  return `+56 ${digitos.slice(0, 1)} ${digitos.slice(1, 5)} ${digitos.slice(5)}`;
+}
+
+// Evento para inputs de teléfono
+document.addEventListener('DOMContentLoaded', function() {
+  const inputsTel = document.querySelectorAll('.input-telefono');
+  
+  inputsTel.forEach(input => {
+    input.addEventListener('input', function(e) {
+      e.target.value = formatearTelefono(e.target.value);
+    });
+  });
+});
+
+// Formateo de precios en CLP (Ej: 15000 -> $ 15.000)
+function formatearPrecio(val) {
+  let limpio = val.replace(/\D/g, ''); // Solo números
+  if (!limpio) return '';
+  
+  // Formatear con puntos de miles
+  let formatoMiles = parseInt(limpio, 10).toLocaleString('es-CL');
+  return `$ ${formatoMiles}`;
+}
+
+// Evento para inputs de precio
+document.addEventListener('DOMContentLoaded', function() {
+  const inputsPrecio = document.querySelectorAll('.input-precio');
+  
+  inputsPrecio.forEach(input => {
+    input.addEventListener('input', function(e) {
+      e.target.value = formatearPrecio(e.target.value);
+    });
+  });
+});
+
+// ==========================================
+// 5. CONTROL DE DISPONIBILIDAD Y TURNOS
 // ==========================================
 
 // Escuchador global de cambios en radios "disponibilidad"

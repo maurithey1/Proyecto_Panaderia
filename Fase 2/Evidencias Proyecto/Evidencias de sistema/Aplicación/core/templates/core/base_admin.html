@@ -16,6 +16,30 @@
 </head>
 
 <body class="admin-body">
+
+  {# Contenedor global de notificaciones flotantes (Toasts) #}
+  {% if messages %}
+    <div class="notificaciones-flotantes" id="notificaciones-contenedor" aria-live="polite" aria-atomic="true">
+      {% for message in messages %}
+        <div class="notificacion-toast notificacion-toast--{{ message.tags }}">
+          <div class="notificacion-toast__contenido">
+            <span class="notificacion-toast__icono">
+              {% if message.tags == 'success' %}
+                ✓
+              {% elif message.tags == 'error' %}
+                ✕
+              {% else %}
+                ℹ
+              {% endif %}
+            </span>
+            <span class="notificacion-toast__texto">{{ message }}</span>
+          </div>
+          <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()" aria-label="Cerrar notificación">&times;</button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+  
   {# Iconos SVG reutilizables para el Panel de Administración #}
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <symbol id="i-espiga" viewBox="0 0 24 24">

@@ -1,3 +1,30 @@
+// Formateo automático para números de teléfono chilenos (+56 9 XXXX XXXX)
+function formatearTelefono(val) {
+  let digitos = val.replace(/\D/g, '');
+  
+  if (digitos.startsWith('56')) {
+    digitos = digitos.slice(2);
+  }
+  
+  digitos = digitos.slice(0, 9);
+
+  if (digitos.length === 0) return '';
+  if (digitos.length <= 1) return `+56 ${digitos}`;
+  if (digitos.length <= 5) return `+56 ${digitos.slice(0, 1)} ${digitos.slice(1)}`;
+  
+  return `+56 ${digitos.slice(0, 1)} ${digitos.slice(1, 5)} ${digitos.slice(5)}`;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const inputsTel = document.querySelectorAll('.input-telefono');
+  
+  inputsTel.forEach(input => {
+    input.addEventListener('input', function(e) {
+      e.target.value = formatearTelefono(e.target.value);
+    });
+  });
+});
+
 /* ==========================================
    FORMULARIO MULTI-PASO DE REGISTRO (STEPPER)
    ========================================== */

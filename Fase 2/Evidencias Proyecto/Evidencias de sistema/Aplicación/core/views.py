@@ -25,7 +25,7 @@ from django.core.cache import cache
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -994,9 +994,9 @@ def redireccionar_por_rol(user):
         return redirect('inicio_cajero')
     return redirect('inicio')
 
-# ==========================================
-# FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO Y REPORTES
-# ==========================================
+# ========================================================================================
+# FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO, PROVEEDORES Y REPORTES
+# ========================================================================================
 
 def admin_required(view_func):
     def _wrapped_view(request, *args, **kwargs):
@@ -1144,6 +1144,8 @@ def desactivar_usuario(request, pk):
 def gestion_inventario(request):
     insumos = Insumo.objects.all().order_by('codigo', 'nombre')
 
+    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+
     ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
     siguiente_id = 'NI001'
     if ultimo and ultimo.codigo.startswith('NI'):
@@ -1174,6 +1176,7 @@ def gestion_inventario(request):
         'siguiente_id': siguiente_id,
         'todos_los_productos': todos_los_productos,
         'categorias_productos': categorias_productos,
+        'proveedores': proveedores,
         'dias_semana': dias_semana,
     }
     return render(request, 'core/tabla_crud_insumos.html', contexto)
@@ -1189,7 +1192,7 @@ def crear_insumo(request):
     kilos_por_saco = request.POST.get('kilos_por_saco', 25)
     total_kg = request.POST.get('total_kg', None)
     proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
-    precio_saco = request.POST.get('precio_saco', 0)
+    precio_saco = normalizar_precio(request.POST.get('precio_saco', 0))
 
     if not nombre:
         messages.error(request, 'El nombre del producto es obligatorio.')
@@ -1212,11 +1215,6 @@ def crear_insumo(request):
             total_kg = stock_sacos * kilos_por_saco
     except Exception:
         total_kg = stock_sacos * kilos_por_saco
-
-    try:
-        precio_saco = Decimal(str(precio_saco).replace(',', '.').replace('$', '').strip())
-    except Exception:
-        precio_saco = Decimal('0.00')
 
     if not codigo:
         ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
@@ -1245,6 +1243,7 @@ def crear_insumo(request):
         unidad_medida='Kg'
     )
     messages.success(request, f'Insumo "{nombre}" ({codigo}) agregado exitosamente.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     return redirect(next_url)
 
 
@@ -1260,7 +1259,10 @@ def editar_insumo(request, pk):
     kilos_por_saco = request.POST.get('kilos_por_saco', insumo.kilos_por_saco)
     total_kg = request.POST.get('total_kg', None)
     proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
-    precio_saco = request.POST.get('precio_saco', insumo.precio_saco)
+    precio_saco = normalizar_precio(
+        request.POST.get('precio_saco'),
+        valor_defecto=insumo.precio_saco
+        )
 
     if not nombre:
         messages.error(request, 'El nombre del producto no puede estar vacío.')
@@ -1290,16 +1292,14 @@ def editar_insumo(request, pk):
     except Exception:
         insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
 
-    try:
-        insumo.precio_saco = Decimal(str(precio_saco).replace(',', '.').replace('$', '').strip())
-    except Exception:
-        pass
 
     insumo.nombre = nombre
     insumo.proveedor_nombre = proveedor_nombre
+    insumo.precio_saco = precio_saco
     insumo.save()
 
     messages.success(request, f'Insumo "{insumo.nombre}" ({insumo.codigo}) actualizado correctamente.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     return redirect(next_url)
 
 
@@ -1312,6 +1312,7 @@ def eliminar_insumo(request, pk):
     codigo = insumo.codigo
     insumo.delete()
     messages.warning(request, f'El insumo "{nombre}" ({codigo}) ha sido eliminado.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     return redirect(next_url)
 
 
@@ -1423,7 +1424,7 @@ def crear_producto(request):
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     nombre = request.POST.get('nombre', '').strip()
     categoria_id = request.POST.get('categoria_id')
-    precio = request.POST.get('precio', 0)
+    precio = normalizar_precio(request.POST.get('precio', 0))
     stock = request.POST.get('stock', 0)
     stock_critico = request.POST.get('stock_critico', 10)
     unidad_medida = request.POST.get('unidad_medida', 'unid')
@@ -1435,11 +1436,6 @@ def crear_producto(request):
         return redirect(next_url)
 
     categoria = get_object_or_404(Categoria, pk=categoria_id)
-
-    try:
-        precio = Decimal(str(precio).replace(',', '.').replace('$', '').strip())
-    except Exception:
-        precio = Decimal('0.00')
 
     try:
         stock = int(stock)
@@ -1470,6 +1466,7 @@ def crear_producto(request):
         messages.error(request, f'Disponibilidad: {error} No se creó el producto.')
         return redirect(next_url)
     messages.success(request, f'Producto "{nombre}" agregado exitosamente al catálogo.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
 
@@ -1481,7 +1478,10 @@ def editar_producto(request, pk):
 
     nombre = request.POST.get('nombre', '').strip()
     categoria_id = request.POST.get('categoria_id')
-    precio = request.POST.get('precio', producto.precio)
+    precio = normalizar_precio(
+        request.POST.get('precio'),
+        valor_defecto=producto.precio
+        )
     stock = request.POST.get('stock', producto.stock)
     stock_critico = request.POST.get('stock_critico', producto.stock_critico)
     unidad_medida = request.POST.get('unidad_medida', producto.unidad_medida)
@@ -1503,11 +1503,6 @@ def editar_producto(request, pk):
         producto.categoria = get_object_or_404(Categoria, pk=categoria_id)
 
     try:
-        producto.precio = Decimal(str(precio).replace(',', '.').replace('$', '').strip())
-    except Exception:
-        pass
-
-    try:
         producto.stock = int(stock)
     except (ValueError, TypeError):
         pass
@@ -1518,6 +1513,7 @@ def editar_producto(request, pk):
         pass
 
     producto.nombre = nombre
+    producto.precio = precio
     producto.unidad_medida = unidad_medida
     producto.descripcion = descripcion
     producto.imagen_url = imagen_url
@@ -1531,6 +1527,7 @@ def editar_producto(request, pk):
         return redirect(next_url)
 
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
 
@@ -1555,6 +1552,7 @@ def registrar_produccion(request, pk):
     else:
         messages.error(request, 'Por favor, ingresa una cantidad horneada válida mayor a 0.')
 
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
 
@@ -1572,6 +1570,7 @@ def eliminar_producto(request, pk):
     else:
         producto.delete()
         messages.warning(request, f'El producto "{nombre}" ha sido eliminado del catálogo.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
 
@@ -1596,6 +1595,152 @@ def crear_categoria(request):
     else:
         messages.warning(request, f'La categoría "{nombre}" ya existía en el catálogo.')
 
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
+    return redirect(next_url)
+
+def normalizar_rut(rut_raw):
+    """
+    Convierte '761234567' o '76.123.456-7' a un formato estandarizado '76.123.456-7'.
+    """
+    if not rut_raw:
+        return ''
+    
+    # Conservar solo números y 'K'/'k'
+    limpio = ''.join(c for c in str(rut_raw) if c.isdigit() or c.upper() == 'K').upper()
+    if len(limpio) < 2:
+        return limpio
+    
+    cuerpo = limpio[:-1]
+    dv = limpio[-1]
+    
+    # Formatear cuerpo con puntos de miles
+    try:
+        cuerpo_fmt = f"{int(cuerpo):,}".replace(',', '.')
+    except ValueError:
+        return limpio
+        
+    return f"{cuerpo_fmt}-{dv}"
+
+def normalizar_telefono(telefono_raw):
+    """
+    Formatea '912345678' o '56912345678' a '+56 9 1234 5678'.
+    """
+    if not telefono_raw:
+        return '+56 9'
+    
+    digitos = ''.join(c for c in str(telefono_raw) if c.isdigit())
+    
+    if digitos.startswith('56'):
+        digitos = digitos[2:]
+        
+    digitos = digitos[:9]
+    
+    if len(digitos) == 0:
+        return '+56 9'
+    elif len(digitos) <= 1:
+        return f'+56 {digitos}'
+    elif len(digitos) <= 5:
+        return f'+56 {digitos[0]} {digitos[1:]}'
+    else:
+        return f'+56 {digitos[0]} {digitos[1:5]} {digitos[5:]}'
+
+
+def normalizar_precio(precio_raw, valor_defecto='0.00'):
+    """
+    Limpia cadenas como '$ 15.000', '15.000' o '$15000' y devuelve un Decimal válido.
+    """
+    if precio_raw is None or str(precio_raw).strip() == '':
+        return Decimal(str(valor_defecto))
+    
+    limpio = str(precio_raw).replace('$', '').replace(' ', '').replace('.', '').strip()
+    limpio = limpio.replace(',', '.')
+    limpio = ''.join(c for c in limpio if c.isdigit() or c == '.')
+    
+    try:
+        return Decimal(limpio) if limpio else Decimal(str(valor_defecto))
+    except Exception:
+        return Decimal(str(valor_defecto))
+
+@admin_required
+@require_POST
+def crear_proveedor(request):
+    next_url = request.POST.get('next') or 'gestion_inventario'
+    
+    # Normalización de entradas del formulario
+    rut = normalizar_rut(request.POST.get('rut', '').strip())
+    nombre = request.POST.get('nombre_proveedor', '').strip()
+    email = request.POST.get('email', '').strip()
+    telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
+    direccion = request.POST.get('direccion', '').strip()
+    costo_flete = normalizar_precio(request.POST.get('costo_flete', 0))
+
+    if not rut or not nombre:
+        messages.error(request, 'El RUT y la Razón Social son obligatorios.')
+        return redirect(next_url)
+
+    if Proveedor.objects.filter(rut=rut).exists():
+        messages.error(request, f'Ya existe un proveedor registrado con el RUT {rut}.')
+        return redirect(next_url)
+
+    Proveedor.objects.create(
+        rut=rut,
+        nombre_proveedor=nombre,
+        email=email,
+        telefono=telefono,
+        direccion=direccion,
+        costo_flete=costo_flete
+    )
+    messages.success(request, f'Proveedor "{nombre}" registrado correctamente con RUT {rut}.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def editar_proveedor(request, pk):
+    next_url = request.POST.get('next') or 'gestion_inventario'
+    proveedor = get_object_or_404(Proveedor, pk=pk)
+
+    # Normalización de entradas del formulario
+    rut = normalizar_rut(request.POST.get('rut', '').strip())
+    nombre = request.POST.get('nombre_proveedor', '').strip()
+    email = request.POST.get('email', '').strip()
+    telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
+    direccion = request.POST.get('direccion', '').strip()
+    costo_flete = normalizar_precio(
+        request.POST.get('costo_flete'), 
+        valor_defecto=proveedor.costo_flete
+    )
+
+    if not rut or not nombre:
+        messages.error(request, 'El RUT y la Razón Social no pueden estar vacíos.')
+        return redirect(next_url)
+
+    if rut != proveedor.rut and Proveedor.objects.filter(rut=rut).exclude(pk=pk).exists():
+        messages.error(request, f'El RUT {rut} ya se encuentra registrado por otro proveedor.')
+        return redirect(next_url)
+
+    proveedor.rut = rut
+    proveedor.nombre_proveedor = nombre
+    proveedor.email = email
+    proveedor.telefono = telefono
+    proveedor.direccion = direccion
+    proveedor.costo_flete = costo_flete
+    proveedor.save()
+
+    messages.success(request, f'Proveedor "{proveedor.nombre_proveedor}" actualizado correctamente.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+    return redirect(next_url)
+
+@admin_required
+@require_POST
+def eliminar_proveedor(request, pk):
+    next_url = request.POST.get('next') or 'gestion_inventario'
+    proveedor = get_object_or_404(Proveedor, pk=pk)
+    nombre = proveedor.nombre_proveedor
+    proveedor.delete()
+    messages.warning(request, f'El proveedor "{nombre}" ha sido eliminado.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
 
 # ==========================================
@@ -2077,7 +2222,7 @@ def registro_view(request):
         first_name = request.POST.get('first_name', '').strip()
         last_name = request.POST.get('last_name', '').strip()
         email = request.POST.get('email', '').strip().lower()
-        telefono = request.POST.get('telefono', '').strip()
+        telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
         password = request.POST.get('password', '')
         password_confirm = request.POST.get('password_confirm', '')
 
