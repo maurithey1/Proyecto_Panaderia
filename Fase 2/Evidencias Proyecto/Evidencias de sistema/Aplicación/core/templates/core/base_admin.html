@@ -84,7 +84,7 @@
       <nav class="admin-menu" aria-label="Navegación de administración">
         <a href="{% url 'inicio_admin' %}"{% if request.resolver_match.url_name == 'inicio_admin' %} aria-current="page"{% endif %}>Inicio</a>
         <a href="#">Proyección de ventas</a>
-        <a href="#">Precios materias primas</a>
+        <a href="{% url 'comparar_cotizaciones' %}"{% if request.resolver_match.url_name == 'comparar_cotizaciones' %} aria-current="page"{% endif %}>Comparador y estudio de mercado</a>
         <a href="{% url 'gestion_inventario' %}">Gestión de inventario</a>
       </nav>
 

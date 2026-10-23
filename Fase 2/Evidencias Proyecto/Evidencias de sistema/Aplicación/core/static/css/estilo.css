@@ -3938,3 +3938,298 @@ a.historial-paginacion__enlace--actual:hover {
   .confirmacion-modal__pie { flex-direction: column-reverse; }
   .confirmacion-modal__boton { width: 100%; }
 }
+
+/* ------------------------------------------
+   COMPARADOR DE COTIZACIONES DE MOLINERAS
+   ------------------------------------------ */
+.cotiz__cabecera {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.cotiz__bajada {
+  margin: 10px 0 0;
+  color: var(--texto-suave, #6e5848);
+  font-size: 0.95rem;
+  font-family: var(--fuente-texto, 'Figtree', sans-serif);
+}
+
+.cotiz__subtitulo {
+  font-family: var(--fuente-titulos, "Young Serif", Georgia, serif);
+  font-size: 1.35rem;
+  font-weight: 400;
+  margin: 0 0 16px;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+.cotiz__filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 20px;
+  background: var(--crema-2, #f3e7d3);
+  padding: 18px 22px;
+  border-radius: var(--radio, 12px);
+  border: 1.5px solid var(--borde, #e6d5bc);
+}
+
+.cotiz__campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 220px;
+}
+
+.cotiz__campo--corto {
+  flex: 0 1 180px;
+}
+
+.cotiz__campo > span {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+.cotiz__campo select,
+.cotiz__campo input {
+  font-family: var(--fuente-texto, 'Figtree', sans-serif);
+  font-size: 0.92rem;
+  padding: 10px 14px;
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-radius: 8px;
+  background: var(--papel, #fffdf8);
+  color: var(--cafe-oscuro, #3e2a1d);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cotiz__campo select:focus,
+.cotiz__campo input:focus {
+  border-color: var(--cafe, #7b4b2a);
+  box-shadow: 0 0 0 3px rgba(123, 75, 42, 0.15);
+}
+
+.cotiz__boton {
+  background-color: var(--cafe, #7b4b2a);
+  color: var(--papel, #fffdf8);
+  border: none;
+  border-radius: 8px;
+  padding: 11px 24px;
+  font-family: var(--fuente-texto, 'Figtree', sans-serif);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(123, 75, 42, 0.25);
+  transition: background-color 0.18s ease, transform 0.1s ease;
+  height: 42px;
+}
+
+.cotiz__boton:hover {
+  background-color: var(--cafe-hover, #5e381f);
+  transform: translateY(-1px);
+}
+
+.cotiz__boton--verde {
+  background-color: #527343;
+  box-shadow: 0 2px 6px rgba(82, 115, 67, 0.25);
+}
+
+.cotiz__boton--verde:hover {
+  background-color: #3f5933;
+}
+
+.cotiz__resumen-pedido {
+  margin: 6px 0 16px;
+  font-size: 0.95rem;
+  color: var(--cafe-oscuro, #3e2a1d);
+  background: var(--papel, #fffdf8);
+  padding: 10px 16px;
+  border-left: 4px solid var(--cafe, #7b4b2a);
+  border-radius: 4px;
+}
+
+/* Tarjeta destacada de menor costo */
+.cotiz__mejor {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  background: var(--papel, #fffdf8);
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-left: 5px solid var(--trigo, #e3b25b);
+  border-radius: var(--radio, 12px);
+  box-shadow: 0 4px 14px rgba(62, 42, 29, 0.05);
+}
+
+.cotiz__mejor > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cotiz__mejor strong {
+  font-size: 1.12rem;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+.cotiz__mejor span {
+  font-size: 0.90rem;
+  color: var(--texto-suave, #6e5848);
+}
+
+.cotiz__mejor-icono {
+  font-size: 2rem;
+  color: var(--corteza-brillo, #c98a4b);
+  line-height: 1;
+}
+
+/* Fila destacada en tabla */
+.cotiz__tabla .cotiz__fila-mejor td {
+  background-color: rgba(241, 213, 150, 0.45) !important;
+}
+
+.cotiz__total {
+  font-weight: 700;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+.cotiz__mas {
+  color: var(--terracota, #b4532a);
+  font-weight: 600;
+}
+
+.cotiz__sello {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--cafe, #7b4b2a);
+  color: var(--papel, #fffdf8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.cotiz__sello--empate {
+  background: var(--cafe-claro, #c8a27a);
+}
+
+.cotiz__nota {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  color: var(--texto-suave, #6e5848);
+}
+
+.cotiz__nota--arriba {
+  margin: -4px 0 16px;
+}
+
+.cotiz__vacio {
+  padding: 24px;
+}
+
+.cotiz__sub-subtitulo {
+  margin: 24px 0 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro, #3e2a1d);
+  font-family: var(--fuente-titulos, "Young Serif", Georgia, serif);
+}
+
+/* Tarjetas de datos del estudio de mercado */
+.cotiz__mercado-resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.cotiz__dato {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  background: var(--papel, #fffdf8);
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-radius: var(--radio, 12px);
+  box-shadow: 0 2px 8px rgba(62, 42, 29, 0.04);
+}
+
+.cotiz__dato span {
+  font-size: 0.80rem;
+  font-weight: 700;
+  color: var(--texto-suave, #6e5848);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cotiz__dato strong {
+  font-size: 1.25rem;
+  color: var(--cafe-oscuro, #3e2a1d);
+  font-family: var(--fuente-texto, 'Figtree', sans-serif);
+}
+
+.cotiz__dato small {
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.cotiz__dato--bien {
+  background: rgba(82, 115, 67, 0.08);
+  border-color: #a2c295;
+}
+
+.cotiz__dato--bien strong {
+  color: #355325;
+}
+
+.cotiz__dato--bien small {
+  color: #355325;
+}
+
+.cotiz__dato--mal {
+  background: rgba(180, 83, 42, 0.08);
+  border-color: #e5b39c;
+}
+
+.cotiz__dato--mal strong {
+  color: var(--terracota, #b4532a);
+}
+
+.cotiz__dato--mal small {
+  color: var(--terracota, #b4532a);
+}
+
+.cotiz__tendencia {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+
+.cotiz__tendencia li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 16px;
+  background: var(--crema-2, #f3e7d3);
+  border: 1px solid var(--borde, #e6d5bc);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--texto-suave, #6e5848);
+}
+
+.cotiz__tendencia strong {
+  font-size: 1.05rem;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+@media (max-width: 600px) {
+  .cotiz__campo--corto { flex: 1 1 100%; }
+  .cotiz__boton { width: 100%; }
+}
+

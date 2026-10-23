@@ -313,6 +313,10 @@ class Insumo(models.Model):
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     stock_actual = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     stock_minimo = models.DecimalField(max_digits=10, decimal_places=2, default=5)
+    producto_odepa = models.CharField(
+        max_length=100, default='', blank=True, verbose_name="Producto equivalente en ODEPA",
+        help_text="Nombre del producto en ODEPA con el que se compara el precio de mercado.",
+    )
     proveedores = models.ManyToManyField(Proveedor, through='ProveedorInsumo', related_name='insumos', blank=True)
 
     class Meta:
@@ -345,6 +349,34 @@ class ProveedorInsumo(models.Model):
 
     def __str__(self):
         return f"{self.insumo.nombre} en {self.proveedor.nombre_proveedor}: ${self.precio_ofrecido}"
+
+
+class PrecioMercado(models.Model):
+    """Precio de referencia de un insumo en el mercado, consultado a una fuente externa (ODEPA).
+
+    Hay una fila por semana, región, sector y tipo de punto de venta, de modo que cada
+    actualización suma historial en vez de pisar los datos anteriores.
+    """
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name='precios_mercado')
+    fuente = models.CharField(max_length=30, default='ODEPA')
+    producto_fuente = models.CharField(max_length=100)
+    region = models.CharField(max_length=100)
+    sector = models.CharField(max_length=100)
+    tipo_punto = models.CharField(max_length=60, blank=True, default='')
+    fecha = models.DateField(help_text="Primer día de la semana a la que corresponde el precio.")
+    unidad = models.CharField(max_length=60, blank=True, default='')
+    precio_minimo = models.DecimalField(max_digits=12, decimal_places=2)
+    precio_maximo = models.DecimalField(max_digits=12, decimal_places=2)
+    precio_promedio = models.DecimalField(max_digits=12, decimal_places=2)
+
+    class Meta:
+        unique_together = ('insumo', 'fuente', 'region', 'sector', 'tipo_punto', 'fecha')
+        ordering = ['-fecha', 'precio_promedio']
+        verbose_name = "Precio de mercado"
+        verbose_name_plural = "Precios de mercado"
+
+    def __str__(self):
+        return f"{self.insumo.nombre} · {self.sector} ({self.fecha}): ${self.precio_promedio} {self.unidad}"
 
 
 class Receta(models.Model):

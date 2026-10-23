@@ -14,6 +14,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
+from django.urls import reverse
+from django.utils.http import urlencode
 
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -35,6 +37,8 @@ from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilida
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
 from .comprobante_pdf import generar_comprobante_pdf
+from .cotizaciones import comparar_cotizaciones as calcular_comparacion, limitar_sacos, tabla_comparativa_insumos
+from . import mercado
 
 # ==========================================
 # FUNCIONES DE CLIENTE: CATÁLOGO, CARRITO Y COMPRA
@@ -1742,6 +1746,129 @@ def eliminar_proveedor(request, pk):
     messages.warning(request, f'El proveedor "{nombre}" ha sido eliminado.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
+
+
+# ==========================================
+# COMPARADOR DE COTIZACIONES DE MOLINERAS (MATERIA PRIMA + FLETE)
+# ==========================================
+
+def _url_comparador(insumo_id=None, sacos=None):
+    """Arma la URL del comparador conservando el insumo y la cantidad de sacos elegidos."""
+    url = reverse('comparar_cotizaciones')
+    parametros = {}
+    if insumo_id:
+        parametros['insumo'] = insumo_id
+    if sacos:
+        parametros['sacos'] = sacos
+    return f'{url}?{urlencode(parametros)}' if parametros else url
+
+
+@admin_required
+def comparar_cotizaciones(request):
+    insumos = Insumo.objects.all().order_by('codigo', 'nombre')
+    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+
+    sacos = limitar_sacos(request.GET.get('sacos', 1))
+    insumo = None
+    insumo_id = _entero_o_none(request.GET.get('insumo'))
+    if insumo_id is not None:
+        insumo = insumos.filter(pk=insumo_id).first()
+
+    opciones = calcular_comparacion(insumo, sacos) if insumo else []
+    estudio = None
+    if insumo:
+        # Precio por saco más bajo entre las molineras (solo materia prima), para compararlo con el mercado.
+        precio_mas_bajo = min((o['precio_saco'] for o in opciones), default=None)
+        estudio = mercado.estudio_mercado(insumo, precio_mas_bajo)
+    tab_activa = request.GET.get('tab')
+    if not tab_activa:
+        tab_activa = 'molineras' if insumo else 'insumos'
+
+    contexto = {
+        'insumos': insumos,
+        'proveedores': proveedores,
+        'insumo': insumo,
+        'sacos': sacos,
+        'kilos': (insumo.kilos_por_saco * sacos) if insumo else None,
+        'opciones': opciones,
+        'mejor': opciones[0] if opciones else None,
+        'ahorro_maximo': opciones[-1]['diferencia'] if len(opciones) > 1 else None,
+        'estudio': estudio,
+        'productos_odepa': mercado.PRODUCTOS_ODEPA,
+        'resumen_insumos': tabla_comparativa_insumos(),
+        'tab_activa': tab_activa,
+    }
+    return render(request, 'core/comparador_cotizaciones.html', contexto)
+
+
+@admin_required
+@require_POST
+def guardar_cotizacion(request):
+    """Registra (o actualiza) el precio por saco que cotiza una molinera para un insumo."""
+    insumo = Insumo.objects.filter(pk=_entero_o_none(request.POST.get('insumo_id'))).first()
+    proveedor = Proveedor.objects.filter(pk=_entero_o_none(request.POST.get('proveedor_id'))).first()
+    sacos = limitar_sacos(request.POST.get('sacos', 1))
+
+    if not insumo:
+        messages.error(request, 'Seleccione la materia prima a cotizar.')
+        return redirect(_url_comparador())
+    destino = _url_comparador(insumo.pk, sacos)
+
+    if not proveedor:
+        messages.error(request, 'Seleccione la molinera que entrega la cotización.')
+        return redirect(destino)
+
+    precio = normalizar_precio(request.POST.get('precio_saco'), valor_defecto=0)
+    if precio <= 0 or precio >= Decimal('100000000'):
+        messages.error(request, 'Ingrese un precio por saco mayor a cero.')
+        return redirect(destino)
+
+    _, creada = ProveedorInsumo.objects.update_or_create(
+        proveedor=proveedor, insumo=insumo, defaults={'precio_ofrecido': precio},
+    )
+    accion = 'registrada' if creada else 'actualizada'
+    messages.success(request, f'Cotización {accion}: {proveedor.nombre_proveedor} ofrece {insumo.nombre} a {clp(precio)} por saco.')
+    return redirect(destino)
+
+
+@admin_required
+@require_POST
+def actualizar_precios_mercado(request):
+    """Vincula el insumo con un producto de ODEPA y descarga los precios de mercado más recientes."""
+    insumo = Insumo.objects.filter(pk=_entero_o_none(request.POST.get('insumo_id'))).first()
+    sacos = limitar_sacos(request.POST.get('sacos', 1))
+    if not insumo:
+        messages.error(request, 'Seleccione la materia prima para el estudio de mercado.')
+        return redirect(_url_comparador())
+    destino = _url_comparador(insumo.pk, sacos)
+
+    producto = request.POST.get('producto_odepa', '').strip()
+    if producto not in mercado.PRODUCTOS_ODEPA:
+        messages.error(request, 'Seleccione un producto de ODEPA de la lista.')
+        return redirect(destino)
+
+    insumo.producto_odepa = producto
+    insumo.save(update_fields=['producto_odepa'])
+    try:
+        cantidad = mercado.actualizar_precios(insumo)
+    except mercado.ErrorMercado as exc:
+        messages.error(request, f'No se pudieron actualizar los precios de mercado: {exc}')
+        return redirect(destino)
+
+    messages.success(request, f'Precios de mercado actualizados desde ODEPA ({cantidad} registros de "{producto}").')
+    return redirect(destino)
+
+
+@admin_required
+@require_POST
+def eliminar_cotizacion(request, pk):
+    cotizacion = get_object_or_404(ProveedorInsumo.objects.select_related('proveedor', 'insumo'), pk=pk)
+    insumo_id = cotizacion.insumo_id
+    nombre = cotizacion.proveedor.nombre_proveedor
+    cotizacion.delete()
+    messages.warning(request, f'Se eliminó la cotización de "{nombre}".')
+    return redirect(_url_comparador(insumo_id, limitar_sacos(request.POST.get('sacos', 1))))
+
 
 # ==========================================
 # FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO Y REPORTES

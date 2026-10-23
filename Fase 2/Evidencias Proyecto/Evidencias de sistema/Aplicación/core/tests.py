@@ -3321,3 +3321,423 @@ class CierreCajaTests(TestCase):
         self.assertEqual(cierre.estado_cuadratura, 'Sobrante')
         self.assertEqual(cierre.diferencia, Decimal('5000'))
 
+
+class ComparadorCotizacionesTests(TestCase):
+    """Como administrador, comparo cotizaciones de molineras (materia prima + flete) y elijo la más barata."""
+
+    def setUp(self):
+        from .models import Insumo, Proveedor, ProveedorInsumo
+        self.Insumo, self.Proveedor, self.ProveedorInsumo = Insumo, Proveedor, ProveedorInsumo
+        self.admin = Usuario.objects.create_user('admin-cotiz', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(self.admin)
+        self.harina = Insumo.objects.create(codigo='NI001', nombre='Harina 000', kilos_por_saco=Decimal('25'))
+        self.molino_a = self._molinera('11111111-1', 'Molino A', flete='20000')
+        self.molino_b = self._molinera('22222222-2', 'Molino B', flete='5000')
+        self.molino_c = self._molinera('33333333-3', 'Molino C', flete='0')
+
+    def _molinera(self, rut, nombre, flete):
+        return self.Proveedor.objects.create(
+            rut=rut, nombre_proveedor=nombre, email=f'{nombre[-1].lower()}@mail.cl', telefono='+56911111111',
+            costo_flete=Decimal(flete),
+        )
+
+    def _cotizar(self, proveedor, precio):
+        return self.ProveedorInsumo.objects.create(
+            proveedor=proveedor, insumo=self.harina, precio_ofrecido=Decimal(precio),
+        )
+
+    def test_el_costo_incluye_materia_prima_y_flete(self):
+        from .cotizaciones import comparar_cotizaciones
+        self._cotizar(self.molino_a, '28000')
+
+        opcion = comparar_cotizaciones(self.harina, 10)[0]
+
+        self.assertEqual(opcion['materia_prima'], Decimal('280000'))
+        self.assertEqual(opcion['flete'], Decimal('20000'))
+        self.assertEqual(opcion['total'], Decimal('300000'))
+        self.assertEqual(opcion['costo_kg'], Decimal('1200'))  # 300.000 / 250 kg
+
+    def test_gana_la_de_menor_costo_total_aunque_su_precio_por_saco_sea_mayor(self):
+        from .cotizaciones import comparar_cotizaciones
+        self._cotizar(self.molino_a, '27000')   # barato por saco, pero flete alto
+        self._cotizar(self.molino_b, '27500')
+        self._cotizar(self.molino_c, '29000')   # caro por saco, sin flete
+
+        opciones = comparar_cotizaciones(self.harina, 5)
+
+        # A: 135.000 + 20.000 = 155.000 | B: 137.500 + 5.000 = 142.500 | C: 145.000 + 0 = 145.000
+        self.assertEqual([o['proveedor'] for o in opciones], [self.molino_b, self.molino_c, self.molino_a])
+        self.assertTrue(opciones[0]['es_mejor'])
+        self.assertFalse(opciones[1]['es_mejor'])
+        self.assertEqual(opciones[1]['diferencia'], Decimal('2500'))
+        self.assertEqual(opciones[2]['diferencia'], Decimal('12500'))
+
+    def test_el_resultado_cambia_con_la_cantidad_de_sacos(self):
+        from .cotizaciones import comparar_cotizaciones
+        self._cotizar(self.molino_b, '30000')   # flete de $5.000
+        self._cotizar(self.molino_c, '29000')   # precio menor por saco, pero flete de $60.000
+        self.molino_c.costo_flete = Decimal('60000')
+        self.molino_c.save()
+
+        pocos = comparar_cotizaciones(self.harina, 1)[0]['proveedor']
+        muchos = comparar_cotizaciones(self.harina, 100)[0]['proveedor']
+
+        self.assertEqual(pocos, self.molino_b)    # 1 saco: B = 35.000 vs C = 89.000
+        self.assertEqual(muchos, self.molino_c)   # 100 sacos: B = 3.005.000 vs C = 2.960.000
+
+    def test_empate_de_costo_se_marca_sin_duplicar_el_mejor(self):
+        from .cotizaciones import comparar_cotizaciones
+        self._cotizar(self.molino_b, '25000')
+        self._cotizar(self.molino_c, '30000')
+        self.molino_c.costo_flete = Decimal('0')
+        self.molino_c.save()
+        self.molino_b.costo_flete = Decimal('5000')
+        self.molino_b.save()
+        # Con 1 saco: B = 30.000 y C = 30.000
+
+        opciones = comparar_cotizaciones(self.harina, 1)
+
+        self.assertEqual([o['es_mejor'] for o in opciones], [True, False])
+        self.assertTrue(opciones[1]['empata_mejor'])
+
+    def test_sacos_invalidos_se_corrigen(self):
+        from .cotizaciones import limitar_sacos
+        self.assertEqual(limitar_sacos('abc'), 1)
+        self.assertEqual(limitar_sacos(0), 1)
+        self.assertEqual(limitar_sacos(-4), 1)
+        self.assertEqual(limitar_sacos(10 ** 12), 100000)
+        self.assertEqual(limitar_sacos('12'), 12)
+
+    def test_la_pagina_muestra_la_mejor_opcion(self):
+        self._cotizar(self.molino_a, '27000')
+        self._cotizar(self.molino_b, '27500')
+
+        respuesta = self.client.get(reverse('comparar_cotizaciones'), {'insumo': self.harina.pk, 'sacos': 5})
+        html = respuesta.content.decode()
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.context['mejor']['proveedor'], self.molino_b)
+        self.assertIn('Menor costo: Molino B', html)
+        self.assertIn('$142.500', html)
+
+    def test_pagina_sin_seleccion_o_con_insumo_inexistente_no_falla(self):
+        self.assertEqual(self.client.get(reverse('comparar_cotizaciones')).status_code, 200)
+        self.assertEqual(self.client.get(reverse('comparar_cotizaciones'), {'insumo': '9999', 'sacos': 'x'}).status_code, 200)
+        self.assertEqual(self.client.get(reverse('comparar_cotizaciones'), {'insumo': 'hola'}).status_code, 200)
+
+    def test_solo_el_administrador_accede(self):
+        self.client.logout()
+        self.assertRedirects(self.client.get(reverse('comparar_cotizaciones')), reverse('login'))
+
+        cajero = Usuario.objects.create_user('cajero-cotiz', password='clave-larga-123', rol='CAJERO')
+        self.client.force_login(cajero)
+        self.assertRedirects(self.client.get(reverse('comparar_cotizaciones')), reverse('inicio'))
+        self.assertEqual(self.client.post(reverse('guardar_cotizacion'), {}).status_code, 302)
+        self.assertEqual(self.ProveedorInsumo.objects.count(), 0)
+
+    def test_guardar_cotizacion_la_crea_y_luego_la_actualiza(self):
+        datos = {'insumo_id': self.harina.pk, 'proveedor_id': self.molino_a.pk, 'precio_saco': '$28.500', 'sacos': '4'}
+
+        respuesta = self.client.post(reverse('guardar_cotizacion'), datos)
+
+        self.assertRedirects(
+            respuesta, f"{reverse('comparar_cotizaciones')}?insumo={self.harina.pk}&sacos=4",
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(self.ProveedorInsumo.objects.get().precio_ofrecido, Decimal('28500'))
+
+        datos['precio_saco'] = '26000'
+        self.client.post(reverse('guardar_cotizacion'), datos)
+
+        self.assertEqual(self.ProveedorInsumo.objects.count(), 1)
+        self.assertEqual(self.ProveedorInsumo.objects.get().precio_ofrecido, Decimal('26000'))
+
+    def test_guardar_rechaza_precio_vacio_cero_o_exagerado(self):
+        for precio in ('', '0', 'abc', '999999999999'):
+            self.client.post(reverse('guardar_cotizacion'), {
+                'insumo_id': self.harina.pk, 'proveedor_id': self.molino_a.pk, 'precio_saco': precio,
+            })
+        self.assertEqual(self.ProveedorInsumo.objects.count(), 0)
+
+    def test_guardar_exige_materia_prima_y_molinera_validas(self):
+        self.client.post(reverse('guardar_cotizacion'), {'insumo_id': '9999', 'proveedor_id': self.molino_a.pk, 'precio_saco': '1000'})
+        self.client.post(reverse('guardar_cotizacion'), {'insumo_id': self.harina.pk, 'proveedor_id': '', 'precio_saco': '1000'})
+        self.assertEqual(self.ProveedorInsumo.objects.count(), 0)
+
+    def test_eliminar_cotizacion(self):
+        cotizacion = self._cotizar(self.molino_a, '28000')
+
+        respuesta = self.client.post(reverse('eliminar_cotizacion', args=[cotizacion.pk]), {'sacos': '3'})
+
+        self.assertRedirects(
+            respuesta, f"{reverse('comparar_cotizaciones')}?insumo={self.harina.pk}&sacos=3",
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(self.ProveedorInsumo.objects.count(), 0)
+        # Solo por POST
+        self.assertEqual(self.client.get(reverse('eliminar_cotizacion', args=[cotizacion.pk])).status_code, 405)
+
+    def test_el_menu_del_admin_enlaza_al_comparador(self):
+        html = self.client.get(reverse('inicio_admin')).content.decode()
+        self.assertIn(f'href="{reverse("comparar_cotizaciones")}"', html)
+
+
+def _registro_odepa(fecha, sector, promedio, minimo='1000', maximo='1700', region='Región Metropolitana de Santiago',
+                    tipo='Supermercado', unidad='$/kilo'):
+    return {
+        'Fecha inicio': fecha, 'Region': region, 'Sector': sector, 'Tipo de punto monitoreo': tipo,
+        'Unidad': unidad, 'Precio minimo': minimo, 'Precio maximo': maximo, 'Precio promedio': promedio,
+    }
+
+
+def _odepa_falso(registros_por_recurso):
+    """Simula la API de ODEPA: `registros_por_recurso` mapea id de recurso -> lista de registros."""
+    recursos = [
+        {'id': 'r2026', 'name': 'Detalle de Precios Consumidor año 2026', 'datastore_active': True},
+        {'id': 'r2025', 'name': 'Detalle de Precios Consumidor año 2025', 'datastore_active': True},
+        {'id': 'rcsv', 'name': 'Diccionario de datos', 'datastore_active': False},
+    ]
+
+    def llamar(accion, **parametros):
+        if accion == 'package_show':
+            return {'resources': recursos}
+        return {'records': registros_por_recurso.get(parametros['resource_id'], [])}
+    return llamar
+
+
+class MercadoOdepaTests(TestCase):
+    """Estudio de mercado: precios de ODEPA para saber dónde está más barato cada materia prima."""
+
+    def setUp(self):
+        from .models import Insumo, Proveedor, ProveedorInsumo, PrecioMercado
+        self.Insumo, self.PrecioMercado = Insumo, PrecioMercado
+        self.admin = Usuario.objects.create_user('admin-mercado', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(self.admin)
+        self.harina = Insumo.objects.create(codigo='NI001', nombre='Harina 000', kilos_por_saco=Decimal('25'))
+        self.registros = [
+            _registro_odepa('2026-10-19', 'Punilla', '1204,933333', region='Región de Ñuble'),
+            _registro_odepa('2026-10-19', 'Oriente', '1312,741935'),
+            _registro_odepa('2026-10-19', 'Valparaíso', '1340,000000', region='Región de Valparaíso'),
+            _registro_odepa('2026-10-12', 'Punilla', '1190,5', region='Región de Ñuble'),
+        ]
+        self.odepa = _odepa_falso({'r2026': self.registros})
+
+    def _vincular(self, producto='Harina sin polvos de hornear'):
+        self.harina.producto_odepa = producto
+        self.harina.save()
+
+    def test_obtener_precios_lee_decimales_con_coma_y_las_ultimas_semanas(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            todos = mercado.obtener_precios('Harina sin polvos de hornear')
+            una_semana = mercado.obtener_precios('Harina sin polvos de hornear', semanas=1)
+
+        self.assertEqual(len(todos), 4)
+        self.assertEqual(len(una_semana), 3)
+        punilla = next(p for p in una_semana if p['sector'] == 'Punilla')
+        self.assertEqual(punilla['precio_promedio'], Decimal('1204.93'))
+        self.assertEqual(punilla['unidad'], '$/kilo')
+
+    def test_registros_con_precios_invalidos_se_omiten(self):
+        from . import mercado
+        malos = _odepa_falso({'r2026': [_registro_odepa('2026-10-19', 'Roto', 'sin dato'), self.registros[0]]})
+        with mock.patch.object(mercado, '_llamar', malos):
+            self.assertEqual(len(mercado.obtener_precios('Azúcar')), 1)
+
+    def test_producto_fuera_de_la_lista_se_rechaza_sin_consultar(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar') as llamar:
+            with self.assertRaises(mercado.ErrorMercado):
+                mercado.obtener_precios('Uranio enriquecido')
+        llamar.assert_not_called()
+
+    def test_si_el_anio_actual_no_trae_datos_usa_el_anterior(self):
+        from . import mercado
+        odepa = _odepa_falso({'r2026': [], 'r2025': [self.registros[0]]})
+        with mock.patch.object(mercado, '_llamar', odepa):
+            precios = mercado.obtener_precios('Azúcar')
+        self.assertEqual(len(precios), 1)
+
+    def test_sin_datos_en_ningun_anio_informa_el_error(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar', _odepa_falso({})):
+            with self.assertRaises(mercado.ErrorMercado):
+                mercado.obtener_precios('Azúcar')
+
+    def test_una_falla_de_red_se_convierte_en_error_controlado(self):
+        from urllib import error
+        from . import mercado
+        with mock.patch.object(mercado.request, 'urlopen', side_effect=error.URLError('sin internet')):
+            with self.assertRaises(mercado.ErrorMercado):
+                mercado._llamar('package_show', id='x')
+
+    def test_actualizar_precios_no_duplica_y_actualiza_los_existentes(self):
+        from . import mercado
+        self._vincular()
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            mercado.actualizar_precios(self.harina)
+            self.assertEqual(self.PrecioMercado.objects.count(), 4)
+
+            self.registros[0]['Precio promedio'] = '1100'
+            mercado.actualizar_precios(self.harina)
+
+        self.assertEqual(self.PrecioMercado.objects.count(), 4)
+        actualizado = self.PrecioMercado.objects.get(sector='Punilla', fecha='2026-10-19')
+        self.assertEqual(actualizado.precio_promedio, Decimal('1100.00'))
+
+    def test_actualizar_sin_producto_asociado_falla(self):
+        from . import mercado
+        with self.assertRaises(mercado.ErrorMercado):
+            mercado.actualizar_precios(self.harina)
+
+    def test_estudio_ordena_por_precio_y_resume_la_ultima_semana(self):
+        from . import mercado
+        self._vincular()
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            mercado.actualizar_precios(self.harina)
+
+        estudio = mercado.estudio_mercado(self.harina)
+
+        self.assertEqual(str(estudio['fecha']), '2026-10-19')
+        self.assertEqual([f.sector for f in estudio['mas_baratos']], ['Punilla', 'Oriente', 'Valparaíso'])
+        self.assertEqual(estudio['cantidad_puntos'], 3)
+        self.assertEqual(estudio['minimo'], Decimal('1204.93'))
+        self.assertEqual(estudio['maximo'], Decimal('1340.00'))
+        self.assertEqual(len(estudio['tendencia']), 2)   # dos semanas guardadas
+        self.assertIsNone(estudio['comparacion'])        # sin cotización no se compara
+
+    def test_estudio_compara_la_mejor_cotizacion_con_el_promedio(self):
+        from . import mercado
+        self._vincular()
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            mercado.actualizar_precios(self.harina)
+
+        # 25 kg a $25.000 = $1.000 por kg, bajo el promedio de mercado (~$1.286)
+        barato = mercado.estudio_mercado(self.harina, Decimal('25000'))['comparacion']
+        self.assertTrue(barato['mas_barato_que_mercado'])
+        self.assertEqual(barato['tu_precio_kg'], Decimal('1000'))
+        self.assertLess(barato['porcentaje'], 0)
+
+        caro = mercado.estudio_mercado(self.harina, Decimal('40000'))['comparacion']   # $1.600 por kg
+        self.assertFalse(caro['mas_barato_que_mercado'])
+        self.assertGreater(caro['porcentaje'], 0)
+
+    def test_estudio_no_compara_si_el_producto_no_se_mide_por_kilo(self):
+        from . import mercado
+        self._vincular('Huevo blanco grande (primera)')
+        huevos = _odepa_falso({'r2026': [_registro_odepa('2026-10-19', 'Oriente', '5000', unidad='$/bandeja 30 unidades')]})
+        with mock.patch.object(mercado, '_llamar', huevos):
+            mercado.actualizar_precios(self.harina)
+
+        self.assertIsNone(mercado.estudio_mercado(self.harina, Decimal('25000'))['comparacion'])
+
+    def test_estudio_sin_datos_o_sin_producto_devuelve_none(self):
+        from . import mercado
+        self.assertIsNone(mercado.estudio_mercado(self.harina))
+        self._vincular()
+        self.assertIsNone(mercado.estudio_mercado(self.harina))
+
+    def test_vista_vincula_el_producto_y_descarga_los_precios(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            respuesta = self.client.post(reverse('actualizar_precios_mercado'), {
+                'insumo_id': self.harina.pk, 'producto_odepa': 'Harina sin polvos de hornear', 'sacos': '5',
+            })
+
+        self.assertRedirects(
+            respuesta, f"{reverse('comparar_cotizaciones')}?insumo={self.harina.pk}&sacos=5",
+            fetch_redirect_response=False,
+        )
+        self.harina.refresh_from_db()
+        self.assertEqual(self.harina.producto_odepa, 'Harina sin polvos de hornear')
+        self.assertEqual(self.PrecioMercado.objects.count(), 4)
+
+    def test_vista_rechaza_un_producto_que_no_esta_en_la_lista(self):
+        respuesta = self.client.post(reverse('actualizar_precios_mercado'), {
+            'insumo_id': self.harina.pk, 'producto_odepa': 'Cualquier cosa',
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        self.harina.refresh_from_db()
+        self.assertEqual(self.harina.producto_odepa, '')
+        self.assertEqual(self.PrecioMercado.objects.count(), 0)
+
+    def test_vista_informa_si_odepa_no_responde_sin_romper(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar', side_effect=mercado.ErrorMercado('sin conexión')):
+            respuesta = self.client.post(reverse('actualizar_precios_mercado'), {
+                'insumo_id': self.harina.pk, 'producto_odepa': 'Azúcar',
+            })
+        self.assertEqual(respuesta.status_code, 302)
+        mensajes = ' '.join(str(m) for m in get_messages(respuesta.wsgi_request))
+        self.assertIn('No se pudieron actualizar los precios de mercado', mensajes)
+
+    def test_solo_el_administrador_puede_consultar_el_mercado(self):
+        self.client.logout()
+        respuesta = self.client.post(reverse('actualizar_precios_mercado'), {
+            'insumo_id': self.harina.pk, 'producto_odepa': 'Azúcar',
+        })
+        self.assertRedirects(respuesta, reverse('login'), fetch_redirect_response=False)
+        self.assertEqual(self.client.get(reverse('actualizar_precios_mercado')).status_code, 302)
+
+    def test_la_pagina_muestra_el_estudio_y_la_comparacion(self):
+        from . import mercado
+        from .models import Proveedor, ProveedorInsumo
+        self._vincular()
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            mercado.actualizar_precios(self.harina)
+        molino = Proveedor.objects.create(rut='11111111-1', nombre_proveedor='Molino A', email='a@mail.cl',
+                                          telefono='+56911111111', costo_flete=Decimal('0'))
+        ProveedorInsumo.objects.create(proveedor=molino, insumo=self.harina, precio_ofrecido=Decimal('25000'))
+
+        html = self.client.get(reverse('comparar_cotizaciones'), {'insumo': self.harina.pk}).content.decode()
+
+        self.assertIn('Estudio de mercado (ODEPA)', html)
+        self.assertIn('Punilla', html)
+        self.assertIn('bajo el promedio de mercado', html)
+        self.assertIn('id="tablaMercado"', html)
+
+    def test_la_pagina_ofrece_consultar_el_mercado_si_aun_no_hay_datos(self):
+        html = self.client.get(reverse('comparar_cotizaciones'), {'insumo': self.harina.pk}).content.decode()
+        self.assertIn('Consultar precios de mercado', html)
+        self.assertNotIn('id="tablaMercado"', html)
+
+    def test_el_comando_actualiza_solo_los_insumos_vinculados(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from . import mercado
+        self._vincular()
+        self.Insumo.objects.create(codigo='NI002', nombre='Sal')   # sin producto asociado
+        salida = StringIO()
+
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            call_command('actualizar_precios_mercado', stdout=salida)
+
+        self.assertEqual(self.PrecioMercado.objects.filter(insumo=self.harina).count(), 4)
+        self.assertEqual(self.PrecioMercado.objects.count(), 4)
+        self.assertIn('Harina 000', salida.getvalue())
+
+    def test_tabla_comparativa_insumos_detecta_mejor_proveedor_y_ahorro(self):
+        from .cotizaciones import tabla_comparativa_insumos
+        from .models import Proveedor, ProveedorInsumo
+        self.harina.precio_saco = Decimal('30000')
+        self.harina.save()
+
+        m1 = Proveedor.objects.create(rut='44444444-4', nombre_proveedor='Molinera Económica', email='e@mail.cl', telefono='+569111')
+        m2 = Proveedor.objects.create(rut='55555555-5', nombre_proveedor='Molinera Cara', email='c@mail.cl', telefono='+569222')
+        ProveedorInsumo.objects.create(proveedor=m1, insumo=self.harina, precio_ofrecido=Decimal('22000'))
+        ProveedorInsumo.objects.create(proveedor=m2, insumo=self.harina, precio_ofrecido=Decimal('28000'))
+
+        resumen = tabla_comparativa_insumos()
+        item = next(r for r in resumen if r['insumo'].pk == self.harina.pk)
+
+        self.assertEqual(item['mejor_proveedor'], m1)
+        self.assertEqual(item['mejor_precio'], Decimal('22000'))
+        self.assertEqual(item['ahorro'], Decimal('8000'))  # 30.000 - 22.000
+        self.assertAlmostEqual(float(item['porcentaje_ahorro']), 26.66, places=1)
+        self.assertEqual(item['cantidad_cotizaciones'], 2)
+
+    def test_vista_renderiza_tabla_comparativa_de_insumos(self):
+        respuesta = self.client.get(reverse('comparar_cotizaciones'))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn('tablaResumenInsumos', respuesta.content.decode('utf-8'))
+        self.assertIn('Comparador de Insumos', respuesta.content.decode('utf-8'))

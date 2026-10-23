@@ -1,0 +1,381 @@
+{% extends 'core/base_admin.html' %}
+{% load formato %}
+
+{% block titulo %}Comparador y estudio de mercado{% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor">
+  <section class="crud-tarjeta-marco cotiz">
+
+    <div class="crud-cabecera-fila">
+      <div class="crud-enlace-superior">
+        <a href="{% url 'gestion_inventario' %}?tab=proveedores" class="crud-link-admin">← Volver a gestión de inventario y proveedores</a>
+      </div>
+      <div class="crud-titulo-accion" style="padding-inline: 0;">
+        <h1 class="crud-titulo-principal">Comparador y estudio de mercado</h1>
+      </div>
+      <p class="cotiz__bajada">
+        Analice opciones de compra por materia prima, compare cotizaciones de molineras con flete y revise precios de referencia en el mercado.
+      </p>
+    </div>
+
+    <!-- NAVEGACIÓN ENTRE PESTAÑAS -->
+    <div class="crud-pestanas-nav" style="margin-top: 18px; margin-bottom: 24px;">
+      <button type="button" class="crud-pestana-btn {% if tab_activa == 'insumos' %}activa{% endif %}" id="tabBtn_insumos" onclick="cambiarPestanaComparador('insumos')">
+        🌾 Comparador de Insumos ({{ resumen_insumos|length }})
+      </button>
+      <button type="button" class="crud-pestana-btn {% if tab_activa == 'molineras' %}activa{% endif %}" id="tabBtn_molineras" onclick="cambiarPestanaComparador('molineras')">
+        🚚 Cotizaciones por Molinera {% if insumo %}({{ insumo.nombre }}){% endif %}
+      </button>
+      <button type="button" class="crud-pestana-btn {% if tab_activa == 'mercado' %}activa{% endif %}" id="tabBtn_mercado" onclick="cambiarPestanaComparador('mercado')">
+        🌐 Estudio de Mercado ODEPA
+      </button>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- PANEL 1: COMPARADOR GENERAL DE INSUMOS                                    -->
+    <!-- ========================================================================= -->
+    <div id="panel_insumos" class="comparador-panel-seccion" style="display: {% if tab_activa == 'insumos' %}block{% else %}none{% endif %};">
+      <h2 class="cotiz__subtitulo">Resumen general de insumos y mejores proveedores</h2>
+      <p class="cotiz__nota cotiz__nota--arriba">
+        Esta tabla compara el precio registrado actualmente en cada materia prima frente a la mejor cotización recibida de proveedores y molineras.
+      </p>
+
+      <div class="crud-tabla-responsive">
+        <table class="crud-tabla-pantallazo" id="tablaResumenInsumos">
+          <thead>
+            <tr>
+              <th style="width: 8%;">ID</th>
+              <th style="width: 20%;">Materia prima</th>
+              <th style="width: 11%;">Stock en bodega</th>
+              <th style="width: 15%;">Proveedor actual</th>
+              <th style="width: 12%;">Precio actual</th>
+              <th style="width: 16%;">Mejor proveedor cotizado</th>
+              <th style="width: 14%;">Mejor precio ofrecido</th>
+              <th style="width: 12%;">Oportunidad de ahorro</th>
+              <th style="width: 12%;">Acción</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in resumen_insumos %}
+              <tr class="{% if item.ahorro %}cotiz__fila-mejor{% endif %}">
+                <td class="crud-col-id">{{ item.insumo.codigo }}</td>
+                <td class="crud-col-nombre">
+                  <strong>{{ item.insumo.nombre }}</strong>
+                  <div style="font-size: 0.78rem; color: var(--texto-suave);">{{ item.insumo.kilos_por_saco|floatformat:"-2" }} kg por saco</div>
+                </td>
+                <td class="crud-col-centro">
+                  {{ item.insumo.stock_sacos }} sacos
+                  <div style="font-size: 0.78rem; color: var(--texto-suave);">({{ item.insumo.total_kg|floatformat:0 }} kg)</div>
+                </td>
+                <td class="crud-col-centro">
+                  {{ item.insumo.proveedor_nombre|default:"Sin asignar" }}
+                </td>
+                <td class="crud-col-centro">
+                  {% if item.precio_actual > 0 %}
+                    <strong>{{ item.precio_actual|clp }}</strong>
+                    {% if item.costo_kg_actual %}
+                      <div style="font-size: 0.78rem; color: var(--texto-suave);">{{ item.costo_kg_actual|clp }}/kg</div>
+                    {% endif %}
+                  {% else %}
+                    <span style="color: var(--texto-suave);">—</span>
+                  {% endif %}
+                </td>
+                <td class="crud-col-centro">
+                  {% if item.mejor_proveedor %}
+                    <strong style="color: #355325;">{{ item.mejor_proveedor.nombre_proveedor }}</strong>
+                    <div style="font-size: 0.76rem; color: var(--texto-suave);">{{ item.cantidad_cotizaciones }} cotización{{ item.cantidad_cotizaciones|pluralize:"es" }}</div>
+                  {% else %}
+                    <span style="color: var(--texto-suave);">Sin cotizaciones</span>
+                  {% endif %}
+                </td>
+                <td class="crud-col-centro">
+                  {% if item.mejor_precio %}
+                    <strong style="color: var(--cafe-oscuro);">{{ item.mejor_precio|clp }}</strong>
+                    {% if item.costo_kg_mejor %}
+                      <div style="font-size: 0.78rem; color: var(--texto-suave);">{{ item.costo_kg_mejor|clp }}/kg</div>
+                    {% endif %}
+                  {% else %}
+                    <span style="color: var(--texto-suave);">—</span>
+                  {% endif %}
+                </td>
+                <td class="crud-col-centro">
+                  {% if item.ahorro %}
+                    <span class="cotiz__sello" style="background-color: #527343;">Ahorra {{ item.ahorro|clp }}</span>
+                    <div style="font-size: 0.78rem; color: #355325; font-weight: 700; margin-top: 2px;">-{{ item.porcentaje_ahorro|floatformat:1 }}%</div>
+                  {% elif item.mejor_precio and item.precio_actual == item.mejor_precio %}
+                    <span style="font-size: 0.82rem; color: var(--texto-suave);">Mejor precio vigente</span>
+                  {% else %}
+                    <span style="color: var(--texto-suave);">—</span>
+                  {% endif %}
+                </td>
+                <td class="crud-col-centro">
+                  <a href="{% url 'comparar_cotizaciones' %}?insumo={{ item.insumo.pk }}&sacos=10&tab=molineras" class="crud-btn-accion crud-btn-editar" style="text-decoration: none; display: inline-block;">
+                    Comparar
+                  </a>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="9" class="admin-vacio">No hay insumos registrados en el inventario.</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- PANEL 2: COMPARADOR DETALLADO POR MOLINERA Y FLETE                        -->
+    <!-- ========================================================================= -->
+    <div id="panel_molineras" class="comparador-panel-seccion" style="display: {% if tab_activa == 'molineras' %}block{% else %}none{% endif %};">
+      <h2 class="cotiz__subtitulo">Comparación de cotizaciones con flete incluido</h2>
+
+      {# Filtro de cálculo: qué materia prima y cuántos sacos #}
+      <form method="get" action="{% url 'comparar_cotizaciones' %}" class="cotiz__filtros" id="formFiltroCotizacion">
+        <input type="hidden" name="tab" value="molineras">
+        <label class="cotiz__campo">
+          <span>Materia prima</span>
+          <select name="insumo" id="selectInsumoComparar" required>
+            <option value="" {% if not insumo %}selected{% endif %} disabled>Seleccione una materia prima…</option>
+            {% for i in insumos %}
+              <option value="{{ i.pk }}" {% if insumo and insumo.pk == i.pk %}selected{% endif %}>{{ i.codigo }} · {{ i.nombre }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="cotiz__campo cotiz__campo--corto">
+          <span>Sacos a comprar</span>
+          <input type="number" name="sacos" id="inputSacosComparar" min="1" max="100000" step="1" value="{{ sacos }}" required>
+        </label>
+        <button type="submit" class="cotiz__boton" id="btnCompararCotizaciones">Comparar</button>
+      </form>
+
+      {% if insumo %}
+        <p class="cotiz__resumen-pedido">
+          Pedido simulado de <strong>{{ sacos }} saco{{ sacos|pluralize }}</strong> de <strong>{{ insumo.nombre }}</strong>
+          ({{ kilos|floatformat:"-2" }} kg en total, {{ insumo.kilos_por_saco|floatformat:"-2" }} kg por saco).
+        </p>
+
+        {% if mejor %}
+          <div class="cotiz__mejor" role="status">
+            <span class="cotiz__mejor-icono" aria-hidden="true">★</span>
+            <div>
+              <strong>Menor costo: {{ mejor.proveedor.nombre_proveedor }} · {{ mejor.total|clp }}</strong>
+              <span>
+                {{ mejor.materia_prima|clp }} de materia prima + {{ mejor.flete|clp }} de flete.
+                {% if ahorro_maximo %}Ahorra hasta {{ ahorro_maximo|clp }} frente a la opción más cara.{% elif opciones|length == 1 %}Es la única cotización registrada para esta materia prima.{% endif %}
+              </span>
+            </div>
+          </div>
+
+          <div class="crud-tabla-responsive">
+            <table class="crud-tabla-pantallazo cotiz__tabla" id="tablaCotizaciones">
+              <thead>
+                <tr>
+                  <th style="width: 5%;">#</th>
+                  <th style="width: 22%;">Molinera</th>
+                  <th style="width: 14%;">Precio por saco</th>
+                  <th style="width: 14%;">Materia prima</th>
+                  <th style="width: 12%;">Flete</th>
+                  <th style="width: 14%;">Costo total</th>
+                  <th style="width: 11%;">Costo por kg</th>
+                  <th style="width: 12%;">Diferencia</th>
+                  <th style="width: 10%;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for o in opciones %}
+                  <tr class="{% if o.es_mejor or o.empata_mejor %}cotiz__fila-mejor{% endif %}">
+                    <td class="crud-col-id">{{ forloop.counter }}</td>
+                    <td class="crud-col-nombre">
+                      {{ o.proveedor.nombre_proveedor }}
+                      {% if o.es_mejor %}<span class="cotiz__sello">Menor costo</span>{% elif o.empata_mejor %}<span class="cotiz__sello cotiz__sello--empate">Empata</span>{% endif %}
+                    </td>
+                    <td class="crud-col-centro">{{ o.precio_saco|clp }}</td>
+                    <td class="crud-col-centro">{{ o.materia_prima|clp }}</td>
+                    <td class="crud-col-centro">{{ o.flete|clp }}</td>
+                    <td class="crud-col-centro cotiz__total">{{ o.total|clp }}</td>
+                    <td class="crud-col-centro">{{ o.costo_kg|clp }}</td>
+                    <td class="crud-col-centro">
+                      {% if o.diferencia %}<span class="cotiz__mas">+{{ o.diferencia|clp }}</span>{% else %}—{% endif %}
+                    </td>
+                    <td class="crud-col-centro">
+                      <form method="post" action="{% url 'eliminar_cotizacion' o.cotizacion.pk %}"
+                            onsubmit="return confirm('¿Eliminar la cotización de {{ o.proveedor.nombre_proveedor|escapejs }}?');">
+                        {% csrf_token %}
+                        <input type="hidden" name="sacos" value="{{ sacos }}">
+                        <button type="submit" class="crud-btn-accion crud-btn-eliminar">Eliminar</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="cotiz__nota">
+            Costo total = precio por saco × {{ sacos }} saco{{ sacos|pluralize }} + flete de la molinera (un solo flete por pedido).
+          </p>
+        {% else %}
+          <p class="admin-vacio cotiz__vacio">Aún no hay cotizaciones registradas para esta materia prima. Puedes registrar una abajo.</p>
+        {% endif %}
+      {% else %}
+        <p class="admin-vacio cotiz__vacio">Seleccione una materia prima arriba y presione «Comparar» para ver el desglose por molinera.</p>
+      {% endif %}
+
+      {# Registro de cotizaciones #}
+      <hr class="admin-hr">
+      <h2 class="cotiz__subtitulo">Registrar o actualizar cotización de una molinera</h2>
+      {% if proveedores and insumos %}
+        <form method="post" action="{% url 'guardar_cotizacion' %}" class="cotiz__filtros" id="formGuardarCotizacion">
+          {% csrf_token %}
+          <input type="hidden" name="sacos" value="{{ sacos }}">
+          <label class="cotiz__campo">
+            <span>Materia prima</span>
+            <select name="insumo_id" required>
+              <option value="" {% if not insumo %}selected{% endif %} disabled>Seleccione…</option>
+              {% for i in insumos %}
+                <option value="{{ i.pk }}" {% if insumo and insumo.pk == i.pk %}selected{% endif %}>{{ i.codigo }} · {{ i.nombre }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="cotiz__campo">
+            <span>Molinera</span>
+            <select name="proveedor_id" required>
+              <option value="" selected disabled>Seleccione…</option>
+              {% for p in proveedores %}
+                <option value="{{ p.pk }}">{{ p.nombre_proveedor }} (flete {{ p.costo_flete|clp }})</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="cotiz__campo cotiz__campo--corto">
+            <span>Precio por saco ($)</span>
+            <input type="text" name="precio_saco" inputmode="numeric" placeholder="Ej: 14500" required>
+          </label>
+          <button type="submit" class="cotiz__boton" id="btnGuardarCotizacion">Guardar cotización</button>
+        </form>
+        <p class="cotiz__nota">Si la molinera ya cotizó esa materia prima, se actualizará su precio. El costo de flete se edita en la pestaña Proveedores de Gestión de inventario.</p>
+      {% else %}
+        <p class="admin-vacio cotiz__vacio">
+          Para cotizar necesita al menos una materia prima y un proveedor registrados en
+          <a class="crud-link-admin" href="{% url 'gestion_inventario' %}">Gestión de inventario</a>.
+        </p>
+      {% endif %}
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- PANEL 3: ESTUDIO DE MERCADO ODEPA                                         -->
+    <!-- ========================================================================= -->
+    <div id="panel_mercado" class="comparador-panel-seccion" style="display: {% if tab_activa == 'mercado' %}block{% else %}none{% endif %};">
+      <h2 class="cotiz__subtitulo">Estudio de mercado (ODEPA)</h2>
+      <p class="cotiz__nota cotiz__nota--arriba">
+        Precios semanales al consumidor en supermercados de todo Chile publicados por ODEPA. Permiten conocer los valores de referencia nacional por región y sector.
+      </p>
+
+      {% if insumo %}
+        <form method="post" action="{% url 'actualizar_precios_mercado' %}" class="cotiz__filtros" id="formMercado">
+          {% csrf_token %}
+          <input type="hidden" name="insumo_id" value="{{ insumo.pk }}">
+          <input type="hidden" name="sacos" value="{{ sacos }}">
+          <label class="cotiz__campo">
+            <span>Producto equivalente en ODEPA para «{{ insumo.nombre }}»</span>
+            <select name="producto_odepa" id="selectProductoOdepa" required>
+              <option value="" {% if not insumo.producto_odepa %}selected{% endif %} disabled>Seleccione un producto…</option>
+              {% for p in productos_odepa %}
+                <option value="{{ p }}" {% if insumo.producto_odepa == p %}selected{% endif %}>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <button type="submit" class="cotiz__boton cotiz__boton--verde" id="btnActualizarMercado">
+            {% if estudio %}Actualizar precios de mercado{% else %}Consultar precios de mercado{% endif %}
+          </button>
+        </form>
+
+        {% if estudio %}
+          <p class="cotiz__resumen-pedido">
+            <strong>{{ estudio.producto }}</strong> · semana del {{ estudio.fecha|date:"d/m/Y" }} · {{ estudio.cantidad_puntos }} puntos de venta · {{ estudio.unidad }}
+          </p>
+
+          <div class="cotiz__mercado-resumen">
+            <div class="cotiz__dato"><span>Promedio nacional</span><strong>{{ estudio.promedio|clp }}</strong></div>
+            <div class="cotiz__dato"><span>Más barato</span><strong>{{ estudio.minimo|clp }}</strong></div>
+            <div class="cotiz__dato"><span>Más caro</span><strong>{{ estudio.maximo|clp }}</strong></div>
+            {% if estudio.comparacion %}
+              <div class="cotiz__dato {% if estudio.comparacion.mas_barato_que_mercado %}cotiz__dato--bien{% else %}cotiz__dato--mal{% endif %}">
+                <span>Su mejor cotización (solo materia prima)</span>
+                <strong>{{ estudio.comparacion.tu_precio_kg|clp }} por kg</strong>
+                <small>
+                  {% if estudio.comparacion.mas_barato_que_mercado %}
+                    {{ estudio.comparacion.porcentaje|floatformat:0 }}% bajo el promedio de mercado
+                  {% else %}
+                    +{{ estudio.comparacion.porcentaje|floatformat:0 }}% sobre el promedio de mercado
+                  {% endif %}
+                </small>
+              </div>
+            {% endif %}
+          </div>
+
+          <h3 class="cotiz__sub-subtitulo">Dónde está más barato esta semana</h3>
+          <div class="crud-tabla-responsive">
+            <table class="crud-tabla-pantallazo cotiz__tabla" id="tablaMercado">
+              <thead>
+                <tr><th>#</th><th>Región</th><th>Sector</th><th>Tipo de punto</th><th>Mínimo</th><th>Promedio</th><th>Máximo</th></tr>
+              </thead>
+              <tbody>
+                {% for fila in estudio.mas_baratos %}
+                  <tr class="{% if forloop.first %}cotiz__fila-mejor{% endif %}">
+                    <td class="crud-col-id">{{ forloop.counter }}</td>
+                    <td class="crud-col-nombre">{{ fila.region }}</td>
+                    <td class="crud-col-centro">{{ fila.sector }}</td>
+                    <td class="crud-col-centro">{{ fila.tipo_punto }}</td>
+                    <td class="crud-col-centro">{{ fila.precio_minimo|clp }}</td>
+                    <td class="crud-col-centro cotiz__total">{{ fila.precio_promedio|clp }}</td>
+                    <td class="crud-col-centro">{{ fila.precio_maximo|clp }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if estudio.tendencia|length > 1 %}
+            <h3 class="cotiz__sub-subtitulo">Promedio nacional por semana</h3>
+            <ul class="cotiz__tendencia">
+              {% for punto in estudio.tendencia %}
+                <li><span>{{ punto.fecha|date:"d/m/Y" }}</span> <strong>{{ punto.promedio|clp }}</strong></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        {% else %}
+          <p class="admin-vacio cotiz__vacio">Elija el producto equivalente y presione «Consultar precios de mercado» para traer los precios de ODEPA.</p>
+        {% endif %}
+      {% else %}
+        <p class="admin-vacio cotiz__vacio">
+          Seleccione una materia prima en la pestaña <strong>Cotizaciones por Molinera</strong> para analizar su estudio de mercado.
+        </p>
+      {% endif %}
+    </div>
+
+  </section>
+</div>
+
+<script>
+function cambiarPestanaComparador(nombre) {
+  // Desactivar todos los botones y ocultar paneles
+  const botones = document.querySelectorAll('.crud-pestana-btn');
+  botones.forEach(b => b.classList.remove('activa'));
+
+  const paneles = document.querySelectorAll('.comparador-panel-seccion');
+  paneles.forEach(p => p.style.display = 'none');
+
+  // Activar botón y panel correspondiente
+  const btn = document.getElementById('tabBtn_' + nombre);
+  const panel = document.getElementById('panel_' + nombre);
+  if (btn) btn.classList.add('activa');
+  if (panel) panel.style.display = 'block';
+
+  // Actualizar parámetro en la URL sin recargar
+  const url = new URL(window.location);
+  url.searchParams.set('tab', nombre);
+  window.history.replaceState({}, '', url);
+}
+</script>
+{% endblock %}
