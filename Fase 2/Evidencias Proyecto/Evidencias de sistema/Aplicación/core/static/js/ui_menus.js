@@ -57,9 +57,30 @@ function toggleUsuarioMenu() {
 
 // Menú de administrador en base_admin.html
 function toggleAdminMenu() {
-  const dropdown = document.getElementById('adminDropdown');
-  if (dropdown) {
-    dropdown.classList.toggle('activo');
+  const adminDropdown = document.getElementById('adminDropdown');
+  const notifDropdown = document.getElementById('notifDropdown');
+
+  // Cierra el menú de la campana si está abierto
+  if (notifDropdown) {
+    notifDropdown.classList.remove('activo');
+  }
+
+  if (adminDropdown) {
+    adminDropdown.classList.toggle('activo');
+  }
+}
+
+// Menú de notificaciones/campana en base_admin.html
+function toggleNotifMenu() {
+  const notifDropdown = document.getElementById('notifDropdown');
+  const adminDropdown = document.getElementById('adminDropdown');
+  const btnNotif = notifDropdown ? notifDropdown.querySelector('.admin-dropdown__toggle') : null;
+
+  if (adminDropdown) adminDropdown.classList.remove('activo');
+
+  if (notifDropdown) {
+    const estaActivo = notifDropdown.classList.toggle('activo');
+    if (btnNotif) btnNotif.setAttribute('aria-expanded', estaActivo);
   }
 }
 
@@ -81,6 +102,11 @@ window.addEventListener('click', function (e) {
   const adminDropdown = document.getElementById('adminDropdown');
   if (adminDropdown && !adminDropdown.contains(e.target)) {
     adminDropdown.classList.remove('activo');
+  }
+
+  const notifDropdown = document.getElementById('notifDropdown');
+  if (notifDropdown && !notifDropdown.contains(e.target)) {
+    notifDropdown.classList.remove('activo');
   }
 
   const cajeroDropdown = document.getElementById('cajeroDropdown');

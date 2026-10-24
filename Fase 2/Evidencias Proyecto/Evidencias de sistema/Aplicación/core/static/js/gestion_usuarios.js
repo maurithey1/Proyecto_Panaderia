@@ -61,18 +61,37 @@ function toggleCampoCajaEditar() {
 // --- MODAL DESACTIVAR PERSONAL ---
 function abrirModalDesactivarUsuario(id, username) {
   const modal = document.getElementById('modalDesactivarUsuario');
+  const form = document.getElementById('formDesactivarUsuario');
   const txtUsername = document.getElementById('desactivar_username');
-  const btnConfirmar = document.getElementById('btnConfirmarDesactivar');
   
-  if (!modal || !btnConfirmar) return;
+  if (!modal || !form) return;
 
   if (txtUsername) txtUsername.textContent = username;
-  btnConfirmar.href = `/panel-admin/usuarios/personal/eliminar/${id}/`;
+  form.action = `/panel-admin/usuarios/desactivar/${id}/`;
 
   modal.showModal();
 }
 
 function cerrarModalDesactivarUsuario() {
   const modal = document.getElementById('modalDesactivarUsuario');
+  if (modal) modal.close();
+}
+
+// --- MODAL REACTIVAR PERSONAL ---
+function abrirModalReactivarUsuario(id, username) {
+  const modal = document.getElementById('modalReactivarUsuario');
+  const form = document.getElementById('formReactivarUsuario');
+  const txtUsername = document.getElementById('reactivar_username');
+  
+  if (!modal || !form) return;
+
+  if (txtUsername) txtUsername.textContent = username;
+  form.action = `/panel-admin/usuarios/reactivar/${id}/`;
+
+  modal.showModal();
+}
+
+function cerrarModalReactivarUsuario() {
+  const modal = document.getElementById('modalReactivarUsuario');
   if (modal) modal.close();
 }

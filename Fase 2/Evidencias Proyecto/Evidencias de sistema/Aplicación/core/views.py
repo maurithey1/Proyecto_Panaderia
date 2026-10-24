@@ -27,7 +27,7 @@ from django.core.cache import cache
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -62,7 +62,13 @@ def _turnos_activos():
 
 
 def inicio(request):
-    """Los 4 productos más vendidos (pedidos no cancelados), leídos de la BD."""
+    """Los 4 productos más vendidos. Redirige a paneles de gestión si es personal del sistema."""
+    if request.user.is_authenticated:
+        if getattr(request.user, 'es_administrador', False):
+            return redirect('inicio_admin')
+        elif getattr(request.user, 'es_cajero', False):
+            return redirect('inicio_cajero')
+        
     _expirar_pedidos_webpay_vencidos()
     estados_validos = [estado for estado, _ in Pedido.ESTADOS if estado != 'CANCELADO']
 
@@ -1117,21 +1123,6 @@ def editar_personal(request, pk):
 
 @admin_required
 @require_POST
-def eliminar_personal(request, pk):
-    user = get_object_or_404(Usuario, pk=pk)
-
-    if user == request.user:
-        messages.error(request, 'No puedes desactivar tu propia cuenta de administrador en uso.')
-        return redirect('gestion_usuarios')
-
-    user.is_active = False
-    user.save()
-    messages.warning(request, f'El usuario "{user.username}" ha sido desactivado del sistema.')
-    return redirect('gestion_usuarios')
-
-
-@admin_required
-@require_POST
 def desactivar_usuario(request, pk):
     usuario = get_object_or_404(Usuario, pk=pk)
     if usuario.pk == request.user.pk:
@@ -1141,6 +1132,16 @@ def desactivar_usuario(request, pk):
     usuario.is_active = False
     usuario.save()
     messages.success(request, f'El usuario {usuario.username} ha sido desactivado.')
+    return redirect('gestion_usuarios')
+
+
+@admin_required
+@require_POST
+def reactivar_usuario(request, pk):
+    usuario = get_object_or_404(Usuario, pk=pk)
+    usuario.is_active = True
+    usuario.save()
+    messages.success(request, f'El usuario "{usuario.username}" ha sido reactivado exitosamente.')
     return redirect('gestion_usuarios')
 
 
@@ -1746,6 +1747,52 @@ def eliminar_proveedor(request, pk):
     messages.warning(request, f'El proveedor "{nombre}" ha sido eliminado.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
+
+
+@admin_required
+def lista_notificaciones(request):
+    """
+    Vista principal del centro de notificaciones con filtros tipo Gmail y soporte de lectura.
+    """
+    filtro_tipo = request.GET.get('tipo', 'TODOS')
+    filtro_estado = request.GET.get('estado', 'TODOS')
+
+    notificaciones = Notificacion.objects.all()
+
+    if filtro_tipo != 'TODOS':
+        notificaciones = notificaciones.filter(tipo=filtro_tipo)
+
+    if filtro_estado == 'NO_LEIDAS':
+        notificaciones = notificaciones.filter(leida=False)
+
+    contexto = {
+        'notificaciones': notificaciones,
+        'filtro_tipo': filtro_tipo,
+        'filtro_estado': filtro_estado,
+        'total_no_leidas': Notificacion.objects.filter(leida=False).count(),
+    }
+    return render(request, 'core/gestion_notificaciones.html', contexto)
+
+
+@admin_required
+@require_POST
+def marcar_notificacion_leida(request, pk):
+    notificacion = get_object_or_404(Notificacion, pk=pk)
+    notificacion.leida = True
+    notificacion.save()
+    
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True})
+        
+    return redirect('lista_notificaciones')
+
+
+@admin_required
+@require_POST
+def marcar_todas_leidas(request):
+    Notificacion.objects.filter(leida=False).update(leida=True)
+    messages.success(request, 'Todas las notificaciones han sido marcadas como leídas.')
+    return redirect('lista_notificaciones')
 
 
 # ==========================================

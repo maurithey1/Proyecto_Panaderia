@@ -55,13 +55,24 @@
                   ✏️ Editar
                 </button>
                 {% if u.pk != request.user.pk %}
-                  <button 
-                    type="button" 
-                    class="boton-tabla boton-tabla--danger"
-                    onclick="abrirModalDesactivarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}')"
-                  >
-                    🗑️ Desactivar
-                  </button>
+                  {% if u.is_active %}
+                    <button 
+                      type="button" 
+                      class="boton-tabla boton-tabla--danger"
+                      onclick="abrirModalDesactivarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}')"
+                    >
+                      🗑️ Desactivar
+                    </button>
+                  {% else %}
+                    <button 
+                      type="button" 
+                      class="boton-tabla"
+                      style="color: var(--exito, #2e7d32); border-color: var(--exito, #2e7d32);"
+                      onclick="abrirModalReactivarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}')"
+                    >
+                      🔄 Reactivar
+                    </button>
+                  {% endif %}
                 {% endif %}
               </td>
             </tr>
@@ -231,6 +242,25 @@
       <button type="button" class="boton boton--contorno" onclick="cerrarModalDesactivarUsuario()">Cancelar</button>
       <button type="submit" class="boton boton--primario" style="background-color: var(--terracota); border-color: var(--terracota);">
         Sí, Desactivar
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<!-- MODAL 4: CONFIRMAR REACTIVACIÓN DE PERSONAL -->
+<dialog id="modalReactivarUsuario" class="admin-modal">
+  <form method="POST" id="formReactivarUsuario" action="" class="admin-modal__content">
+    {% csrf_token %}
+    <h3>Reactivar Usuario</h3>
+    
+    <p style="margin-block: 16px; color: var(--texto-suave);">
+      ¿Desea restablecer el acceso al sistema para el usuario <strong id="reactivar_username" style="color: var(--cafe-oscuro);"></strong>?
+    </p>
+
+    <div class="registro-acciones">
+      <button type="button" class="boton boton--contorno" onclick="cerrarModalReactivarUsuario()">Cancelar</button>
+      <button type="submit" class="boton boton--primario">
+        Sí, Reactivar
       </button>
     </div>
   </form>

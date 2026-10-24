@@ -1607,6 +1607,183 @@ main { flex: 1; }
 }
 
 /* ----------------------------------------------------------
+   NOTIFICACIONES DE ALERTAS STOCK MINIMO INSUMOS/PRODUCTOS
+   ---------------------------------------------------------- */
+
+/* Badge de la campana */
+.badge-contador-campana {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background-color: var(--terracota, #d9534f);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 50%;
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+/* Pestañas de filtrado */
+.notif-filtros-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.notif-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.notif-tab {
+  padding: 8px 16px;
+  border-radius: 20px;
+  background-color: var(--crema-1, #f9f6f0);
+  color: var(--texto-base);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 500;
+}
+
+.notif-tab--activa {
+  background-color: var(--cafe-oscuro, #4a2c11);
+  color: #ffffff;
+}
+
+.notif-lista-gmail {
+  width: 100%;
+}
+
+/* Filas Estilo Gmail */
+.gmail-row {
+  display: grid;
+  grid-template-columns: 20px 165px 1fr 185px 40px; /* Columna central expandible */
+  align-items: center;
+  gap: 16px; /* Separación amplia entre cada sección de la fila */
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--borde);
+  transition: background-color 0.15s ease;
+}
+
+.gmail-col-content {
+  display: flex;
+  flex-direction: column; /* Sitúa el mensaje descriptivo debajo del título */
+  gap: 3px;
+  min-width: 0; /* Previene desbordes en grid */
+}
+
+.gmail-titulo {
+  font-size: 0.93rem;
+  line-height: 1.35;
+  color: var(--cafe-oscuro);
+}
+
+.gmail-separador {
+  display: none; /* Oculta el guión horizontal para usar diseño apilado limpio */
+}
+
+.gmail-mensaje {
+  font-size: 0.86rem;
+  color: var(--texto-suave);
+  line-height: 1.4;
+  font-weight: 400; /* Se mantiene normal aunque la fila esté sin leer */
+}
+
+.gmail-row--unread {
+  background-color: #ffffff;
+  font-weight: 700;
+}
+
+.gmail-row--unread .gmail-titulo {
+  color: var(--cafe-oscuro, #2b1810);
+  font-weight: 700;
+}
+
+.gmail-row--read {
+  background-color: #faf8f5;
+  color: var(--texto-suave, #666);
+  font-weight: 400;
+}
+
+.gmail-row--read .gmail-titulo {
+  font-weight: 500;
+}
+
+.punto-no-leido {
+  color: var(--terracota, #d9534f);
+  font-size: 1.1rem;
+}
+
+.gmail-col-fecha {
+  font-size: 0.82rem;
+  color: var(--texto-suave);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.badge--notif-insumo { background-color: #fff3cd; color: #856404; }
+.badge--notif-producto { background-color: #f8d7da; color: #721c24; }
+.badge--notif-mercado { background-color: #d4edda; color: #155724; }
+
+/* Ancho y desplazamiento para el menú de la campana */
+.admin-dropdown__menu--notif {
+  width: 360px;
+  max-width: 90vw;
+  padding: 10px 0;
+}
+
+.notif-dropdown-lista {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: hidden; /* Elimina la barra horizontal */
+  display: flex;
+  flex-direction: column;
+}
+
+.notif-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  text-decoration: none;
+  color: var(--cafe-oscuro);
+  border-bottom: 1px solid var(--borde);
+  transition: background-color 0.15s ease;
+  white-space: normal; /* Permite el salto de línea automático */
+  word-wrap: break-word; /* Evita que palabras largas fuercen scrollbar */
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item:hover {
+  background-color: var(--crema-2);
+}
+
+.notif-item--no-leida {
+  background-color: #ffffff;
+}
+
+.notif-titulo {
+  font-size: 0.88rem;
+  line-height: 1.4;
+  margin: 0;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.notif-fecha {
+  font-size: 0.78rem;
+  color: var(--texto-suave);
+  margin-top: 2px;
+}
+
+/* ----------------------------------------------------------
    DROPDOWN DEL ADMINISTRADOR Y TABLAS DE GESTIÓN
    ---------------------------------------------------------- */
 

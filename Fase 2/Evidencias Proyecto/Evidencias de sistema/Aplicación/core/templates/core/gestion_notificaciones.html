@@ -1,0 +1,99 @@
+{% extends 'core/base_admin.html' %}
+{% load static %}
+
+{% block titulo %}Centro de Notificaciones y Alertas{% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor">
+
+  <div class="admin-page-header">
+    <div>
+      <h1 class="admin-panel__titulo" style="text-align: left; margin-bottom: 4px;">Centro de Alertas del Sistema</h1>
+      <p style="color: var(--texto-suave); font-size: 0.9rem;">
+        Revisión y control de avisos automáticos de stock mínimo y compras inteligentes.
+      </p>
+    </div>
+
+    <form method="POST" action="{% url 'marcar_todas_leidas' %}">
+      {% csrf_token %}
+      <button type="submit" class="boton boton--contorno">
+        ✓ Marcar todas como leídas
+      </button>
+    </form>
+  </div>
+
+  <!-- FILTROS TIPO GMAIL -->
+  <div class="notif-filtros-bar">
+    <div class="notif-tabs">
+      <a href="?tipo=TODOS&estado={{ filtro_estado }}" class="notif-tab {% if filtro_tipo == 'TODOS' %}notif-tab--activa{% endif %}">
+        Todas
+      </a>
+      <a href="?tipo=INSUMO&estado={{ filtro_estado }}" class="notif-tab {% if filtro_tipo == 'INSUMO' %}notif-tab--activa{% endif %}">
+        📦 Materia Prima / Insumos
+      </a>
+      <a href="?tipo=PRODUCTO&estado={{ filtro_estado }}" class="notif-tab {% if filtro_tipo == 'PRODUCTO' %}notif-tab--activa{% endif %}">
+        🥖 Productos de Catálogo
+      </a>
+      <a href="?tipo=MERCADO&estado={{ filtro_estado }}" class="notif-tab {% if filtro_tipo == 'MERCADO' %}notif-tab--activa{% endif %}">
+        💡 Oportunidades de Mercado
+      </a>
+    </div>
+
+    <div class="notif-subfiltros">
+      <a href="?tipo={{ filtro_tipo }}&estado=TODOS" class="subfiltro {% if filtro_estado == 'TODOS' %}subfiltro--activo{% endif %}">Ver Histórico</a>
+      <a href="?tipo={{ filtro_tipo }}&estado=NO_LEIDAS" class="subfiltro {% if filtro_estado == 'NO_LEIDAS' %}subfiltro--activo{% endif %}">Solo No Leídas ({{ total_no_leidas }})</a>
+    </div>
+  </div>
+
+  <!-- LISTA ESTILO GMAIL -->
+  <section class="admin-panel" style="padding: 0; overflow: hidden;">
+    <div class="notif-lista-gmail">
+      {% for n in notificaciones %}
+        <div class="gmail-row {% if not n.leida %}gmail-row--unread{% else %}gmail-row--read{% endif %}">
+          
+          <!-- Indicador lateral no leído -->
+          <div class="gmail-col-status">
+            {% if not n.leida %}
+              <span class="punto-no-leido" title="No leída">●</span>
+            {% endif %}
+          </div>
+
+          <!-- Tipo de Alerta -->
+          <div class="gmail-col-badge">
+            <span class="badge badge--notif-{{ n.tipo|lower }}">
+              {{ n.get_tipo_display }}
+            </span>
+          </div>
+
+          <!-- Título y Asunto (Negrita si es no leída) -->
+          <div class="gmail-col-content">
+            <span class="gmail-titulo">{{ n.titulo }}</span>
+            <span class="gmail-mensaje">{{ n.mensaje }}</span>
+          </div>
+
+          <!-- Fecha exacta DD/MM/AAAA - HH:MM:SS -->
+          <div class="gmail-col-fecha">
+            {{ n.fecha_creacion|date:"d/m/Y - H:i:s" }}
+          </div>
+
+          <!-- Acción rápida -->
+          <div class="gmail-col-acciones">
+            {% if not n.leida %}
+              <form method="POST" action="{% url 'marcar_notificacion_leida' n.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="boton-tabla" title="Marcar como leída">✓</button>
+              </form>
+            {% endif %}
+          </div>
+
+        </div>
+      {% empty %}
+        <div class="admin-vacio" style="padding: 40px;">
+          No se encontraron notificaciones que coincidan con los filtros seleccionados.
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+</div>
+{% endblock %}

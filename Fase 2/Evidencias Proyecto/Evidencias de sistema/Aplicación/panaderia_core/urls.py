@@ -15,9 +15,12 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, reverse_lazy
 from django.conf import settings
 from django.conf.urls.static import static
+
+# Configura el botón "VER EL SITIO" del Django Admin para ir al Dashboard del Administrador
+admin.site.site_url = reverse_lazy('inicio_admin')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

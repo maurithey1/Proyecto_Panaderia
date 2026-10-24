@@ -1,6 +1,7 @@
 import json
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 # ==========================================
 # 1. USUARIOS Y ROLES (AbstractUser + Perfiles)
@@ -417,6 +418,30 @@ class ProduccionDiaria(models.Model):
 
     def __str__(self):
         return f"Producción: {self.cantidad} un. de {self.producto.nombre} ({self.fecha_produccion.strftime('%d/%m/%Y')})"
+
+
+class Notificacion(models.Model):
+    TIPOS = (
+        ('INSUMO', 'Materia Prima / Insumo'),
+        ('PRODUCTO', 'Producto de Catálogo'),
+        ('MERCADO', 'Oportunidad de Mercado'),  # Escalabilidad futura
+    )
+
+    tipo = models.CharField(max_length=20, choices=TIPOS, default='INSUMO')
+    titulo = models.CharField(max_length=150)
+    mensaje = models.TextField()
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, null=True, blank=True)
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, null=True, blank=True)
+    fecha_creacion = models.DateTimeField(default=timezone.now)
+    leida = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-fecha_creacion']
+        verbose_name = 'Notificación'
+        verbose_name_plural = 'Notificaciones'
+
+    def __str__(self):
+        return f"[{self.get_tipo_display()}] {self.titulo} - {'Leída' if self.leida else 'No leída'}"
 
 
 # ==========================================

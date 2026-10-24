@@ -66,6 +66,10 @@
     <symbol id="i-filtro" viewBox="0 0 24 24">
       <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
     </symbol>
+    <symbol id="i-campana" viewBox="0 0 24 24">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </symbol>
   </svg>
 
   <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -89,6 +93,42 @@
       </nav>
 
       <div class="admin-cabecera__acciones">
+        <!-- Campana de Notificaciones -->
+        <div class="admin-dropdown" id="notifDropdown">
+          <button type="button" class="admin-dropdown__toggle" onclick="toggleNotifMenu()" aria-expanded="false" style="position: relative; padding: 6px 10px;">
+            <svg class="icono" aria-hidden="true"><use href="#i-campana"/></svg>
+            {% if cant_notificaciones_no_leidas > 0 %}
+              <span class="badge-contador-campana">{{ cant_notificaciones_no_leidas }}</span>
+            {% endif %}
+          </button>
+
+          <div class="admin-dropdown__menu admin-dropdown__menu--notif" id="notifMenu">
+            <div class="admin-dropdown__header" style="display: flex; justify-content: space-between; align-items: center;">
+              <strong>Alertas del Sistema</strong>
+              <small style="color: var(--terracota);">{{ cant_notificaciones_no_leidas }} no leídas</small>
+            </div>
+            <hr class="admin-dropdown__divider">
+
+            <div class="notif-dropdown-lista">
+              {% for n in notificaciones_dropdown %}
+                <a href="{% url 'lista_notificaciones' %}" class="notif-item {% if not n.leida %}notif-item--no-leida{% endif %}">
+                  <span class="badge badge--notif-{{ n.tipo|lower }}">{{ n.get_tipo_display }}</span>
+                  <strong class="notif-titulo">{{ n.titulo }}</strong>
+                  <small class="notif-fecha">{{ n.fecha_creacion|date:"d/m/Y - H:i:s" }}</small>
+                </a>
+              {% empty %}
+                <div style="padding: 12px; text-align: center; color: var(--texto-suave); font-size: 0.85rem;">
+                  No hay alertas recientes.
+                </div>
+              {% endfor %}
+            </div>
+
+            <hr class="admin-dropdown__divider">
+            <a href="{% url 'lista_notificaciones' %}" class="admin-dropdown__item" style="text-align: center; font-weight: 500; color: var(--cafe);">
+              Ver todas las notificaciones →
+            </a>
+          </div>
+        </div>
 
         <!-- Menú Desplegable del Administrador -->
         <div class="admin-dropdown" id="adminDropdown">
