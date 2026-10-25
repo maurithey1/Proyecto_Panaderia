@@ -109,10 +109,15 @@
                     <span style="color: var(--texto-suave);">—</span>
                   {% endif %}
                 </td>
-                <td class="crud-col-centro">
-                  <a href="{% url 'comparar_cotizaciones' %}?insumo={{ item.insumo.pk }}&sacos=10&tab=molineras" class="crud-btn-accion crud-btn-editar" style="text-decoration: none; display: inline-block;">
-                    Comparar
-                  </a>
+                <td class="crud-col-centro" style="white-space: nowrap;">
+                  <div style="display: flex; gap: 4px; justify-content: center;">
+                    <a href="{% url 'comparar_cotizaciones' %}?insumo={{ item.insumo.pk }}&sacos=10&tab=molineras" class="crud-btn-accion crud-btn-editar" style="text-decoration: none; display: inline-block;">
+                      Comparar
+                    </a>
+                    <a href="{% url 'crear_orden_compra' %}?insumo={{ item.insumo.pk }}{% if item.mejor_proveedor %}&proveedor={{ item.mejor_proveedor.pk }}{% endif %}" class="crud-btn-accion" style="text-decoration: none; display: inline-block; background: var(--cafe-oscuro); color: #ffffff;" title="Generar Orden de Compra formal para este insumo (RQF9)">
+                      + Orden
+                    </a>
+                  </div>
                 </td>
               </tr>
             {% empty %}
@@ -199,13 +204,18 @@
                     <td class="crud-col-centro">
                       {% if o.diferencia %}<span class="cotiz__mas">+{{ o.diferencia|clp }}</span>{% else %}—{% endif %}
                     </td>
-                    <td class="crud-col-centro">
-                      <form method="post" action="{% url 'eliminar_cotizacion' o.cotizacion.pk %}"
-                            onsubmit="return confirm('¿Eliminar la cotización de {{ o.proveedor.nombre_proveedor|escapejs }}?');">
-                        {% csrf_token %}
-                        <input type="hidden" name="sacos" value="{{ sacos }}">
-                        <button type="submit" class="crud-btn-accion crud-btn-eliminar">Eliminar</button>
-                      </form>
+                    <td class="crud-col-centro" style="white-space: nowrap;">
+                      <div style="display: flex; gap: 4px; justify-content: center; align-items: center;">
+                        <a href="{% url 'crear_orden_compra' %}?proveedor={{ o.proveedor.pk }}&insumo={{ insumo.pk }}" class="crud-btn-accion" style="text-decoration: none; background: #2e6024; color: #ffffff; padding: 4px 8px; border-radius: 4px; font-weight: 700; font-size: 0.74rem;" title="Generar Orden de Compra formal para {{ o.proveedor.nombre_proveedor }} (RQF9)">
+                          + Orden
+                        </a>
+                        <form method="post" action="{% url 'eliminar_cotizacion' o.cotizacion.pk %}"
+                              onsubmit="return confirm('¿Eliminar la cotización de {{ o.proveedor.nombre_proveedor|escapejs }}?');" style="margin: 0;">
+                          {% csrf_token %}
+                          <input type="hidden" name="sacos" value="{{ sacos }}">
+                          <button type="submit" class="crud-btn-accion crud-btn-eliminar">Eliminar</button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}

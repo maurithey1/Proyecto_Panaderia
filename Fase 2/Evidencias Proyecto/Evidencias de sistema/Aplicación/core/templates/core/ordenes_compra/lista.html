@@ -1,0 +1,240 @@
+{% extends 'core/base_admin.html' %}
+{% load formato %}
+{% load static %}
+
+{% block titulo %}Órdenes de Compra a Molineras (RQF9){% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor">
+
+  <!-- TARJETAS DE MÉTRICAS RQF9 -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px;">
+    
+    <div style="background: #ffffff; border-radius: 12px; padding: 18px 20px; border: 1px solid #ebdcd0; box-shadow: 0 2px 8px rgba(74, 46, 24, 0.04);">
+      <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cafe-claro); font-weight: 700; margin-bottom: 6px;">Total Órdenes Emitidas</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: var(--cafe-oscuro); font-family: 'Young Serif', serif;">{{ total_ordenes }}</div>
+      <div style="font-size: 0.8rem; color: var(--texto-suave); margin-top: 4px;">Documentos formales generados</div>
+    </div>
+
+    <div style="background: #ffffff; border-radius: 12px; padding: 18px 20px; border: 1px solid #ebdcd0; box-shadow: 0 2px 8px rgba(74, 46, 24, 0.04);">
+      <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cafe-claro); font-weight: 700; margin-bottom: 6px;">Inversión en Materias Primas</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: #2e6024; font-family: 'Young Serif', serif;">{{ monto_total_compras|clp }}</div>
+      <div style="font-size: 0.8rem; color: var(--texto-suave); margin-top: 4px;">Órdenes activas y recibidas</div>
+    </div>
+
+    <div style="background: #ffffff; border-radius: 12px; padding: 18px 20px; border: 1px solid #ebdcd0; box-shadow: 0 2px 8px rgba(74, 46, 24, 0.04);">
+      <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cafe-claro); font-weight: 700; margin-bottom: 6px;">Pendientes de Entrega</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: #b45309; font-family: 'Young Serif', serif;">{{ ordenes_pendientes }}</div>
+      <div style="font-size: 0.8rem; color: var(--texto-suave); margin-top: 4px;">En tránsito o coordinación</div>
+    </div>
+
+    <div style="background: #ffffff; border-radius: 12px; padding: 18px 20px; border: 1px solid #ebdcd0; box-shadow: 0 2px 8px rgba(74, 46, 24, 0.04);">
+      <div style="font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cafe-claro); font-weight: 700; margin-bottom: 6px;">Recepcionadas en Bodega</div>
+      <div style="font-size: 1.8rem; font-weight: 800; color: #1e3a8a; font-family: 'Young Serif', serif;">{{ ordenes_recibidas }}</div>
+      <div style="font-size: 0.8rem; color: var(--texto-suave); margin-top: 4px;">Insumos integrados a stock</div>
+    </div>
+
+  </div>
+
+  <!-- SECCIÓN PRINCIPAL -->
+  <section class="crud-tarjeta-marco">
+
+    <div class="crud-cabecera-fila" style="border-bottom: 1px solid #f0e6dd; padding-bottom: 18px; margin-bottom: 20px;">
+      <div class="crud-titulo-accion" style="padding-inline: 0; width: 100%; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #f7ede2; color: var(--cafe-oscuro); font-size: 0.76rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; border: 1px solid #e8d7be;">RQF9</span>
+            <h1 class="crud-titulo-principal" style="margin: 0;">Órdenes de Compra a Molineras</h1>
+          </div>
+          <p class="cotiz__bajada" style="margin-top: 6px; margin-bottom: 0;">
+            Emisión formal de requerimientos de abastecimiento de materias primas con generación de documento PDF y despacho directo vía correo electrónico.
+          </p>
+        </div>
+
+        <div>
+          <a href="{% url 'crear_orden_compra' %}" class="crud-btn-primario" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; border-radius: 8px; box-shadow: 0 4px 10px rgba(74, 46, 24, 0.15);">
+            <span style="font-size: 1.2rem; line-height: 1;">+</span> Generar Orden de Compra
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- BARRA DE FILTROS Y BÚSQUEDA -->
+    <form method="get" class="crud-filtros-fila" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #faf6f0; padding: 14px 16px; border-radius: 10px; border: 1px solid #eddcd0;">
+      <div style="flex: 1; min-width: 220px;">
+        <input type="text" name="q" value="{{ busqueda }}" placeholder="Buscar por código, molinera o contacto..." class="crud-input-filtro" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #d4c2b2; font-size: 0.9rem;">
+      </div>
+
+      <div style="min-width: 180px;">
+        <select name="proveedor" class="crud-select-filtro" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #d4c2b2; font-size: 0.9rem;">
+          <option value="">Todos los Proveedores</option>
+          {% for p in proveedores %}
+            <option value="{{ p.pk }}" {% if proveedor_id == p.pk|stringformat:"s" %}selected{% endif %}>{{ p.nombre_proveedor }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="min-width: 160px;">
+        <select name="estado" class="crud-select-filtro" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid #d4c2b2; font-size: 0.9rem;">
+          <option value="">Todos los Estados</option>
+          {% for val, nom in estados_choices %}
+            <option value="{{ val }}" {% if estado_filtro == val %}selected{% endif %}>{{ nom }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <button type="submit" class="crud-btn-secundario" style="padding: 8px 16px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #b89882; background: #ffffff; color: var(--cafe-oscuro);">
+          Filtrar
+        </button>
+        {% if busqueda or proveedor_id or estado_filtro %}
+          <a href="{% url 'lista_ordenes_compra' %}" style="margin-left: 8px; font-size: 0.85rem; color: var(--cafe-claro); text-decoration: underline;">Limpiar</a>
+        {% endif %}
+      </div>
+    </form>
+
+    <!-- TABLA DE ÓRDENES DE COMPRA -->
+    <div class="crud-tabla-responsive">
+      <table class="crud-tabla-pantallazo" style="width: 100%;">
+        <thead>
+          <tr>
+            <th style="width: 11%;">Código</th>
+            <th style="width: 12%;">Fecha Emisión</th>
+            <th style="width: 20%;">Molinera / Proveedor</th>
+            <th style="width: 20%;">Materias Primas</th>
+            <th style="width: 12%; text-align: right;">Total CLP</th>
+            <th style="width: 11%; text-align: center;">Estado</th>
+            <th style="width: 14%; text-align: center;">Acciones y Canales</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for orden in ordenes %}
+            <tr>
+              <!-- Código -->
+              <td class="crud-col-id">
+                <strong>{{ orden.codigo }}</strong>
+              </td>
+
+              <!-- Fecha -->
+              <td>
+                <div style="font-weight: 500;">{{ orden.fecha_emision|date:"d/m/Y" }}</div>
+                <div style="font-size: 0.75rem; color: var(--texto-suave);">{{ orden.fecha_emision|date:"H:i" }} hrs</div>
+              </td>
+
+              <!-- Proveedor -->
+              <td>
+                <strong>{{ orden.proveedor.nombre_proveedor }}</strong>
+                <div style="font-size: 0.78rem; color: var(--texto-suave);">
+                  RUT: {{ orden.proveedor.rut }}
+                  {% if orden.contacto_nombre and orden.contacto_nombre != orden.proveedor.nombre_proveedor %}
+                    <br>Contacto: {{ orden.contacto_nombre }}
+                  {% endif %}
+                </div>
+              </td>
+
+              <!-- Insumos incluidos -->
+              <td>
+                <div style="font-size: 0.85rem;">
+                  {% for det in orden.detalles.all %}
+                    <div style="margin-bottom: 2px;">
+                      • <strong>{{ det.cantidad_sacos }}</strong> sacos de {{ det.insumo.nombre }} <span style="color: var(--texto-suave);">({{ det.total_kilos|floatformat:0 }} kg)</span>
+                    </div>
+                  {% empty %}
+                    <span style="color: var(--texto-suave);">Sin ítems</span>
+                  {% endfor %}
+                </div>
+                {% if orden.costo_flete > 0 %}
+                  <div style="font-size: 0.74rem; color: #b45309; margin-top: 3px;">
+                    + Flete: {{ orden.costo_flete|clp }}
+                  </div>
+                {% endif %}
+              </td>
+
+              <!-- Total -->
+              <td style="text-align: right;">
+                <strong style="font-size: 1.05rem; color: var(--cafe-oscuro);">{{ orden.total|clp }}</strong>
+                <div style="font-size: 0.75rem; color: var(--texto-suave);">{{ orden.condiciones_pago|truncatechars:20 }}</div>
+              </td>
+
+              <!-- Estado -->
+              <td style="text-align: center;">
+                {% if orden.estado == 'EMITIDA' %}
+                  <span style="display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; background: #fef3c7; color: #92400e; border: 1px solid #fde68a;">
+                    Emitida
+                  </span>
+                {% elif orden.estado == 'ENVIADA' %}
+                  <span style="display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe;">
+                    Enviada
+                  </span>
+                {% elif orden.estado == 'RECEPCIONADA' %}
+                  <span style="display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; background: #dcfce7; color: #166534; border: 1px solid #bbf7d0;">
+                    ✓ En Bodega
+                  </span>
+                {% else %}
+                  <span style="display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;">
+                    Cancelada
+                  </span>
+                {% endif %}
+
+                <!-- Trazabilidad de envíos -->
+                <div style="display: flex; justify-content: center; gap: 8px; margin-top: 6px;">
+                  <span title="{% if orden.enviada_por_email %}Enviado por correo el {{ orden.fecha_envio_email|date:'d/m/Y H:i' }}{% else %}No enviado por correo aún{% endif %}" style="font-size: 0.85rem; opacity: {% if orden.enviada_por_email %}1{% else %}0.35{% endif %};">
+                    ✉️
+                  </span>
+                </div>
+              </td>
+
+              <!-- Acciones y Canales -->
+              <td style="text-align: center;">
+                <div style="display: flex; flex-direction: column; gap: 5px; align-items: stretch;">
+
+                  <!-- Botones PDF -->
+                  <div style="display: flex; gap: 4px; justify-content: center;">
+                    <a href="{% url 'ver_orden_compra_pdf' orden.pk %}" target="_blank" class="crud-btn-icono" title="Ver documento PDF" style="padding: 4px 8px; font-size: 0.78rem; text-decoration: none; background: #f5ece4; color: var(--cafe-oscuro); border-radius: 4px; border: 1px solid #e0cfc1; font-weight: 600;">
+                      👁️ Ver PDF
+                    </a>
+                    <a href="{% url 'descargar_orden_compra_pdf' orden.pk %}" class="crud-btn-icono" title="Descargar archivo PDF" style="padding: 4px 8px; font-size: 0.78rem; text-decoration: none; background: #f5ece4; color: var(--cafe-oscuro); border-radius: 4px; border: 1px solid #e0cfc1; font-weight: 600;">
+                      ⬇️ Descargar
+                    </a>
+                  </div>
+
+                  <!-- Botón de Despacho por Correo Electrónico -->
+                  <div style="display: flex; justify-content: center;">
+                    <a href="{% url 'enviar_orden_compra_email' orden.pk %}" onclick="return confirm('¿Desea enviar la orden de compra por correo electrónico a {{ orden.contacto_email|default:orden.proveedor.email }}?')" class="crud-btn-icono" title="Enviar PDF al correo de la molinera" style="width: 100%; padding: 4px 8px; font-size: 0.78rem; text-decoration: none; background: #e8f0fe; color: #1a73e8; border-radius: 4px; border: 1px solid #c2d7fa; font-weight: 600; text-align: center;">
+                      ✉️ Enviar por Correo
+                    </a>
+                  </div>
+
+                  <!-- Cambio de Estado Rápido -->
+                  {% if orden.estado != 'RECEPCIONADA' and orden.estado != 'CANCELADA' %}
+                    <form method="post" action="{% url 'cambiar_estado_orden_compra' orden.pk %}" style="margin: 0; margin-top: 2px;">
+                      {% csrf_token %}
+                      <input type="hidden" name="nuevo_estado" value="RECEPCIONADA">
+                      <button type="submit" onclick="return confirm('¿Confirmas que las materias primas de la orden {{ orden.codigo }} ya fueron recibidas en bodega?')" style="width: 100%; font-size: 0.74rem; background: #f0fdf4; border: 1px solid #86efac; color: #15803d; border-radius: 4px; padding: 3px 6px; cursor: pointer; font-weight: 600;">
+                        ✓ Marcar Recibida
+                      </button>
+                    </form>
+                  {% endif %}
+
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 36px 20px; color: var(--texto-suave);">
+                <div style="font-size: 2.2rem; margin-bottom: 8px;">📋</div>
+                <strong>No se encontraron órdenes de compra registradas.</strong>
+                <p style="margin-top: 6px; font-size: 0.88rem;">
+                  Haz clic en <strong>+ Generar Orden de Compra</strong> para emitir tu primera orden a una molinera.
+                </p>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </section>
+
+</div>
+{% endblock %}

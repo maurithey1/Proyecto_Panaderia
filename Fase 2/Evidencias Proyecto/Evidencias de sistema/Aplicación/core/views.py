@@ -22,12 +22,15 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django.views.decorators.csrf import csrf_exempt
 from django.core.validators import validate_email
 from django.conf import settings
+from urllib.parse import quote
+from django.core.mail import EmailMessage
 from django.core.cache import cache
 
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
-    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion
+    ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
+    OrdenCompra, DetalleOrdenCompra
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -37,6 +40,7 @@ from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilida
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
 from .comprobante_pdf import generar_comprobante_pdf
+from .orden_compra_pdf import generar_orden_compra_pdf
 from .cotizaciones import comparar_cotizaciones as calcular_comparacion, limitar_sacos, tabla_comparativa_insumos
 from . import mercado
 
@@ -2500,3 +2504,299 @@ def terminos_condiciones(request):
 
 def politicas_privacidad(request):
     return render(request, 'core/politicas_privacidad.html')
+
+
+# ========================================================================================
+# RQF9: GESTIÓN DE ÓRDENES DE COMPRA (MOLINERAS Y MATERIAS PRIMAS)
+# ========================================================================================
+
+def _generar_codigo_orden_compra():
+    """Genera un código correlativo único anual como OC-2026-0001."""
+    año_actual = timezone.now().year
+    prefijo = f"OC-{año_actual}-"
+    ultima_orden = OrdenCompra.objects.filter(codigo__startswith=prefijo).order_by('-id').first()
+    if ultima_orden:
+        try:
+            ultimo_correlativo = int(ultima_orden.codigo.split('-')[-1])
+            siguiente = ultimo_correlativo + 1
+        except (ValueError, IndexError):
+            siguiente = OrdenCompra.objects.count() + 1
+    else:
+        siguiente = 1
+    return f"{prefijo}{siguiente:04d}"
+
+
+@admin_required
+def lista_ordenes_compra(request):
+    """
+    Vista principal del apartado de Órdenes de Compra (RQF9).
+    Permite listar, filtrar por estado o proveedor y ver métricas clave.
+    """
+    ordenes = OrdenCompra.objects.select_related('proveedor', 'administrador').prefetch_related('detalles__insumo').all()
+
+    # Filtros
+    estado_filtro = request.GET.get('estado', '').strip()
+    proveedor_id = request.GET.get('proveedor', '').strip()
+    busqueda = request.GET.get('q', '').strip()
+
+    if estado_filtro:
+        ordenes = ordenes.filter(estado=estado_filtro)
+    if proveedor_id:
+        ordenes = ordenes.filter(proveedor_id=proveedor_id)
+    if busqueda:
+        ordenes = ordenes.filter(
+            Q(codigo__icontains=busqueda) |
+            Q(proveedor__nombre_proveedor__icontains=busqueda) |
+            Q(contacto_nombre__icontains=busqueda)
+        )
+
+    # Métricas del panel
+    total_ordenes = OrdenCompra.objects.count()
+    monto_total_compras = OrdenCompra.objects.exclude(estado='CANCELADA').aggregate(total=Sum('total'))['total'] or 0
+    ordenes_pendientes = OrdenCompra.objects.filter(estado__in=['EMITIDA', 'ENVIADA']).count()
+    ordenes_recibidas = OrdenCompra.objects.filter(estado='RECEPCIONADA').count()
+
+    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+
+    contexto = {
+        'ordenes': ordenes,
+        'proveedores': proveedores,
+        'estado_filtro': estado_filtro,
+        'proveedor_id': proveedor_id,
+        'busqueda': busqueda,
+        'total_ordenes': total_ordenes,
+        'monto_total_compras': monto_total_compras,
+        'ordenes_pendientes': ordenes_pendientes,
+        'ordenes_recibidas': ordenes_recibidas,
+        'estados_choices': OrdenCompra.ESTADOS,
+    }
+    return render(request, 'core/ordenes_compra/lista.html', contexto)
+
+
+@admin_required
+def crear_orden_compra(request):
+    """
+    Formulario interactivo para emitir una nueva orden de compra a una molinera (RQF9).
+    Permite seleccionar el proveedor, agregar insumos con su cotización y registrar condiciones.
+    """
+    if request.method == 'POST':
+        proveedor_id = request.POST.get('proveedor')
+        contacto_nombre = request.POST.get('contacto_nombre', '').strip()
+        contacto_email = request.POST.get('contacto_email', '').strip()
+        contacto_telefono = request.POST.get('contacto_telefono', '').strip()
+        condiciones_pago = request.POST.get('condiciones_pago', '').strip()
+        fecha_entrega = request.POST.get('fecha_entrega_esperada', '').strip() or None
+        observaciones = request.POST.get('observaciones', '').strip()
+
+        try:
+            costo_flete = Decimal(str(request.POST.get('costo_flete', '0') or '0').replace('.', '').replace(',', '.'))
+        except Exception:
+            costo_flete = Decimal('0')
+
+        if not proveedor_id:
+            messages.error(request, 'Debe seleccionar un proveedor o molinera destinatario.')
+            return redirect('crear_orden_compra')
+
+        proveedor = get_object_or_404(Proveedor, pk=proveedor_id)
+
+        # Insumos y cantidades
+        insumos_ids = request.POST.getlist('insumo_id[]')
+        cantidades_sacos = request.POST.getlist('cantidad_sacos[]')
+        precios_unitarios = request.POST.getlist('precio_unitario[]')
+        kilos_saco = request.POST.getlist('kilos_por_saco[]')
+
+        if not insumos_ids or len(insumos_ids) == 0:
+            messages.error(request, 'Debe incluir al menos una materia prima o insumo en la orden.')
+            return redirect('crear_orden_compra')
+
+        with transaction.atomic():
+            codigo = _generar_codigo_orden_compra()
+            orden = OrdenCompra.objects.create(
+                codigo=codigo,
+                proveedor=proveedor,
+                administrador=request.user,
+                fecha_entrega_esperada=fecha_entrega,
+                contacto_nombre=contacto_nombre or proveedor.nombre_proveedor,
+                contacto_email=contacto_email or proveedor.email,
+                contacto_telefono=contacto_telefono or proveedor.telefono,
+                costo_flete=costo_flete,
+                condiciones_pago=condiciones_pago or 'Transferencia contra entrega',
+                observaciones=observaciones,
+                estado='EMITIDA'
+            )
+
+            for i in range(len(insumos_ids)):
+                ins_id = insumos_ids[i]
+                if not ins_id:
+                    continue
+                insumo = get_object_or_404(Insumo, pk=ins_id)
+                try:
+                    cant = int(cantidades_sacos[i]) if i < len(cantidades_sacos) and cantidades_sacos[i] else 1
+                except (ValueError, TypeError):
+                    cant = 1
+
+                try:
+                    val_precio = str(precios_unitarios[i]).replace('.', '').replace(',', '.') if i < len(precios_unitarios) else '0'
+                    precio = Decimal(val_precio)
+                except Exception:
+                    precio = insumo.precio_saco or Decimal('0')
+
+                try:
+                    k_saco = Decimal(str(kilos_saco[i]).replace(',', '.')) if i < len(kilos_saco) and kilos_saco[i] else insumo.kilos_por_saco
+                except Exception:
+                    k_saco = insumo.kilos_por_saco or Decimal('25.0')
+
+                DetalleOrdenCompra.objects.create(
+                    orden=orden,
+                    insumo=insumo,
+                    cantidad_sacos=cant,
+                    kilos_por_saco=k_saco,
+                    precio_unitario=precio,
+                )
+
+            orden.calcular_totales()
+
+        messages.success(request, f'Orden de Compra {orden.codigo} generada con éxito por un total de ${orden.total:,.0f} CLP.')
+        return redirect('lista_ordenes_compra')
+
+    # Parámetros iniciales preseleccionados (si se llega desde el comparador de cotizaciones)
+    prov_pre = request.GET.get('proveedor')
+    ins_pre = request.GET.get('insumo')
+
+    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+    insumos = Insumo.objects.all().order_by('nombre')
+    tarifas = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
+
+    # Armamos un diccionario estructurado de tarifas para autocompletar en JavaScript
+    tarifas_dict = {}
+    for t in tarifas:
+        clave = f"{t.proveedor_id}_{t.insumo_id}"
+        tarifas_dict[clave] = float(t.precio_ofrecido)
+
+    contexto = {
+        'proveedores': proveedores,
+        'insumos': insumos,
+        'prov_pre': prov_pre,
+        'ins_pre': ins_pre,
+        'tarifas_json': json.dumps(tarifas_dict),
+        'codigo_sugerido': _generar_codigo_orden_compra(),
+    }
+    return render(request, 'core/ordenes_compra/crear.html', contexto)
+
+
+@admin_required
+def ver_orden_compra_pdf(request, pk):
+    """Visualización directa en el navegador del documento PDF de la Orden de Compra."""
+    orden = get_object_or_404(OrdenCompra.objects.select_related('proveedor', 'administrador').prefetch_related('detalles__insumo'), pk=pk)
+    pdf_bytes = generar_orden_compra_pdf(orden)
+    respuesta = HttpResponse(pdf_bytes, content_type='application/pdf')
+    respuesta['Content-Disposition'] = f'inline; filename="Orden_Compra_{orden.codigo}.pdf"'
+    return respuesta
+
+
+@admin_required
+def descargar_orden_compra_pdf(request, pk):
+    """Descarga forzada del archivo PDF de la Orden de Compra formal."""
+    orden = get_object_or_404(OrdenCompra.objects.select_related('proveedor', 'administrador').prefetch_related('detalles__insumo'), pk=pk)
+    pdf_bytes = generar_orden_compra_pdf(orden)
+    respuesta = HttpResponse(pdf_bytes, content_type='application/pdf')
+    respuesta['Content-Disposition'] = f'attachment; filename="Orden_Compra_{orden.codigo}.pdf"'
+    return respuesta
+
+
+@admin_required
+def enviar_orden_compra_email(request, pk):
+    """
+    Envía la orden de compra con el archivo PDF adjunto por correo electrónico a la molinera (RQF9).
+    """
+    orden = get_object_or_404(OrdenCompra.objects.select_related('proveedor', 'administrador').prefetch_related('detalles__insumo'), pk=pk)
+    destinatario = orden.contacto_email or orden.proveedor.email
+
+    if not destinatario:
+        messages.error(request, f'La molinera {orden.proveedor.nombre_proveedor} no registra un correo electrónico configurado.')
+        return redirect('lista_ordenes_compra')
+
+    try:
+        pdf_bytes = generar_orden_compra_pdf(orden)
+        asunto = f"Orden de Compra {orden.codigo} - Panadería Los Tres Spa"
+        cuerpo = f"""Estimados señores de {orden.proveedor.nombre_proveedor},
+
+Junto con saludarles cordialmente, remitimos adjunta la Orden de Compra N° {orden.codigo} emitida por Panadería Los Tres Spa.
+
+Resumen del requerimiento:
+- Número de Orden: {orden.codigo}
+- Total a facturar: ${orden.total:,.0f} CLP
+- Condiciones de pago: {orden.condiciones_pago}
+- Fecha estimada de entrega: {orden.fecha_entrega_esperada.strftime('%d/%m/%Y') if orden.fecha_entrega_esperada else 'A coordinar'}
+
+Agradecemos confirmar la recepción del documento y la programación del despacho de las materias primas.
+
+Atentamente,
+{orden.administrador.get_full_name() if orden.administrador else 'Administración General'}
+Panadería Los Tres Spa
+"""
+        remitente = getattr(settings, 'DEFAULT_FROM_EMAIL', 'contacto@lostresspa.cl')
+        email = EmailMessage(
+            subject=asunto,
+            body=cuerpo,
+            from_email=remitente,
+            to=[destinatario],
+        )
+        email.attach(f"Orden_Compra_{orden.codigo}.pdf", pdf_bytes, 'application/pdf')
+        email.send(fail_silently=False)
+
+        orden.enviada_por_email = True
+        orden.fecha_envio_email = timezone.now()
+        if orden.estado == 'EMITIDA':
+            orden.estado = 'ENVIADA'
+        orden.save(update_fields=['enviada_por_email', 'fecha_envio_email', 'estado'])
+
+        messages.success(request, f'Orden de Compra {orden.codigo} enviada con éxito por correo electrónico a {destinatario} con el PDF adjunto.')
+    except Exception as e:
+        messages.error(request, f'No fue posible enviar el correo a {destinatario}: {str(e)}')
+
+    return redirect('lista_ordenes_compra')
+
+
+@admin_required
+def enviar_orden_compra_mensaje(request, pk):
+    """
+    Genera un mensaje formal para la molinera y abre el canal de WhatsApp Web con el texto preparado (RQF9).
+    """
+    orden = get_object_or_404(OrdenCompra.objects.select_related('proveedor'), pk=pk)
+    telefono = orden.contacto_telefono or orden.proveedor.telefono or ''
+    tel_limpio = re.sub(r'[^\d]', '', telefono)
+    if tel_limpio.startswith('9') and len(tel_limpio) == 9:
+        tel_limpio = '56' + tel_limpio
+
+    texto_mensaje = (
+        f"Hola estimados {orden.proveedor.nombre_proveedor}, les saludamos de Panadería Los Tres Spa. "
+        f"Hemos emitido la Orden de Compra formal N° {orden.codigo} por un monto total de ${orden.total:,.0f} CLP "
+        f"para suministro de materias primas. Condiciones: {orden.condiciones_pago}. "
+        f"Solicitamos confirmar recepción y disponibilidad para entrega. ¡Muchas gracias!"
+    )
+    url_whatsapp = f"https://api.whatsapp.com/send?phone={tel_limpio}&text={quote(texto_mensaje)}"
+
+    orden.enviada_por_mensaje = True
+    orden.fecha_envio_mensaje = timezone.now()
+    if orden.estado == 'EMITIDA':
+        orden.estado = 'ENVIADA'
+    orden.save(update_fields=['enviada_por_mensaje', 'fecha_envio_mensaje', 'estado'])
+
+    messages.info(request, f'Se abrió el canal de mensaje para la molinera {orden.proveedor.nombre_proveedor}.')
+    return redirect(url_whatsapp)
+
+
+@admin_required
+def cambiar_estado_orden_compra(request, pk):
+    """Actualiza el estado de una orden de compra (Recepcionada, Cancelada, etc.)."""
+    if request.method == 'POST':
+        orden = get_object_or_404(OrdenCompra, pk=pk)
+        nuevo_estado = request.POST.get('nuevo_estado')
+        if nuevo_estado in dict(OrdenCompra.ESTADOS):
+            orden.estado = nuevo_estado
+            orden.save(update_fields=['estado'])
+            messages.success(request, f'Estado de la orden {orden.codigo} actualizado a: {orden.get_estado_display()}.')
+        else:
+            messages.error(request, 'Estado seleccionado no es válido.')
+    return redirect('lista_ordenes_compra')

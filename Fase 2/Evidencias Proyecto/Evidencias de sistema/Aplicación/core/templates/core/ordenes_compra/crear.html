@@ -1,0 +1,319 @@
+{% extends 'core/base_admin.html' %}
+{% load formato %}
+{% load static %}
+
+{% block titulo %}Generar Orden de Compra (RQF9){% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor">
+
+  <div class="crud-enlace-superior" style="margin-bottom: 16px;">
+    <a href="{% url 'lista_ordenes_compra' %}" class="crud-link-admin">← Volver al listado de órdenes de compra</a>
+  </div>
+
+  <section class="crud-tarjeta-marco" style="max-width: 1040px; margin-inline: auto;">
+
+    <div class="crud-cabecera-fila" style="border-bottom: 1px solid #f0e6dd; padding-bottom: 16px; margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span style="background: #f7ede2; color: var(--cafe-oscuro); font-size: 0.76rem; font-weight: 700; padding: 3px 8px; border-radius: 6px; border: 1px solid #e8d7be;">RQF9</span>
+        <h1 class="crud-titulo-principal" style="margin: 0;">Generar Orden de Compra a Molinera</h1>
+      </div>
+      <p class="cotiz__bajada" style="margin-top: 6px; margin-bottom: 0;">
+        Complete los datos requeridos para emitir la orden formal. El documento PDF se generará con el formato oficial de la panadería y quedará listo para su envío por correo electrónico.
+      </p>
+    </div>
+
+    <form method="post" id="formOrdenCompra">
+      {% csrf_token %}
+
+      <!-- BLOQUE 1: DATOS DE LA MOLINERA Y CONTACTO -->
+      <div style="background: #faf7f2; border: 1px solid #ebdcd0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <h2 style="font-size: 1.1rem; color: var(--cafe-oscuro); font-family: 'Young Serif', serif; margin-top: 0; margin-bottom: 16px;">
+          1. Datos de la Molinera y Condiciones de Entrega
+        </h2>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px;">
+
+          <!-- Selector de Proveedor -->
+          <div>
+            <label for="id_proveedor" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Molinera / Proveedor <span style="color: #b91c1c;">*</span>
+            </label>
+            <select name="proveedor" id="id_proveedor" required onchange="actualizarDatosProveedor()" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; background: #ffffff; font-size: 0.95rem;">
+              <option value="">-- Seleccionar molinera o proveedor --</option>
+              {% for p in proveedores %}
+                <option value="{{ p.pk }}" 
+                  data-rut="{{ p.rut }}"
+                  data-email="{{ p.email }}"
+                  data-telefono="{{ p.telefono }}"
+                  data-flete="{{ p.costo_flete|default:0 }}"
+                  {% if prov_pre == p.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ p.nombre_proveedor }} (RUT: {{ p.rut }})
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Contacto en Molinera -->
+          <div>
+            <label for="id_contacto_nombre" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Nombre del Contacto / Ventas
+            </label>
+            <input type="text" name="contacto_nombre" id="id_contacto_nombre" placeholder="Ej: Juan Pérez - Despachos" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; font-size: 0.95rem;">
+          </div>
+
+          <!-- Correo de Notificación -->
+          <div>
+            <label for="id_contacto_email" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Correo Electrónico (Para envío de PDF)
+            </label>
+            <input type="email" name="contacto_email" id="id_contacto_email" placeholder="ventas@molinera.cl" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; font-size: 0.95rem;">
+          </div>
+
+          <!-- Teléfono de Contacto -->
+          <div>
+            <label for="id_contacto_telefono" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Teléfono de Contacto / Despacho
+            </label>
+            <input type="text" name="contacto_telefono" id="id_contacto_telefono" placeholder="+56 9 8765 4321" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; font-size: 0.95rem;">
+          </div>
+
+          <!-- Fecha Estimada de Entrega -->
+          <div>
+            <label for="id_fecha_entrega" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Fecha Estimada de Entrega Requerida
+            </label>
+            <input type="date" name="fecha_entrega_esperada" id="id_fecha_entrega" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; font-size: 0.95rem;">
+          </div>
+
+          <!-- Condiciones de Pago -->
+          <div>
+            <label for="id_condiciones_pago" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+              Condiciones de Pago
+            </label>
+            <select name="condiciones_pago" id="id_condiciones_pago" style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; background: #ffffff; font-size: 0.95rem;">
+              <option value="Transferencia contra entrega">Transferencia bancaria contra entrega</option>
+              <option value="Crédito 30 días">Crédito factura a 30 días</option>
+              <option value="Crédito 15 días">Crédito factura a 15 días</option>
+              <option value="Contado / Pago anticipado">Pago anticipado 100%</option>
+            </select>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- BLOQUE 2: MATERIAS PRIMAS Y COTIZACIONES -->
+      <div style="background: #ffffff; border: 1px solid #ebdcd0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
+          <h2 style="font-size: 1.1rem; color: var(--cafe-oscuro); font-family: 'Young Serif', serif; margin: 0;">
+            2. Materias Primas y Cantidades a Solicitar
+          </h2>
+          <button type="button" onclick="agregarFilaInsumo()" class="crud-btn-secundario" style="font-size: 0.85rem; padding: 6px 14px; border-radius: 6px; cursor: pointer; border: 1px solid #cca993; background: #fdfaf6; color: var(--cafe-oscuro); font-weight: 700;">
+            + Agregar otra materia prima
+          </button>
+        </div>
+
+        <div class="crud-tabla-responsive">
+          <table style="width: 100%; border-collapse: collapse;" id="tablaItemsOrden">
+            <thead>
+              <tr style="background: #f7ede2; color: var(--cafe-oscuro); text-align: left; font-size: 0.85rem;">
+                <th style="padding: 10px; border-radius: 6px 0 0 6px; width: 34%;">Materia Prima / Insumo</th>
+                <th style="padding: 10px; width: 14%; text-align: center;">Cantidad (Sacos)</th>
+                <th style="padding: 10px; width: 14%; text-align: center;">Kg por saco</th>
+                <th style="padding: 10px; width: 18%; text-align: right;">Precio Saco ($)</th>
+                <th style="padding: 10px; width: 14%; text-align: right;">Subtotal ($)</th>
+                <th style="padding: 10px; border-radius: 0 6px 6px 0; width: 6%; text-align: center;">Acción</th>
+              </tr>
+            </thead>
+            <tbody id="cuerpoTablaItems">
+              <!-- Fila 1 inicial -->
+              <tr class="fila-insumo" style="border-bottom: 1px solid #f3ece4;">
+                <td style="padding: 10px 6px;">
+                  <select name="insumo_id[]" required onchange="actualizarPrecioFila(this)" style="width: 100%; padding: 8px 10px; border: 1px solid #d4c2b2; border-radius: 6px; font-size: 0.9rem;">
+                    <option value="">-- Seleccionar insumo --</option>
+                    {% for ins in insumos %}
+                      <option value="{{ ins.pk }}" 
+                        data-precio="{{ ins.precio_saco|default:0 }}"
+                        data-kilos="{{ ins.kilos_por_saco|default:25 }}"
+                        {% if ins_pre == ins.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ ins.nombre }} ({{ ins.kilos_por_saco|floatformat:"-2" }} kg/saco)
+                      </option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td style="padding: 10px 6px; text-align: center;">
+                  <input type="number" name="cantidad_sacos[]" min="1" value="5" required oninput="calcularTotales()" style="width: 80px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                </td>
+                <td style="padding: 10px 6px; text-align: center;">
+                  <input type="number" step="0.1" name="kilos_por_saco[]" value="25.0" required oninput="calcularTotales()" style="width: 80px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                </td>
+                <td style="padding: 10px 6px; text-align: right;">
+                  <input type="number" step="1" name="precio_unitario[]" value="0" required oninput="calcularTotales()" style="width: 110px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: right; font-size: 0.9rem;">
+                </td>
+                <td style="padding: 10px 6px; text-align: right; font-weight: 700; color: var(--cafe-oscuro);">
+                  <span class="subtotal-fila">$0</span>
+                </td>
+                <td style="padding: 10px 6px; text-align: center;">
+                  <button type="button" onclick="eliminarFila(this)" style="background: none; border: none; color: #dc2626; cursor: pointer; font-size: 1.1rem;" title="Eliminar fila">&times;</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- RESUMEN FINANCIERO DE TOTALES -->
+        <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+          <div style="background: #faf7f2; border: 1px solid #ebdcd0; border-radius: 10px; padding: 16px 20px; width: 340px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem;">
+              <span style="color: var(--texto-suave);">Subtotal materias primas:</span>
+              <strong id="displaySubtotal" style="color: var(--cafe-oscuro);">$0</strong>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.9rem;">
+              <span style="color: var(--texto-suave);">Costo de flete / despacho:</span>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <span>$</span>
+                <input type="number" step="1" name="costo_flete" id="id_costo_flete" value="0" oninput="calcularTotales()" style="width: 90px; padding: 4px 6px; border: 1px solid #d4c2b2; border-radius: 4px; text-align: right; font-size: 0.88rem;">
+              </div>
+            </div>
+
+            <hr style="border: 0; border-top: 1px solid #e5d5c5; margin: 10px 0;">
+
+            <div style="display: flex; justify-content: space-between; font-size: 1.15rem; color: var(--cafe-oscuro);">
+              <strong>TOTAL ORDEN:</strong>
+              <strong id="displayTotal" style="color: #2e6024; font-family: 'Young Serif', serif;">$0</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- BLOQUE 3: OBSERVACIONES -->
+      <div style="background: #faf7f2; border: 1px solid #ebdcd0; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+        <label for="id_observaciones" style="display: block; font-weight: 700; font-size: 0.88rem; color: var(--cafe-oscuro); margin-bottom: 6px;">
+          Instrucciones especiales o requisitos de despacho (Opcional)
+        </label>
+        <textarea name="observaciones" id="id_observaciones" rows="3" placeholder="Ej: Entregar por portón lateral de carga antes de las 11:00 hrs. Presentar guía de despacho firmada." style="width: 100%; padding: 10px 12px; border: 1px solid #cca993; border-radius: 6px; font-size: 0.95rem;"></textarea>
+      </div>
+
+      <!-- BOTONES DE ACCIÓN -->
+      <div style="display: flex; justify-content: flex-end; gap: 14px; align-items: center;">
+        <a href="{% url 'lista_ordenes_compra' %}" style="text-decoration: none; color: var(--texto-suave); font-weight: 600; padding: 10px 18px;">
+          Cancelar
+        </a>
+        <button type="submit" class="crud-btn-primario" style="padding: 12px 24px; font-size: 1rem; font-weight: 700; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(74, 46, 24, 0.2);">
+          📄 Emitir Orden de Compra (PDF)
+        </button>
+      </div>
+
+    </form>
+
+  </section>
+
+</div>
+
+<!-- SCRIPT DE CÁLCULO EN VIVO Y COTIZACIONES -->
+<script>
+  const TARIFAS = {{ tarifas_json|safe }};
+
+  function formatearMonto(monto) {
+    return '$' + Math.round(monto).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  }
+
+  function actualizarDatosProveedor() {
+    const provSelect = document.getElementById('id_proveedor');
+    const opt = provSelect.options[provSelect.selectedIndex];
+    if (!opt || !opt.value) return;
+
+    if (opt.dataset.email) {
+      document.getElementById('id_contacto_email').value = opt.dataset.email;
+    }
+    if (opt.dataset.telefono) {
+      document.getElementById('id_contacto_telefono').value = opt.dataset.telefono;
+    }
+    if (opt.dataset.flete) {
+      document.getElementById('id_costo_flete').value = Math.round(parseFloat(opt.dataset.flete));
+    }
+
+    // Actualizar precios de insumos según tarifas del proveedor
+    const filas = document.querySelectorAll('.fila-insumo');
+    filas.forEach(fila => {
+      const selectInsumo = fila.querySelector('select[name="insumo_id[]"]');
+      actualizarPrecioFila(selectInsumo);
+    });
+
+    calcularTotales();
+  }
+
+  function actualizarPrecioFila(selectElem) {
+    const fila = selectElem.closest('.fila-insumo');
+    const optInsumo = selectElem.options[selectElem.selectedIndex];
+    if (!optInsumo || !optInsumo.value) return;
+
+    const insumoId = optInsumo.value;
+    const kilos = optInsumo.dataset.kilos || 25;
+    fila.querySelector('input[name="kilos_por_saco[]"]').value = kilos;
+
+    const provId = document.getElementById('id_proveedor').value;
+    let precio = optInsumo.dataset.precio || 0;
+
+    // Si existe una tarifa específica cotizada con ese proveedor, usarla
+    if (provId && TARIFAS[provId + '_' + insumoId]) {
+      precio = TARIFAS[provId + '_' + insumoId];
+    }
+
+    fila.querySelector('input[name="precio_unitario[]"]').value = Math.round(parseFloat(precio));
+    calcularTotales();
+  }
+
+  function calcularTotales() {
+    let subtotal = 0;
+    const filas = document.querySelectorAll('.fila-insumo');
+
+    filas.forEach(fila => {
+      const cant = parseFloat(fila.querySelector('input[name="cantidad_sacos[]"]').value) || 0;
+      const precio = parseFloat(fila.querySelector('input[name="precio_unitario[]"]').value) || 0;
+      const sub = cant * precio;
+      subtotal += sub;
+      fila.querySelector('.subtotal-fila').textContent = formatearMonto(sub);
+    });
+
+    const flete = parseFloat(document.getElementById('id_costo_flete').value) || 0;
+    const total = subtotal + flete;
+
+    document.getElementById('displaySubtotal').textContent = formatearMonto(subtotal);
+    document.getElementById('displayTotal').textContent = formatearMonto(total);
+  }
+
+  function agregarFilaInsumo() {
+    const cuerpo = document.getElementById('cuerpoTablaItems');
+    const primeraFila = cuerpo.querySelector('.fila-insumo');
+    const nuevaFila = primeraFila.cloneNode(true);
+
+    // Resetear valores en la nueva fila
+    nuevaFila.querySelector('select').selectedIndex = 0;
+    nuevaFila.querySelector('input[name="cantidad_sacos[]"]').value = 5;
+    nuevaFila.querySelector('input[name="kilos_por_saco[]"]').value = 25.0;
+    nuevaFila.querySelector('input[name="precio_unitario[]"]').value = 0;
+    nuevaFila.querySelector('.subtotal-fila').textContent = '$0';
+
+    cuerpo.appendChild(nuevaFila);
+  }
+
+  function eliminarFila(btn) {
+    const filas = document.querySelectorAll('.fila-insumo');
+    if (filas.length > 1) {
+      btn.closest('.fila-insumo').remove();
+      calcularTotales();
+    } else {
+      alert('La orden de compra debe contener al menos una materia prima.');
+    }
+  }
+
+  // Inicializar al cargar
+  document.addEventListener('DOMContentLoaded', function() {
+    actualizarDatosProveedor();
+    calcularTotales();
+  });
+</script>
+{% endblock %}

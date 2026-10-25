@@ -573,3 +573,95 @@ class CierreCaja(models.Model):
     def __str__(self):
         return f"Cierre Caja #{self.caja.id} - {self.estado_cuadratura} (Dif: ${self.diferencia})"
 
+
+# ==========================================
+# 6. ÓRDENES DE COMPRA (RQF9)
+# ==========================================
+class OrdenCompra(models.Model):
+    """
+    Representa una orden de compra formal emitida a una molinera o proveedor
+    de materias primas (RQF9).
+    """
+    ESTADOS = [
+        ('EMITIDA', 'Emitida'),
+        ('ENVIADA', 'Enviada al proveedor'),
+        ('RECEPCIONADA', 'Recepcionada / En bodega'),
+        ('CANCELADA', 'Cancelada'),
+    ]
+
+    codigo = models.CharField(max_length=30, unique=True, verbose_name="Código de Orden")
+    proveedor = models.ForeignKey(
+        Proveedor,
+        on_delete=models.CASCADE,
+        related_name='ordenes_compra',
+        verbose_name="Molinera / Proveedor"
+    )
+    administrador = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='ordenes_emitidas',
+        verbose_name="Emitida por"
+    )
+    fecha_emision = models.DateTimeField(default=timezone.now, verbose_name="Fecha de emisión")
+    fecha_entrega_esperada = models.DateField(null=True, blank=True, verbose_name="Fecha estimada de entrega")
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='EMITIDA', verbose_name="Estado")
+
+    contacto_nombre = models.CharField(max_length=150, blank=True, default='', verbose_name="Contacto en molinera")
+    contacto_email = models.EmailField(blank=True, default='', verbose_name="Correo de contacto")
+    contacto_telefono = models.CharField(max_length=30, blank=True, default='', verbose_name="Teléfono / WhatsApp")
+
+    costo_flete = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Costo de flete")
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Subtotal materias primas")
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Total orden de compra")
+
+    condiciones_pago = models.CharField(max_length=120, default='Transferencia bancaria contra entrega', blank=True, verbose_name="Condiciones de pago")
+    observaciones = models.TextField(blank=True, default='', verbose_name="Observaciones / Instrucciones")
+
+    enviada_por_email = models.BooleanField(default=False, verbose_name="Enviada por correo")
+    fecha_envio_email = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de envío por correo")
+    enviada_por_mensaje = models.BooleanField(default=False, verbose_name="Enviada por mensaje")
+    fecha_envio_mensaje = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de envío por mensaje")
+
+    class Meta:
+        verbose_name = "Orden de Compra"
+        verbose_name_plural = "Órdenes de Compra"
+        ordering = ['-fecha_emision']
+
+    def __str__(self):
+        return f"{self.codigo} - {self.proveedor.nombre_proveedor} (${self.total})"
+
+    def calcular_totales(self):
+        """Calcula el subtotal sumando los detalles y suma el flete para el total general."""
+        suma_detalles = sum(d.subtotal for d in self.detalles.all())
+        self.subtotal = suma_detalles
+        self.total = suma_detalles + (self.costo_flete or 0)
+        self.save(update_fields=['subtotal', 'total'])
+
+
+class DetalleOrdenCompra(models.Model):
+    """
+    Renglón o ítem individual de materia prima dentro de una orden de compra.
+    """
+    orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name='detalles')
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, verbose_name="Materia Prima / Insumo")
+    cantidad_sacos = models.PositiveIntegerField(default=1, verbose_name="Cantidad de sacos / bultos")
+    kilos_por_saco = models.DecimalField(max_digits=8, decimal_places=2, default=25.00, verbose_name="Kg por saco")
+    total_kilos = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Total Kilogramos")
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio por saco")
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Subtotal ítem")
+
+    class Meta:
+        verbose_name = "Detalle de Orden de Compra"
+        verbose_name_plural = "Detalles de Orden de Compra"
+
+    def __str__(self):
+        return f"{self.cantidad_sacos} sacos de {self.insumo.nombre} en {self.orden.codigo}"
+
+    def save(self, *args, **kwargs):
+        self.total_kilos = float(self.cantidad_sacos) * float(self.kilos_por_saco)
+        self.subtotal = float(self.cantidad_sacos) * float(self.precio_unitario)
+        super().save(*args, **kwargs)
+
+

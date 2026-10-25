@@ -59,6 +59,15 @@ urlpatterns = [
     path('panel-admin/cotizaciones/mercado/', views.actualizar_precios_mercado, name='actualizar_precios_mercado'),
     path('panel-admin/cotizaciones/eliminar/<int:pk>/', views.eliminar_cotizacion, name='eliminar_cotizacion'),
 
+    # Órdenes de Compra a Molineras (RQF9)
+    path('panel-admin/ordenes-compra/', views.lista_ordenes_compra, name='lista_ordenes_compra'),
+    path('panel-admin/ordenes-compra/crear/', views.crear_orden_compra, name='crear_orden_compra'),
+    path('panel-admin/ordenes-compra/<int:pk>/pdf/', views.ver_orden_compra_pdf, name='ver_orden_compra_pdf'),
+    path('panel-admin/ordenes-compra/<int:pk>/descargar-pdf/', views.descargar_orden_compra_pdf, name='descargar_orden_compra_pdf'),
+    path('panel-admin/ordenes-compra/<int:pk>/enviar-email/', views.enviar_orden_compra_email, name='enviar_orden_compra_email'),
+    path('panel-admin/ordenes-compra/<int:pk>/enviar-mensaje/', views.enviar_orden_compra_mensaje, name='enviar_orden_compra_mensaje'),
+    path('panel-admin/ordenes-compra/<int:pk>/cambiar-estado/', views.cambiar_estado_orden_compra, name='cambiar_estado_orden_compra'),
+
     # Punto de Venta POS (Cajero)
     path('pos/', views.inicio_cajero, name='inicio_cajero'),
     path('pos/finalizar-venta/', views.finalizar_venta_pos, name='finalizar_venta_pos'),
