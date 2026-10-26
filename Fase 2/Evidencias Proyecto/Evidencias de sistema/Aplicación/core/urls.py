@@ -29,6 +29,7 @@ urlpatterns = [
     # Panel Administrador
     path('panel-admin/', views.inicio_admin, name='inicio_admin'),
     path('panel-admin/usuarios/', views.gestion_usuarios, name='gestion_usuarios'),
+    path('panel-admin/inventario/historial-precios/', views.historial_precios_insumos, name='historial_precios_insumos'),
     path('panel-admin/usuarios/desactivar/<int:pk>/', views.desactivar_usuario, name='desactivar_usuario'),
     path('panel-admin/usuarios/personal/crear/', views.crear_personal, name='crear_personal'),
     path('panel-admin/usuarios/personal/editar/<int:pk>/', views.editar_personal, name='editar_personal'),

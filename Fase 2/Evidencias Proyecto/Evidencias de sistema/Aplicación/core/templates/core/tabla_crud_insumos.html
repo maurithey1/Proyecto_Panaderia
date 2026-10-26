@@ -14,6 +14,12 @@
     </div>
     
     <div class="crud-titulo-accion">
+
+      <!-- Redirecciona a la vista completa del historial -->
+      <a href="{% url 'historial_precios_insumos' %}" class="crud-btn-historial" id="btnAccionHistorialPrecios">
+        📜 Historial de Precios
+      </a>
+
       <h2 class="crud-titulo-principal" id="crudTituloPrincipal">Gestión de insumos y materias primas</h2>
       
       <button type="button" class="crud-btn-agregar" id="btnAccionAgregarInsumo" onclick="abrirModalAgregarInsumo()">
@@ -66,6 +72,12 @@
               <td class="crud-col-proveedor">{{ insumo.proveedor.nombre_proveedor|default:insumo.proveedor_nombre|default:"-" }}</td>
               <td class="crud-col-precio">{{ insumo.precio_saco|clp }}</td>
               <td class="crud-col-acciones">
+                <!-- Pasa el ID del insumo por parámetro GET para filtrar automáticamente -->
+                <a href="{% url 'historial_precios_insumos' %}?insumo_id={{ insumo.pk }}" 
+                  class="crud-btn-accion" 
+                  style="background-color: #3e2a1d; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">
+                  Historial
+                </a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
                         onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor.pk|default:'' }}', '{{ insumo.precio_saco|floatformat:0 }}')">
                   Editar

@@ -1968,6 +1968,61 @@ td.tabla-acciones {
   width: min(500px, 90vw);
 }
 
+/* -----------------------------------------------
+   HISTORIAL DE PRECIOS INSUMOS Y MATERIAS PRIMAS
+   ----------------------------------------------- */
+
+/* BARRA DE FILTROS DEL HISTORIAL */
+.historial-barra-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  background-color: var(--papel, #fffdf8);
+  border: 1px solid var(--borde, #e6d5bc);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 6px rgba(62, 42, 29, 0.05);
+}
+
+.historial-filtro-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 200px;
+  flex: 1;
+}
+
+.historial-filtro-grupo label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro, #3e2a1d);
+}
+
+/* BOTÓN HISTORIAL DE PRECIOS EN CRUD */
+.crud-btn-historial {
+  position: absolute;
+  left: 0;
+  background-color: var(--papel, #fffdf8);
+  color: var(--cafe-oscuro, #3e2a1d);
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-family: var(--fuente-texto, 'Figtree', sans-serif);
+  font-size: 0.90rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.18s ease;
+}
+
+.crud-btn-historial:hover {
+  background-color: var(--crema-2, #f3e7d3);
+  border-color: var(--cafe, #7b4b2a);
+  transform: translateY(-1px);
+}
 
 /* ------------------------------------------
    DASHBOARD / SECCIÓN SUPERIOR (Ventas + Stock)

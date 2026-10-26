@@ -444,6 +444,27 @@ class Notificacion(models.Model):
         return f"[{self.get_tipo_display()}] {self.titulo} - {'Leída' if self.leida else 'No leída'}"
 
 
+class HistorialPrecioInsumo(models.Model):
+    """
+    Registra el historial y auditoría de fluctuaciones de precios de materias primas.
+    """
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name='historial_precios', verbose_name="Materia Prima")
+    proveedor = models.ForeignKey(Proveedor, on_delete=models.SET_NULL, null=True, blank=True, related_name='historial_precios_insumos', verbose_name="Proveedor / Molinera")
+    precio_saco = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio por Saco")
+    precio_anterior = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio Anterior")
+    variacion_porcentaje = models.DecimalField(max_digits=6, decimal_places=2, default=0.00, verbose_name="Variación %")
+    origen_cambio = models.CharField(max_length=120, default='Actualización de Inventario', verbose_name="Origen / Nota")
+    fecha_registro = models.DateTimeField(default=timezone.now, verbose_name="Fecha de Registro")
+
+    class Meta:
+        verbose_name = "Historial de Precio de Insumo"
+        verbose_name_plural = "Historiales de Precios de Insumos"
+        ordering = ['-fecha_registro']
+
+    def __str__(self):
+        return f"{self.insumo.nombre} - ${self.precio_saco:,.0f} ({self.fecha_registro.strftime('%d/%m/%Y')})"
+
+
 # ==========================================
 # 4. CARRITO Y PEDIDOS
 # ==========================================

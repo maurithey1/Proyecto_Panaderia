@@ -1,0 +1,121 @@
+{% extends 'core/base_admin.html' %}
+{% load static %}
+
+{% block contenido %}
+<main class="admin-main">
+  <div class="admin-contenedor">
+    
+    <!-- CABECERA DE LA VISTA -->
+    <div class="crud-cabecera-fila">
+      <div class="crud-enlace-superior">
+        <a href="{% url 'gestion_inventario' %}" class="crud-link-admin">← Volver a Gestión de Insumos</a>
+      </div>
+      <div class="crud-titulo-accion">
+        <h2 class="crud-titulo-principal">Historial Completo de Precios de Materias Primas</h2>
+      </div>
+    </div>
+
+    <!-- BARRA DE FILTROS Y ORDENAMIENTO -->
+    <div class="historial-barra-filtros">
+      <div class="historial-filtro-grupo">
+        <label for="filtroMateriaPrima">Materia Prima:</label>
+        <select id="filtroMateriaPrima" class="crud-input" onchange="aplicarFiltrosYOrden()">
+          <option value="">-- Todas las materias primas --</option>
+          {% for insumo in lista_insumos %}
+            <option value="{{ insumo.id }}" {% if insumo_seleccionado == insumo.id %}selected{% endif %}>
+              {{ insumo.nombre }} {% if insumo.codigo %}({{ insumo.codigo }}){% endif %}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="historial-filtro-grupo">
+        <label for="filtroProveedor">Proveedor:</label>
+        <select id="filtroProveedor" class="crud-input" onchange="aplicarFiltrosYOrden()">
+          <option value="">-- Todos los proveedores --</option>
+          {% for proveedor in lista_proveedores %}
+            <option value="{{ proveedor.id }}" {% if proveedor_seleccionado == proveedor.id %}selected{% endif %}>
+              {{ proveedor.nombre_proveedor }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="historial-filtro-grupo">
+        <label for="ordenPrecio">Ordenar por Precio:</label>
+        <select id="ordenPrecio" class="crud-input" onchange="aplicarFiltrosYOrden()">
+          <option value="fecha_desc" {% if orden_seleccionado == 'fecha_desc' %}selected{% endif %}>Más recientes primero (Defecto)</option>
+          <option value="precio_asc" {% if orden_seleccionado == 'precio_asc' %}selected{% endif %}>Precio: Menor a Mayor ↑</option>
+          <option value="precio_desc" {% if orden_seleccionado == 'precio_desc' %}selected{% endif %}>Precio: Mayor a Menor ↓</option>
+        </select>
+      </div>
+
+      <div class="historial-filtro-grupo" style="align-self: flex-end;">
+        <button type="button" class="crud-btn-cancelar" onclick="limpiarFiltros()">Limpiar Filtros</button>
+      </div>
+    </div>
+
+    <!-- TABLA DE HISTORIAL COMPLETO -->
+    <div class="crud-tarjeta-marco">
+      <div class="crud-tabla-responsive">
+        <table class="crud-tabla-pantallazo" id="tablaHistorialPrecios">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Materia Prima</th>
+              <th>Proveedor</th>
+              <th>Precio por Saco</th>
+              <th>Variación %</th>
+              <th>Origen / Nota</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyHistorial">
+            {% for registro in historial %}
+            <tr data-insumo-id="{{ registro.insumo.id }}" 
+                data-proveedor-id="{{ registro.proveedor.id|default:'' }}" 
+                data-precio="{{ registro.precio_saco }}"
+                data-fecha="{{ registro.fecha_registro|date:'Y-m-d' }}">
+              <td class="crud-col-centro">{{ registro.fecha_registro|date:"d/m/Y H:i" }}</td>
+              <td class="crud-col-nombre"><strong>{{ registro.insumo.nombre }}</strong></td>
+              <td class="crud-col-proveedor">
+                {% if registro.proveedor %}
+                  {{ registro.proveedor.nombre_proveedor }}
+                {% else %}
+                  <span style="color: #888; font-style: italic;">Sin proveedor asignado</span>
+                {% endif %}
+              </td>
+              <td class="crud-col-precio" style="font-weight: 700;">$ {{ registro.precio_saco|floatformat:0 }}</td>
+              <td class="crud-col-centro">
+                {% if registro.variacion_porcentaje > 0 %}
+                  <span class="crud-badge crud-badge--inactivo">+{{ registro.variacion_porcentaje }}% 📈</span>
+                {% elif registro.variacion_porcentaje < 0 %}
+                  <span class="crud-badge crud-badge--exito">{{ registro.variacion_porcentaje }}% 📉</span>
+                {% else %}
+                  <span class="crud-badge" style="background:#e0e0e0; color:#444;">0%</span>
+                {% endif %}
+              </td>
+              <td class="crud-col-centro" style="font-size: 0.85rem; color: #666;">
+                {{ registro.origen_cambio|default:"Actualización de Inventario" }}
+              </td>
+            </tr>
+            {% empty %}
+            <tr id="trSinResultados">
+              <td colspan="6" class="crud-col-centro" style="padding: 2.5rem; color: #6e5848; font-size: 0.95rem;">
+              {% if not lista_insumos %}
+                ⚠️ No hay insumos o materias primas registrados en el sistema.
+              {% else %}
+                📋 No se registran ni figuran historiales de precios para los insumos o filtros seleccionados.
+              {% endif %}
+            </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script src="{% static 'js/historial_precios.js' %}"></script>
+{% endblock %}

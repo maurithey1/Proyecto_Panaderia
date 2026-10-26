@@ -30,7 +30,7 @@ from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
-    OrdenCompra, DetalleOrdenCompra
+    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -1240,7 +1240,8 @@ def crear_insumo(request):
         messages.error(request, f'Ya existe un producto con el ID {codigo}.')
         return redirect(next_url)
 
-    Insumo.objects.create(
+    # 1. Asignamos la creación a una variable para obtener el objeto recién creado
+    insumo_nuevo = Insumo.objects.create(
         codigo=codigo,
         nombre=nombre,
         stock_sacos=stock_sacos,
@@ -1251,6 +1252,17 @@ def crear_insumo(request):
         tipo_insumo='Materia Prima',
         unidad_medida='Kg'
     )
+
+    # 2. Registramos el precio inicial en la tabla del historial
+    if precio_saco > 0:
+        HistorialPrecioInsumo.objects.create(
+            insumo=insumo_nuevo,
+            precio_saco=precio_saco,
+            precio_anterior=0,
+            variacion_porcentaje=0,
+            origen_cambio='Precio Inicial de Creación'
+        )
+
     messages.success(request, f'Insumo "{nombre}" ({codigo}) agregado exitosamente.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     return redirect(next_url)
@@ -1261,6 +1273,9 @@ def crear_insumo(request):
 def editar_insumo(request, pk):
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
     insumo = get_object_or_404(Insumo, pk=pk)
+
+    # 1. Guardamos el precio actual como "precio_anterior" antes de actualizarlo
+    precio_anterior = insumo.precio_saco
 
     codigo = request.POST.get('codigo', '').strip().upper()
     nombre = request.POST.get('nombre', '').strip()
@@ -1301,11 +1316,24 @@ def editar_insumo(request, pk):
     except Exception:
         insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
 
-
     insumo.nombre = nombre
     insumo.proveedor_nombre = proveedor_nombre
     insumo.precio_saco = precio_saco
     insumo.save()
+
+    # 2. Si el precio cambió respecto al anterior, registramos la variación en el historial
+    if precio_anterior != precio_saco:
+        variacion = Decimal('0.00')
+        if precio_anterior > 0:
+            variacion = ((precio_saco - precio_anterior) / precio_anterior) * Decimal('100.0')
+
+        HistorialPrecioInsumo.objects.create(
+            insumo=insumo,
+            precio_saco=precio_saco,
+            precio_anterior=precio_anterior,
+            variacion_porcentaje=round(variacion, 2),
+            origen_cambio='Actualización Manual (CRUD Insumos)'
+        )
 
     messages.success(request, f'Insumo "{insumo.nombre}" ({insumo.codigo}) actualizado correctamente.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
@@ -1920,6 +1948,48 @@ def eliminar_cotizacion(request, pk):
     messages.warning(request, f'Se eliminó la cotización de "{nombre}".')
     return redirect(_url_comparador(insumo_id, limitar_sacos(request.POST.get('sacos', 1))))
 
+
+@admin_required
+def historial_precios_insumos(request):
+    """
+    Vista completa para consultar el historial de precios de materias primas.
+    Soporta filtrado por insumo/materia prima, por proveedor y ordenamiento de precios.
+    """
+    # 1. Parámetros GET recibidos desde la URL
+    insumo_id = _entero_o_none(request.GET.get('insumo_id'))
+    proveedor_id = _entero_o_none(request.GET.get('proveedor_id'))
+    orden = request.GET.get('orden', 'fecha_desc')
+
+    # 2. Listas completas para poblar los selectores de filtro
+    lista_insumos = Insumo.objects.all().order_by('nombre')
+    lista_proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+
+    # 3. Consulta base optimizada con select_related
+    query_historial = HistorialPrecioInsumo.objects.select_related('insumo', 'proveedor').all()
+
+    # 4. Filtros en servidor
+    if insumo_id:
+        query_historial = query_historial.filter(insumo_id=insumo_id)
+    if proveedor_id:
+        query_historial = query_historial.filter(proveedor_id=proveedor_id)
+
+    # 5. Ordenamiento
+    if orden == 'precio_asc':
+        query_historial = query_historial.order_by('precio_saco')
+    elif orden == 'precio_desc':
+        query_historial = query_historial.order_by('-precio_saco')
+    else:
+        query_historial = query_historial.order_by('-fecha_registro')
+
+    contexto = {
+        'lista_insumos': lista_insumos,
+        'lista_proveedores': lista_proveedores,
+        'historial': query_historial,
+        'insumo_seleccionado': insumo_id,
+        'proveedor_seleccionado': proveedor_id,
+        'orden_seleccionado': orden,
+    }
+    return render(request, 'core/historial_precios.html', contexto)
 
 # ==========================================
 # FUNCIONES DE ADMINISTRADOR: GESTIÓN DE USUARIOS, INVENTARIO Y REPORTES
@@ -2799,4 +2869,4 @@ def cambiar_estado_orden_compra(request, pk):
             messages.success(request, f'Estado de la orden {orden.codigo} actualizado a: {orden.get_estado_display()}.')
         else:
             messages.error(request, 'Estado seleccionado no es válido.')
-    return redirect('lista_ordenes_compra')
+    return redirect('lista_ordenes_compra')
