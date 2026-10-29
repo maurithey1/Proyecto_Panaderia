@@ -78,6 +78,7 @@
                   style="background-color: #3e2a1d; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">
                   Historial
                 </a>
+                <a href="{% url 'gestion_mermas' %}?item=insumo-{{ insumo.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
                         onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor.pk|default:'' }}', '{{ insumo.precio_saco|floatformat:0 }}')">
                   Editar
@@ -147,6 +148,7 @@
                         onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
                   + Hornada
                 </button>
+                <a href="{% url 'gestion_mermas' %}?item=producto-{{ prod.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
                         data-pk="{{ prod.pk }}"
                         data-nombre="{{ prod.nombre }}"

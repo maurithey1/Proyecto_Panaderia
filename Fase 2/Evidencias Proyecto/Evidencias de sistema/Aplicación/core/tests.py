@@ -3741,3 +3741,239 @@ class MercadoOdepaTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertIn('tablaResumenInsumos', respuesta.content.decode('utf-8'))
         self.assertIn('Comparador de Insumos', respuesta.content.decode('utf-8'))
+
+
+class MermasTests(TestCase):
+    """Mermas (HU-EP002-008): lo que se pierde sin venderse se descuenta del stock y queda registrado."""
+
+    AHORA = datetime(2026, 10, 28, 18, 30, tzinfo=ZONA_HORARIA)
+
+    def setUp(self):
+        from .models import Insumo, Merma
+
+        self.Insumo, self.Merma = Insumo, Merma
+        self.admin = Usuario.objects.create_user(
+            'admin-mermas', password='clave-larga-123', rol='ADMINISTRADOR', first_name='Ana', last_name='Rojas',
+        )
+        self.client.force_login(self.admin)
+        categoria = Categoria.objects.create(nombre='Panes mermas')
+        self.pan = Producto.objects.create(
+            categoria=categoria, nombre='Pan Amasado', precio=Decimal('550.00'), stock=20, activo=True,
+        )
+        self.marraqueta = Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('2190.00'), stock=10,
+            unidad_medida='kg', activo=True,
+        )
+        self.harina = Insumo.objects.create(
+            codigo='NI001', nombre='Harina', stock_sacos=5, kilos_por_saco=Decimal('25'),
+            precio_saco=Decimal('21990'),
+        )
+
+    def _registrar(self, item, cantidad, motivo='QUEMADO', detalle=''):
+        return self.client.post(reverse('gestion_mermas'), {
+            'item': item, 'cantidad': cantidad, 'motivo': motivo, 'detalle': detalle,
+        })
+
+    def _merma(self, item, cantidad, motivo, fecha):
+        """Registra una merma y la mueve a `fecha` (el default de Merma.fecha no ve el reloj simulado)."""
+        from . import mermas
+
+        merma = mermas.registrar_merma(self.admin, item, cantidad, motivo)
+        self.Merma.objects.filter(pk=merma.pk).update(fecha=fecha)
+        return merma
+
+    # --- Criterio 1: la merma descuenta el inventario y queda con fecha y responsable ---
+
+    def test_merma_de_producto_descuenta_el_stock_y_guarda_fecha_y_responsable(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '3', 'QUEMADO', 'Bandeja de la tarde')
+
+        self.assertRedirects(respuesta, reverse('gestion_mermas'))
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 17)
+        merma = self.Merma.objects.get()
+        self.assertEqual(merma.tipo, 'PRODUCTO')
+        self.assertEqual(merma.producto, self.pan)
+        self.assertEqual((merma.cantidad, merma.unidad), (3, 'unid.'))
+        self.assertEqual((merma.stock_anterior, merma.stock_resultante), (20, 17))
+        self.assertEqual(merma.valor_estimado, Decimal('1650.00'))      # 3 x $550
+        self.assertEqual(merma.responsable, self.admin)
+        self.assertIsNotNone(merma.fecha)
+        self.assertEqual(merma.detalle, 'Bandeja de la tarde')
+        avisos = [str(m) for m in get_messages(respuesta.wsgi_request)]
+        self.assertIn('Merma registrada: 3 unid. de Pan Amasado (quemado o mal horneado), '
+                      'pérdida estimada de $1.650. Quedan 17 unid.', avisos)
+
+    def test_merma_de_insumo_descuenta_unidades_y_recalcula_los_kilos(self):
+        respuesta = self._registrar(f'insumo-{self.harina.pk}', '2', 'HUMEDAD')
+
+        avisos = [str(m) for m in get_messages(respuesta.wsgi_request)]
+        self.assertIn('Merma registrada: 2 unid. de Harina (humedad o contaminación), '
+                      'pérdida estimada de $43.980. Quedan 3 unid.', avisos)
+        self.harina.refresh_from_db()
+        self.assertEqual(self.harina.stock_sacos, 3)
+        self.assertEqual(self.harina.total_kg, Decimal('75.00'))
+        self.assertEqual(self.harina.stock_actual, Decimal('75.00'))
+        merma = self.Merma.objects.get()
+        self.assertEqual((merma.tipo, merma.insumo, merma.unidad), ('INSUMO', self.harina, 'unid.'))
+        self.assertEqual(merma.valor_estimado, Decimal('43980.00'))     # 2 x $21.990
+
+    def test_los_insumos_se_muestran_en_unidades_con_su_contenido(self):
+        import re
+
+        self.Insumo.objects.create(
+            codigo='NI002', nombre='Aceite', stock_sacos=1, kilos_por_saco=Decimal('20'),
+            precio_saco=Decimal('41990'), unidad_medida='L',
+        )
+        respuesta = self.client.get(reverse('gestion_mermas'))
+        selector = re.search(r'<select id="mermaItem".*?</select>', respuesta.content.decode(), re.S).group()
+
+        self.assertIn('data-contenido="25" data-unidad-contenido="kg"', selector)
+        self.assertIn('data-contenido="20" data-unidad-contenido="L"', selector)
+        self.assertIn('Harina: 5 unid.', selector)
+        self.assertIn('Aceite: 1 unid.', selector)
+        self.assertNotIn('saco', selector)
+        self.assertNotIn('envase', selector)
+
+    def test_producto_por_kilo_se_descuenta_en_kilos(self):
+        self._registrar(f'producto-{self.marraqueta.pk}', '4', 'SOBRANTE')
+
+        self.marraqueta.refresh_from_db()
+        self.assertEqual(self.marraqueta.stock, 6)
+        self.assertEqual(self.Merma.objects.get().unidad, 'kg')
+
+    def test_se_puede_mermar_todo_el_stock(self):
+        self._registrar(f'producto-{self.pan.pk}', '20', 'VENCIMIENTO')
+
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 0)
+
+    # --- Criterio 2: una merma mayor al stock disponible se rechaza ---
+
+    def test_merma_mayor_al_stock_se_rechaza_sin_tocar_el_inventario(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '21')
+
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertContains(
+            respuesta, 'Solo hay 20 unid. de Pan Amasado: la cantidad (21 unid.) excede el stock disponible.',
+            status_code=400,
+        )
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 20)
+        self.assertFalse(self.Merma.objects.exists())
+
+    def test_merma_de_insumo_mayor_al_stock_se_rechaza(self):
+        respuesta = self._registrar(f'insumo-{self.harina.pk}', '6', 'HUMEDAD')
+
+        self.assertContains(respuesta, 'Solo hay 5 unid. de Harina: la cantidad (6 unid.)', status_code=400)
+        self.harina.refresh_from_db()
+        self.assertEqual(self.harina.stock_sacos, 5)
+
+    # --- Criterio 3: sin motivo no se registra ---
+
+    def test_merma_sin_motivo_se_rechaza(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '2', motivo='')
+
+        self.assertContains(respuesta, 'El motivo es obligatorio', status_code=400)
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 20)
+        self.assertFalse(self.Merma.objects.exists())
+
+    def test_el_motivo_otro_exige_el_detalle(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '2', motivo='OTRO', detalle='   ')
+        self.assertContains(respuesta, 'Con el motivo &quot;Otro&quot;, describe en el detalle', status_code=400)
+
+        self._registrar(f'producto-{self.pan.pk}', '2', motivo='OTRO', detalle='Se cayó al piso')
+        self.assertEqual(self.Merma.objects.get().detalle, 'Se cayó al piso')
+
+    def test_un_motivo_fuera_de_la_lista_se_rechaza(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '2', motivo='ROBO')
+        self.assertContains(respuesta, 'Selecciona un motivo de la lista.', status_code=400)
+
+    # --- Otras validaciones ---
+
+    def test_cantidades_invalidas_se_rechazan(self):
+        for cantidad in ('', '0', '-1', '1,5', '1.5', 'tres', '1234567'):
+            with self.subTest(cantidad=cantidad):
+                respuesta = self._registrar(f'producto-{self.pan.pk}', cantidad)
+                self.assertEqual(respuesta.status_code, 400)
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 20)
+        self.assertFalse(self.Merma.objects.exists())
+
+    def test_item_invalido_o_inexistente_se_rechaza(self):
+        for item in ('', 'producto-', 'pedido-1', f'producto-{self.pan.pk + 999}'):
+            with self.subTest(item=item):
+                self.assertEqual(self._registrar(item, '1').status_code, 400)
+        self.assertFalse(self.Merma.objects.exists())
+
+    def test_al_rechazar_se_conservan_los_datos_del_formulario(self):
+        respuesta = self._registrar(f'producto-{self.pan.pk}', '99', 'DANO', 'Se rompió la vitrina')
+
+        self.assertEqual(respuesta.context['formulario']['cantidad'], '99')
+        self.assertContains(respuesta, 'Se rompió la vitrina', status_code=400)
+        self.assertRegex(respuesta.content.decode(), rf'value="producto-{self.pan.pk}"[^>]*\sselected')
+        self.assertContains(respuesta, 'value="DANO" checked', status_code=400)
+
+    def test_solo_el_administrador_registra_mermas(self):
+        cajero = Usuario.objects.create_user('cajero-mermas', password='clave-larga-123', rol='CAJERO')
+        self.client.force_login(cajero)
+        self.assertRedirects(self._registrar(f'producto-{self.pan.pk}', '1'), reverse('inicio'),
+                             fetch_redirect_response=False)
+        self.client.logout()
+        self.assertRedirects(self.client.get(reverse('gestion_mermas')), reverse('login'),
+                             fetch_redirect_response=False)
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 20)
+        self.assertFalse(self.Merma.objects.exists())
+
+    def test_desde_inventario_llega_con_el_item_elegido(self):
+        respuesta = self.client.get(reverse('gestion_mermas'), {'item': f'insumo-{self.harina.pk}'})
+        self.assertContains(respuesta, f'value="insumo-{self.harina.pk}" data-nombre="Harina" data-stock="5"')
+        self.assertRegex(respuesta.content.decode(), rf'value="insumo-{self.harina.pk}"[^>]*\sselected')
+
+        inventario = self.client.get(reverse('gestion_inventario'))
+        self.assertContains(inventario, f'?item=producto-{self.pan.pk}')
+        self.assertContains(inventario, f'?item=insumo-{self.harina.pk}')
+
+    def test_eliminar_el_producto_conserva_la_merma_en_el_historial(self):
+        self._registrar(f'producto-{self.pan.pk}', '2')
+        self.pan.delete()
+
+        merma = self.Merma.objects.get()
+        self.assertIsNone(merma.producto)
+        self.assertEqual(merma.nombre_item, 'Pan Amasado')
+
+    # --- Historial de pérdidas ---
+
+    def test_el_historial_muestra_los_ultimos_30_dias_y_suma_las_perdidas(self):
+        with mock.patch('django.utils.timezone.now', return_value=self.AHORA):
+            self._merma(f'producto-{self.pan.pk}', 2, 'QUEMADO', self.AHORA - timedelta(hours=2))          # $1.100
+            self._merma(f'insumo-{self.harina.pk}', 1, 'HUMEDAD', self.AHORA - timedelta(days=29))         # $21.990
+            self._merma(f'producto-{self.marraqueta.pk}', 1, 'SOBRANTE', self.AHORA - timedelta(days=31))  # fuera
+            respuesta = self.client.get(reverse('gestion_mermas'))
+
+        self.assertEqual(len(respuesta.context['registros']), 2)
+        resumen = respuesta.context['resumen']
+        self.assertEqual(resumen['total'], Decimal('23090.00'))
+        self.assertEqual(resumen['veces'], 2)
+        self.assertEqual([fila['motivo'] for fila in resumen['por_motivo']],
+                         ['Humedad o contaminación', 'Quemado o mal horneado'])
+        self.assertContains(respuesta, '$23.090')
+        self.assertContains(respuesta, 'Ana Rojas')
+
+    def test_el_historial_filtra_por_fechas_motivo_y_tipo(self):
+        with mock.patch('django.utils.timezone.now', return_value=self.AHORA):
+            self._merma(f'producto-{self.pan.pk}', 2, 'QUEMADO', self.AHORA - timedelta(days=1))
+            self._merma(f'producto-{self.pan.pk}', 1, 'VENCIMIENTO', self.AHORA - timedelta(days=1))
+            self._merma(f'insumo-{self.harina.pk}', 1, 'HUMEDAD', self.AHORA - timedelta(days=40))
+            url = reverse('gestion_mermas')
+
+            por_motivo = self.client.get(url, {'motivo': 'QUEMADO'})
+            por_tipo = self.client.get(url, {'tipo': 'INSUMO', 'desde': '2026-09-01', 'hasta': '2026-10-28'})
+            fechas_al_reves = self.client.get(url, {'desde': '2026-10-28', 'hasta': '2026-09-01'})
+            basura = self.client.get(url, {'desde': 'ayer', 'motivo': 'ROBO', 'tipo': 'x'})
+
+        self.assertEqual([m.motivo for m in por_motivo.context['registros']], ['QUEMADO'])
+        self.assertEqual([m.tipo for m in por_tipo.context['registros']], ['INSUMO'])
+        self.assertEqual(len(fechas_al_reves.context['registros']), 3)
+        self.assertEqual(len(basura.context['registros']), 2)    # filtros inválidos: últimos 30 días, todo

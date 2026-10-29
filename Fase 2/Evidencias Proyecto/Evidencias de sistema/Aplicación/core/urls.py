@@ -45,6 +45,7 @@ urlpatterns = [
     path('panel-admin/inventario/crear/', views.crear_insumo, name='crear_insumo'),
     path('panel-admin/inventario/editar/<int:pk>/', views.editar_insumo, name='editar_insumo'),
     path('panel-admin/inventario/eliminar/<int:pk>/', views.eliminar_insumo, name='eliminar_insumo'),
+    path('panel-admin/inventario/mermas/', views.gestion_mermas, name='gestion_mermas'),
     path('panel-admin/productos/crear/', views.crear_producto, name='crear_producto'),
     path('panel-admin/productos/editar/<int:pk>/', views.editar_producto, name='editar_producto'),
     path('panel-admin/productos/eliminar/<int:pk>/', views.eliminar_producto, name='eliminar_producto'),

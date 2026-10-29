@@ -465,6 +465,48 @@ class HistorialPrecioInsumo(models.Model):
         return f"{self.insumo.nombre} - ${self.precio_saco:,.0f} ({self.fecha_registro.strftime('%d/%m/%Y')})"
 
 
+class Merma(models.Model):
+    """
+    Inventario que se perdió sin venderse (HU-EP002-008): descuenta el stock del producto o insumo
+    y deja registro de la pérdida. Reglas en core/mermas.py.
+    """
+    TIPOS = (
+        ('PRODUCTO', 'Producto'),
+        ('INSUMO', 'Insumo'),
+    )
+    MOTIVOS = (
+        ('VENCIMIENTO', 'Vencimiento'),
+        ('DANO', 'Daño o rotura'),
+        ('QUEMADO', 'Quemado o mal horneado'),
+        ('HUMEDAD', 'Humedad o contaminación'),
+        ('SOBRANTE', 'Sobrante no vendido'),
+        ('OTRO', 'Otro'),
+    )
+
+    tipo = models.CharField(max_length=10, choices=TIPOS)
+    producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas')
+    insumo = models.ForeignKey(Insumo, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas')
+    # Nombre y unidad se copian al registrar: el historial de pérdidas se conserva aunque el ítem se elimine
+    nombre_item = models.CharField(max_length=150, verbose_name="Producto o insumo")
+    unidad = models.CharField(max_length=20, verbose_name="Unidad")
+    cantidad = models.PositiveIntegerField()
+    motivo = models.CharField(max_length=20, choices=MOTIVOS)
+    detalle = models.CharField(max_length=255, blank=True, default='')
+    stock_anterior = models.IntegerField()
+    stock_resultante = models.IntegerField()
+    valor_estimado = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Pérdida estimada")
+    responsable = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas_registradas')
+    fecha = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['-fecha']
+        verbose_name = 'Merma'
+        verbose_name_plural = 'Mermas'
+
+    def __str__(self):
+        return f"Merma: {self.cantidad} {self.unidad} de {self.nombre_item} ({self.get_motivo_display()})"
+
+
 # ==========================================
 # 4. CARRITO Y PEDIDOS
 # ==========================================

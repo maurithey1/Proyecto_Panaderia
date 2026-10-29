@@ -30,12 +30,13 @@ from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
-    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo
+    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
 from . import pedidos
 from . import caja as caja_pos
+from . import mermas as mermas_inventario
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -1591,6 +1592,42 @@ def registrar_produccion(request, pk):
 
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
+
+
+@admin_required
+@require_http_methods(['GET', 'POST'])
+def gestion_mermas(request):
+    """
+    Mermas (HU-EP002-008): el administrador registra lo que se perdió sin venderse (vencido, quemado,
+    roto, sobrante...). Se descuenta del stock y queda en el historial de pérdidas, que se filtra por
+    fecha, motivo y tipo. Reglas en core/mermas.py.
+    """
+    error = None
+    formulario = {'item': request.GET.get('item', ''), 'cantidad': '', 'motivo': '', 'detalle': ''}
+    if request.method == 'POST':
+        formulario = {campo: request.POST.get(campo, '') for campo in formulario}
+        try:
+            merma = mermas_inventario.registrar_merma(request.user, **formulario)
+        except mermas_inventario.MermaInvalida as motivo:
+            error = str(motivo)
+        else:
+            messages.success(request, mermas_inventario.texto_registrada(merma))
+            return redirect('gestion_mermas')
+
+    filtros = mermas_inventario.leer_filtros(request.GET)
+    registros = mermas_inventario.historial(filtros)
+    contexto = {
+        'error': error,
+        'formulario': formulario,
+        'opciones': mermas_inventario.opciones_items(),
+        'motivos': Merma.MOTIVOS,
+        'tipos': Merma.TIPOS,
+        'largo_detalle': mermas_inventario.LARGO_MAXIMO_DETALLE,
+        'filtros': filtros,
+        'registros': registros,
+        'resumen': mermas_inventario.resumen(registros),
+    }
+    return render(request, 'core/mermas.html', contexto, status=400 if error else 200)
 
 
 @admin_required

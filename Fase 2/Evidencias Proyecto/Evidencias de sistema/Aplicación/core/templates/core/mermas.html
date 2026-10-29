@@ -1,0 +1,265 @@
+{% extends 'core/base_admin.html' %}
+{% load static formato l10n %}
+
+{% block titulo %}Mermas de inventario{% endblock %}
+
+{% block contenido %}
+<div class="crud-tarjeta-marco merma">
+
+  <div class="crud-cabecera-fila">
+    <div class="crud-enlace-superior">
+      <a href="{% url 'gestion_inventario' %}" class="crud-link-admin">← Volver a Gestión de inventario</a>
+    </div>
+    <h1 class="crud-titulo-principal">Mermas de inventario</h1>
+    <p class="merma-bajada">Registra lo que se perdió sin venderse: se descuenta del stock y queda en el historial de pérdidas.</p>
+  </div>
+
+  <!-- 1. LA TAREA: REGISTRAR UNA MERMA (formulario a la izquierda, resultado en vivo a la derecha) -->
+  <section class="merma-registro" aria-labelledby="mermaFormTitulo">
+    <h2 class="merma-subtitulo" id="mermaFormTitulo">Registrar merma</h2>
+
+    {% if error %}
+      <div class="merma-aviso" role="alert" id="mermaError">
+        <p>{{ error }}</p>
+      </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'gestion_mermas' %}" class="merma-formulario" id="formMerma" novalidate>
+      {% csrf_token %}
+
+      <div class="crud-form-grupo merma-formulario__item">
+        <div class="merma-campo-cabecera">
+          <label for="mermaItem">Producto o insumo</label>
+          <!-- Con JavaScript, la lista se acorta a productos o a insumos (sin JavaScript se ven ambos grupos) -->
+          <fieldset class="merma-tipo" data-tipo hidden>
+            <legend class="sr-only">Mostrar en la lista</legend>
+            <label class="merma-tipo__opcion">
+              <input type="radio" name="lista" value="producto">
+              <span>Productos</span>
+            </label>
+            <label class="merma-tipo__opcion">
+              <input type="radio" name="lista" value="insumo">
+              <span>Insumos</span>
+            </label>
+          </fieldset>
+        </div>
+        <select id="mermaItem" name="item" class="crud-input" required{% if error %} aria-describedby="mermaError"{% endif %}>
+          <option value="">Selecciona qué se perdió</option>
+          <optgroup label="Productos de la panadería" data-grupo="producto">
+            {% for o in opciones.productos %}
+              <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock|unlocalize }}"
+                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio|unlocalize }}"
+                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.stock <= 0 %} disabled{% endif %}>
+                {{ o.nombre }}: {% if o.stock <= 0 %}sin stock{% else %}{{ o.stock }} {{ o.unidad }}{% endif %}
+              </option>
+            {% endfor %}
+          </optgroup>
+          <optgroup label="Insumos y materias primas" data-grupo="insumo">
+            {% for o in opciones.insumos %}
+              <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock|unlocalize }}"
+                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio|unlocalize }}"
+                      data-contenido="{{ o.contenido }}" data-unidad-contenido="{{ o.unidad_contenido }}"
+                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.stock <= 0 %} disabled{% endif %}>
+                {{ o.nombre }}: {% if o.stock <= 0 %}sin stock{% else %}{{ o.stock }} {{ o.unidad }}{% endif %}
+              </option>
+            {% endfor %}
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="crud-form-grupo merma-formulario__cantidad">
+        <label for="mermaCantidad">Cantidad perdida</label>
+        <div class="merma-cantidad">
+          <input type="text" inputmode="numeric" autocomplete="off" id="mermaCantidad" name="cantidad"
+                 class="crud-input" value="{{ formulario.cantidad }}" maxlength="6" required
+                 pattern="[0-9]+" title="Solo números enteros, por ejemplo 3" placeholder="0"
+                 aria-describedby="mermaCantidadUnidad">
+          <span class="merma-cantidad__unidad" id="mermaCantidadUnidad" data-unidad-etiqueta hidden></span>
+        </div>
+      </div>
+
+      <!-- Resultado en vivo: lo que hay, lo que quedaría y lo que se pierde (solo con JavaScript) -->
+      <aside class="merma-ficha merma-formulario__ficha" id="mermaFicha" aria-label="Cómo queda el stock" hidden>
+        <p class="merma-ficha__vacia" data-ficha-vacia>
+          Elige un producto o insumo y escribe la cantidad: aquí verás cuánto queda y cuánto se pierde.
+        </p>
+        <div class="merma-ficha__contenido" data-ficha-contenido hidden>
+          <p class="merma-ficha__nombre" data-ficha-nombre></p>
+          <div class="merma-medidor" aria-hidden="true">
+            <span class="merma-medidor__queda" data-medidor-queda></span>
+            <span class="merma-medidor__pierde" data-medidor-pierde></span>
+          </div>
+          <dl class="merma-ficha__cifras" aria-live="polite">
+            <div><dt>Hay</dt><dd data-ficha-hay></dd></div>
+            <div><dt>Quedarían</dt><dd data-ficha-quedan></dd></div>
+            <div class="merma-ficha__total"><dt>Pérdida estimada</dt><dd data-ficha-perdida></dd></div>
+          </dl>
+          <p class="merma-ficha__nota" data-ficha-nota></p>
+        </div>
+      </aside>
+
+      <fieldset class="merma-motivo merma-formulario__motivo">
+        <legend>Motivo</legend>
+        <div class="merma-motivo__opciones">
+          {% for valor, nombre in motivos %}
+            <label class="merma-motivo__opcion">
+              <input type="radio" name="motivo" value="{{ valor }}" {% if valor == formulario.motivo %}checked{% endif %}>
+              <span>{{ nombre }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <div class="crud-form-grupo merma-formulario__detalle">
+        <label for="mermaDetalle">
+          Detalle
+          <span class="merma-opcional" data-detalle-ayuda>{% if formulario.motivo == 'OTRO' %}(obligatorio con el motivo Otro){% else %}(opcional){% endif %}</span>
+        </label>
+        <textarea id="mermaDetalle" name="detalle" class="crud-input merma-textarea" rows="2"
+                  maxlength="{{ largo_detalle }}" placeholder="Ej: la bandeja de la tarde se quemó en el horno 2">{{ formulario.detalle }}</textarea>
+      </div>
+
+      <div class="merma-formulario__enviar">
+        <p class="merma-aviso merma-aviso--campo" id="mermaAvisoCliente" role="alert" hidden></p>
+        <button type="submit" class="merma-boton" id="btnRegistrarMerma">Registrar merma</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- 2. EL INFORME: FILTROS, RESUMEN Y TABLA JUNTOS (el resumen depende de los filtros) -->
+  <section class="merma-historial" aria-labelledby="mermaHistorialTitulo">
+    <h2 class="merma-subtitulo" id="mermaHistorialTitulo">Historial de pérdidas</h2>
+
+    <form method="get" action="{% url 'gestion_mermas' %}" class="historial-barra-filtros merma-filtros"
+          aria-label="Filtrar el historial de mermas">
+      <div class="historial-filtro-grupo">
+        <label for="filtroDesde">Desde</label>
+        <input type="date" id="filtroDesde" name="desde" class="crud-input" value="{{ filtros.desde|date:'Y-m-d' }}">
+      </div>
+      <div class="historial-filtro-grupo">
+        <label for="filtroHasta">Hasta</label>
+        <input type="date" id="filtroHasta" name="hasta" class="crud-input" value="{{ filtros.hasta|date:'Y-m-d' }}">
+      </div>
+      <div class="historial-filtro-grupo">
+        <label for="filtroMotivo">Motivo</label>
+        <select id="filtroMotivo" name="motivo" class="crud-input">
+          <option value="">Todos los motivos</option>
+          {% for valor, nombre in motivos %}
+            <option value="{{ valor }}" {% if valor == filtros.motivo %}selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="historial-filtro-grupo">
+        <label for="filtroTipo">Tipo</label>
+        <select id="filtroTipo" name="tipo" class="crud-input">
+          <option value="">Productos e insumos</option>
+          {% for valor, nombre in tipos %}
+            <option value="{{ valor }}" {% if valor == filtros.tipo %}selected{% endif %}>{{ nombre }}s</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="merma-filtros__acciones">
+        <button type="submit" class="merma-boton-secundario">Filtrar</button>
+        <a href="{% url 'gestion_mermas' %}" class="merma-enlace">Limpiar</a>
+      </div>
+    </form>
+
+    <div class="merma-resumen">
+      <div class="merma-resumen__total">
+        <p class="merma-resumen__etiqueta">Pérdida estimada del período</p>
+        <p class="merma-total">{{ resumen.total|clp }}</p>
+        <p class="merma-periodo">
+          {% if resumen.veces == 1 %}1 merma{% else %}{{ resumen.veces }} mermas{% endif %}
+          entre el {{ filtros.desde|date:"d/m/Y" }} y el {{ filtros.hasta|date:"d/m/Y" }}
+        </p>
+      </div>
+      {% if resumen.por_motivo %}
+        <ul class="merma-motivos" aria-label="Pérdida por motivo">
+          {% for fila in resumen.por_motivo %}
+            <li>
+              <span class="merma-motivos__nombre">{{ fila.motivo }} <small>({{ fila.veces }})</small></span>
+              <strong class="merma-motivos__monto">{{ fila.total|clp }}</strong>
+              <span class="merma-motivos__barra" aria-hidden="true"><span style="width: {{ fila.parte|unlocalize }}%"></span></span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </div>
+
+    <div class="crud-tabla-responsive">
+      <table class="crud-tabla-pantallazo merma-tabla">
+        <caption class="sr-only">Historial de mermas del período</caption>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Producto o insumo</th>
+            <th scope="col">Cantidad</th>
+            <th scope="col">Motivo</th>
+            <th scope="col">Stock</th>
+            <th scope="col">Pérdida estimada</th>
+            <th scope="col">Responsable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in registros %}
+            <tr>
+              <td class="crud-col-centro merma-cifra">{{ m.fecha|date:"d/m/Y H:i" }}</td>
+              <td class="crud-col-nombre">
+                <strong>{{ m.nombre_item }}</strong>
+                <span class="crud-badge-cat">{{ m.get_tipo_display }}</span>
+              </td>
+              <td class="crud-col-centro merma-cifra">
+                {{ m.cantidad }}
+                {% if m.unidad == 'envases' or m.unidad == 'sacos' %}unid.{% else %}{{ m.unidad }}{% endif %}
+              </td>
+              <td>
+                {{ m.get_motivo_display }}
+                {% if m.detalle %}<span class="merma-detalle">{{ m.detalle }}</span>{% endif %}
+              </td>
+              <td class="crud-col-centro merma-cifra">
+                {{ m.stock_anterior }} → {{ m.stock_resultante }}
+              </td>
+              <td class="crud-col-centro merma-cifra merma-perdida">{{ m.valor_estimado|clp }}</td>
+              <td class="crud-col-centro">
+                {% if m.responsable %}{{ m.responsable.get_full_name|default:m.responsable.username }}{% else %}—{% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="merma-vacio">No hay mermas registradas con estos filtros.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- CONFIRMACIÓN DE LA MERMA (modal del sistema, como en la apertura de caja) -->
+<dialog class="confirmacion-modal" id="modalConfirmarMerma"
+        aria-labelledby="confirmarMermaTitulo" aria-describedby="confirmarMermaTexto">
+  <div class="confirmacion-modal__caja">
+    <header class="confirmacion-modal__cabecera">
+      <h2 class="confirmacion-modal__titulo" id="confirmarMermaTitulo" tabindex="-1" autofocus>Confirmar merma</h2>
+    </header>
+    <div class="confirmacion-modal__cuerpo">
+      <p id="confirmarMermaTexto">
+        Vas a descontar <strong data-confirmar-cantidad></strong> de <strong data-confirmar-nombre></strong>
+        por <span data-confirmar-motivo></span>. Pérdida estimada:
+      </p>
+      <p class="confirmacion-modal__monto" data-confirmar-valor></p>
+      <p class="confirmacion-modal__nota">
+        El stock pasa de <span data-confirmar-stock></span>. Una merma no se puede editar ni borrar después.
+      </p>
+    </div>
+    <footer class="confirmacion-modal__pie">
+      <button type="button" class="confirmacion-modal__boton confirmacion-modal__boton--secundario" data-cancelar>Cancelar</button>
+      <button type="button" class="confirmacion-modal__boton" data-aceptar>Registrar merma</button>
+    </footer>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/mermas.js' %}"></script>
+{% endblock %}

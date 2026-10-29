@@ -90,6 +90,7 @@
         <a href="{% url 'comparar_cotizaciones' %}"{% if request.resolver_match.url_name == 'comparar_cotizaciones' %} aria-current="page"{% endif %}>Comparador y estudio de mercado</a>
         <a href="{% url 'lista_ordenes_compra' %}"{% if 'ordenes-compra' in request.path %} aria-current="page"{% endif %}>Órdenes de compra</a>
         <a href="{% url 'gestion_inventario' %}">Gestión de inventario</a>
+        <a href="{% url 'gestion_mermas' %}"{% if request.resolver_match.url_name == 'gestion_mermas' %} aria-current="page"{% endif %}>Mermas</a>
       </nav>
 
       <div class="admin-cabecera__acciones">

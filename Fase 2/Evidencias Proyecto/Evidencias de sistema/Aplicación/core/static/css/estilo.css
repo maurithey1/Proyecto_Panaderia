@@ -4465,3 +4465,405 @@ a.historial-paginacion__enlace--actual:hover {
   .cotiz__boton { width: 100%; }
 }
 
+/* ==========================================================
+   MERMAS DE INVENTARIO (HU-EP002-008)
+   Dos bloques de distinto peso: arriba la tarea (registrar una merma, con su resultado en vivo)
+   y abajo el informe (filtros, resumen y tabla juntos, porque el resumen depende de los filtros).
+   El único botón lleno de la página es "Registrar merma"; lo elegido (tipo y motivo) se marca
+   con fondo miga, sin competir con él.
+   ========================================================== */
+.merma-bajada {
+  max-width: 72ch;
+  margin: 8px auto 0;
+  font-size: 0.95rem;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+.merma-subtitulo {
+  margin: 0 0 16px;
+  font-family: var(--fuente-titulos);
+  font-size: 1.35rem;
+  font-weight: 400;
+  color: var(--cafe-oscuro);
+}
+
+/* ----------------------------------------------------------
+   1. REGISTRO: el único bloque con fondo propio, porque es la tarea principal
+   ---------------------------------------------------------- */
+.merma-registro {
+  padding: 22px 24px 24px;
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--crema);
+}
+
+/* Campos a la izquierda y el resultado a la derecha, a la vista mientras se escribe.
+   En pantallas angostas el resultado baja justo después de la cantidad (ver media queries). */
+.merma-formulario {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  grid-template-areas:
+    "item     ficha"
+    "cantidad ficha"
+    "motivo   ficha"
+    "detalle  ficha"
+    "enviar   ficha";
+  gap: 16px 28px;
+  align-items: start;
+}
+.merma-formulario__item { grid-area: item; }
+.merma-formulario__cantidad { grid-area: cantidad; max-width: 220px; }
+.merma-formulario__ficha { grid-area: ficha; position: sticky; top: 88px; }   /* bajo la cabecera fija */
+.merma-formulario__motivo { grid-area: motivo; }
+.merma-formulario__detalle { grid-area: detalle; }
+.merma-formulario__enviar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  grid-area: enviar;
+}
+
+/* Los <select> miden lo que su opción más larga: sin esto se salen de la tarjeta en pantallas angostas */
+.merma-formulario .crud-input,
+.merma-filtros .crud-input { width: 100%; min-width: 0; }
+
+.merma-textarea { min-height: 64px; resize: vertical; }
+
+.merma-opcional { font-weight: 400; color: var(--texto-suave); }
+
+.merma-formulario .crud-input[aria-invalid="true"] { border-color: var(--terracota); }
+
+/* La etiqueta y el selector Productos | Insumos en la misma línea: el selector filtra la lista de abajo */
+.merma-campo-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+
+.merma-tipo {
+  display: inline-flex;
+  margin: 0;
+  padding: 2px;
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  background: var(--papel);
+}
+.merma-tipo[hidden] { display: none; }
+
+/* Opciones de radio con aspecto de botón (tipo y motivos): el radio real queda encima, invisible,
+   así funcionan el clic, el teclado y los lectores de pantalla */
+.merma-tipo__opcion,
+.merma-motivo__opcion { position: relative; }
+.merma-tipo__opcion input,
+.merma-motivo__opcion input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.merma-tipo__opcion input:focus-visible + span,
+.merma-motivo__opcion input:focus-visible + span { outline: 3px solid var(--trigo); outline-offset: 2px; }
+
+.merma-tipo__opcion span {
+  display: block;
+  padding: 4px 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--texto-suave);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.merma-tipo__opcion input:checked + span { background: var(--miga); color: var(--cafe-oscuro); }
+
+/* La unidad va pegada al número: "3 | unid." */
+.merma-cantidad { display: flex; }
+.merma-cantidad .crud-input {
+  flex: 1 1 auto;
+  border-radius: 8px 0 0 8px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: right;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.merma-cantidad:has(.merma-cantidad__unidad[hidden]) .crud-input { border-radius: 8px; }
+.merma-cantidad__unidad {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1.5px solid var(--borde);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--crema-2);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--cafe-oscuro);
+  white-space: nowrap;
+}
+.merma-cantidad__unidad[hidden] { display: none; }
+
+/* MOTIVOS: un clic, todos a la vista */
+.merma-motivo {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.merma-motivo legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--cafe-oscuro);
+}
+.merma-motivo__opciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.merma-motivo__opcion span {
+  display: block;
+  padding: 7px 14px;
+  border: 1.5px solid var(--borde);
+  border-radius: 999px;
+  background: var(--papel);
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.merma-motivo__opcion:hover span { border-color: var(--cafe-claro); }
+.merma-motivo__opcion input:checked + span { border-color: var(--cafe); background: var(--miga); font-weight: 700; }
+.merma-motivo--error .merma-motivo__opcion span { border-color: var(--terracota); }
+
+/* RESULTADO EN VIVO: lo que hay, lo que quedaría y la pérdida, que es el dato que importa */
+.merma-ficha {
+  padding: 18px 18px 16px;
+  border: 1.5px solid var(--borde);
+  border-radius: 10px;
+  background: var(--papel);
+}
+.merma-ficha[hidden] { display: none; }
+
+.merma-ficha__vacia { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--texto-suave); }
+
+.merma-ficha__contenido { display: flex; flex-direction: column; gap: 12px; }
+.merma-ficha__contenido[hidden] { display: none; }
+
+.merma-ficha__nombre { margin: 0; font-weight: 700; line-height: 1.3; color: var(--cafe-oscuro); }
+
+/* Medidor: el ancho completo es lo que hay; trigo lo que queda, terracota lo que se pierde */
+.merma-medidor {
+  display: flex;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--crema-2);
+}
+.merma-medidor__queda,
+.merma-medidor__pierde { transition: width 0.2s ease; }
+.merma-medidor__queda { background: var(--trigo); }
+.merma-medidor__pierde { background: var(--terracota); }
+.merma-ficha--excede .merma-medidor__pierde {
+  background: repeating-linear-gradient(135deg, var(--terracota) 0 6px, #923e1b 6px 12px);
+}
+
+.merma-ficha__cifras { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.merma-ficha__cifras > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.merma-ficha__cifras dt { font-size: 0.85rem; color: var(--texto-suave); }
+.merma-ficha__cifras dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+  color: var(--cafe-oscuro);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.merma-ficha__cifras small {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--texto-suave);
+}
+.merma-ficha__cifras .merma-ficha__total { padding-top: 10px; border-top: 1px solid var(--borde); }
+.merma-ficha__total dt { font-weight: 600; color: var(--cafe-oscuro); }
+.merma-ficha__total dd { font-size: 1.5rem; color: var(--terracota); }
+.merma-ficha--excede [data-ficha-quedan] { color: var(--terracota); }
+
+.merma-ficha__nota { margin: 0; font-size: 0.8rem; color: var(--texto-suave); }
+
+/* Error de validación (del servidor o del formulario) */
+.merma-aviso {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border: 1.5px solid #e9b9a3;
+  border-radius: 8px;
+  background: #fbeee8;
+  font-size: 0.9rem;
+  color: #8a3a1b;
+}
+.merma-aviso p { margin: 0; }
+.merma-aviso--campo { margin: 0; }
+
+/* El único botón lleno de la página */
+.merma-boton {
+  min-height: 44px;
+  padding: 11px 26px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--cafe);
+  font: 700 0.98rem/1 var(--fuente-texto);
+  color: var(--papel);
+  cursor: pointer;
+  transition: background-color 0.18s ease;
+}
+.merma-boton:hover { background: var(--cafe-hover); }
+.merma-boton:focus-visible { outline: 3px solid var(--trigo); outline-offset: 2px; }
+.merma-boton:disabled { opacity: 0.6; cursor: wait; }
+
+/* ----------------------------------------------------------
+   2. HISTORIAL: filtros, resumen y tabla como un solo informe
+   ---------------------------------------------------------- */
+.merma-historial { margin-top: 40px; }
+
+/* Los filtros sin caja propia: son parte del informe, no un bloque aparte */
+.merma-historial .merma-filtros {
+  align-items: flex-end;
+  margin-bottom: 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.merma-filtros .historial-filtro-grupo { min-width: 150px; }
+.merma-filtros__acciones { display: flex; align-items: center; gap: 16px; min-height: 42px; }
+
+.merma-boton-secundario {
+  min-height: 40px;
+  padding: 8px 18px;
+  border: 1.5px solid var(--cafe);
+  border-radius: 8px;
+  background: var(--papel);
+  font: 700 0.9rem/1 var(--fuente-texto);
+  color: var(--cafe);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.merma-boton-secundario:hover { background: var(--crema-2); }
+
+.merma-enlace {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--cafe);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.merma-enlace:hover { color: var(--cafe-hover); }
+
+.merma-boton-secundario:focus-visible,
+.merma-enlace:focus-visible { outline: 3px solid var(--trigo); outline-offset: 2px; }
+
+/* Resumen del período, pegado a la tabla que resume: cuánto se perdió y en qué */
+.merma-resumen {
+  display: grid;
+  grid-template-columns: minmax(210px, 270px) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px 40px;
+  margin-bottom: 16px;
+  padding: 18px 22px;
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  background: var(--papel);
+}
+
+.merma-resumen__etiqueta { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--cafe-oscuro); }
+
+/* El total como los precios del catálogo: terracota y cifras rectas */
+.merma-total {
+  margin: 2px 0 4px;
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--terracota);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+.merma-periodo {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--texto-suave);
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
+/* Cada motivo con su monto y una barra del largo de su parte del total */
+.merma-motivos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 14px 28px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.merma-motivos li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 6px 12px;
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+}
+.merma-motivos small { color: var(--texto-suave); }
+.merma-motivos__monto { font-variant-numeric: lining-nums tabular-nums; }
+.merma-motivos__barra {
+  grid-column: 1 / -1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--crema-2);
+}
+.merma-motivos__barra span { display: block; height: 100%; border-radius: inherit; background: var(--terracota); }
+
+/* Tabla */
+.merma-tabla .crud-badge-cat { margin-left: 6px; }
+.merma-cifra { white-space: nowrap; font-variant-numeric: lining-nums tabular-nums; }
+.merma-tabla .merma-perdida { font-weight: 700; color: var(--terracota); }
+.merma-detalle { display: block; margin-top: 2px; font-size: 0.82rem; color: var(--texto-suave); }
+
+.merma-tabla .merma-vacio {
+  padding: 28px;
+  text-align: center;
+  color: var(--texto-suave);
+}
+
+/* Acceso "Merma" en las filas de Gestión de inventario (no se confunde con Eliminar) */
+.crud-btn-merma {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--trigo);
+  color: var(--cafe-oscuro);
+  text-decoration: none;
+}
+.crud-btn-merma:hover { background-color: var(--corteza-brillo); }
+
+@media (max-width: 900px) {
+  .merma-formulario {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "item" "cantidad" "ficha" "motivo" "detalle" "enviar";
+  }
+  .merma-formulario__ficha { position: static; }
+  .merma-resumen { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .merma-registro { padding: 18px 16px; }
+  .merma-formulario__cantidad { max-width: none; }
+  .merma-formulario__enviar { align-items: stretch; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .merma-medidor__queda,
+  .merma-medidor__pierde { transition: none; }
+}
