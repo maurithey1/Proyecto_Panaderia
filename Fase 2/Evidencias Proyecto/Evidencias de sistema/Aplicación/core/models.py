@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
@@ -302,6 +303,13 @@ class Proveedor(models.Model):
 
 
 class Insumo(models.Model):
+    # Unidad en que se mide la cantidad total y el contenido de cada saco, caja o bidón
+    UNIDADES_MEDIDA = (
+        ('kg', 'Kilos (kg)'),
+        ('L', 'Litros (L)'),
+        ('un.', 'Unidades (un.)'),
+    )
+
     codigo = models.CharField(max_length=20, unique=True, default='', blank=True, verbose_name="ID / Código")
     nombre = models.CharField(max_length=100, verbose_name="Nombre producto")
     tipo_insumo = models.CharField(max_length=50, default='Materia Prima', blank=True)
@@ -325,17 +333,85 @@ class Insumo(models.Model):
         verbose_name_plural = "Insumos"
         ordering = ['codigo', 'nombre']
 
+    @property
+    def unidad(self):
+        """Unidad de la cantidad total y del contenido: 'kg', 'L' o 'un.' (los antiguos 'Kg' son kg)."""
+        texto = (self.unidad_medida or '').strip().lower().rstrip('.')
+        if texto in ('l', 'lt', 'lts', 'litro', 'litros'):
+            return 'L'
+        if texto in ('u', 'un', 'unid', 'unidad', 'unidades'):
+            return 'un.'
+        return 'kg'
+
     def save(self, *args, **kwargs):
-        # Calcular Total Kg si no se especifica o sincronizar con sacos
-        if self.kilos_por_saco > 0:
-            self.total_kg = self.stock_sacos * self.kilos_por_saco
-            if self.precio_saco > 0:
-                self.precio_unitario = self.precio_saco / self.kilos_por_saco
-        self.stock_actual = self.total_kg
+        # El stock real es lo que queda en sus envases (EnvaseInsumo) y se guarda sumado en total_kg
+        # (en kg, L o un.); las unidades completas (stock_sacos) se calculan desde ahí: 436 huevos en
+        # cajas de 180 son 2 cajas completas. kilos_por_saco y precio_saco son los del envase de
+        # referencia (el último que llegó), que usan el comparador y las órdenes de compra.
+        # Un insumo nuevo que solo trae unidades completas (código antiguo) toma el total de ellas.
+        contenido = Decimal(str(self.kilos_por_saco or 0))
+        total = Decimal(str(self.total_kg or 0))
+        creando = self._state.adding
+        if creando and not total and self.stock_sacos:
+            total = self.stock_sacos * contenido
+        if contenido > 0:
+            self.stock_sacos = int(total // contenido)
+            precio = Decimal(str(self.precio_saco or 0))
+            if precio > 0:
+                self.precio_unitario = precio / contenido
+        self.total_kg = total
+        self.stock_actual = total
         super().save(*args, **kwargs)
+        # Creado con stock y sin envases: el stock se reparte en envases llenos y uno en uso
+        if creando and total > 0 and contenido > 0 and not self.envases.exists():
+            llenos, resto = divmod(total, contenido)
+            for _ in range(int(llenos)):
+                self.envases.create(tipo='envase', contenido=contenido, restante=contenido, precio=self.precio_saco or 0)
+            if resto:
+                self.envases.create(tipo='envase', contenido=contenido, restante=resto, precio=self.precio_saco or 0)
+
+    def actualizar_stock(self):
+        """Vuelve a sumar lo que queda en los envases (después de un ingreso o una merma)."""
+        self.total_kg = self.envases.aggregate(total=models.Sum('restante'))['total'] or Decimal('0')
+        self.save(update_fields=['total_kg', 'stock_sacos', 'stock_actual'])
 
     def __str__(self):
-        return f"{self.codigo} - {self.nombre} ({self.total_kg} Kg)"
+        return f"{self.codigo} - {self.nombre} ({self.total_kg} {self.unidad})"
+
+
+class EnvaseInsumo(models.Model):
+    """
+    Un saco, caja, bandeja o bidón de un insumo, con lo que le queda. El stock del insumo es la suma
+    de sus envases (Insumo.actualizar_stock). Una merma se descuenta de un envase específico: de la
+    caja en uso que tiene 76 huevos, no de las que siguen cerradas.
+    """
+    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, related_name='envases')
+    tipo = models.CharField(max_length=60, verbose_name="Tipo de envase")    # lo escribe el admin: "caja", "bandeja de 12"
+    contenido = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Cantidad del envase")
+    restante = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Le queda")
+    precio = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Precio del envase")
+    proveedor = models.ForeignKey(
+        Proveedor, on_delete=models.SET_NULL, null=True, blank=True, related_name='envases_insumo',
+    )
+    fecha_ingreso = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['insumo', 'fecha_ingreso', 'pk']
+        verbose_name = 'Envase de insumo'
+        verbose_name_plural = 'Envases de insumos'
+
+    @property
+    def en_uso(self):
+        """Abierto: ya se sacó algo, pero le queda."""
+        return 0 < self.restante < self.contenido
+
+    @property
+    def precio_por_unidad(self):
+        """Lo que cuesta cada kg, L o un. de este envase ($36.990 / 180 = $205,50 por huevo)."""
+        return self.precio / self.contenido if self.contenido else Decimal('0')
+
+    def __str__(self):
+        return f"{self.insumo.nombre}, {self.tipo}: quedan {self.restante} de {self.contenido} {self.insumo.unidad}"
 
 
 class ProveedorInsumo(models.Model):
@@ -486,14 +562,17 @@ class Merma(models.Model):
     tipo = models.CharField(max_length=10, choices=TIPOS)
     producto = models.ForeignKey(Producto, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas')
     insumo = models.ForeignKey(Insumo, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas')
+    # De qué saco, caja o bidón salió la pérdida (solo insumos)
+    envase = models.ForeignKey(EnvaseInsumo, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas')
     # Nombre y unidad se copian al registrar: el historial de pérdidas se conserva aunque el ítem se elimine
     nombre_item = models.CharField(max_length=150, verbose_name="Producto o insumo")
     unidad = models.CharField(max_length=20, verbose_name="Unidad")
-    cantidad = models.PositiveIntegerField()
+    # Con decimales: un insumo puede perder 2,5 kg o 0,5 L. Los stocks son los del producto o insumo.
+    cantidad = models.DecimalField(max_digits=10, decimal_places=2)
     motivo = models.CharField(max_length=20, choices=MOTIVOS)
     detalle = models.CharField(max_length=255, blank=True, default='')
-    stock_anterior = models.IntegerField()
-    stock_resultante = models.IntegerField()
+    stock_anterior = models.DecimalField(max_digits=10, decimal_places=2)
+    stock_resultante = models.DecimalField(max_digits=10, decimal_places=2)
     valor_estimado = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Pérdida estimada")
     responsable = models.ForeignKey(Usuario, on_delete=models.SET_NULL, null=True, blank=True, related_name='mermas_registradas')
     fecha = models.DateTimeField(default=timezone.now)

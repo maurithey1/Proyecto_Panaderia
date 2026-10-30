@@ -4867,3 +4867,95 @@ a.historial-paginacion__enlace--actual:hover {
   .merma-medidor__queda,
   .merma-medidor__pierde { transition: none; }
 }
+
+/* ==========================================================
+   FORMULARIO DE INSUMO (agregar y editar)
+   Unidad de medida, contenido de cada saco, caja o bidón y cantidad total, con la unidad pegada
+   al número y la equivalencia en vivo debajo.
+   ========================================================== */
+/* Las columnas no se ensanchan con su contenido: sin esto la ventana se desbordaba hacia el lado */
+.insumo-form .crud-form-fila-doble > * { min-width: 0; }
+.insumo-form .crud-input { width: 100%; min-width: 0; }
+/* Si una etiqueta ocupa dos líneas, los campos de la fila igual quedan a la misma altura */
+.insumo-form .insumo-fila-campos { align-items: end; }
+
+.insumo-ayuda { font-size: 0.8rem; color: var(--texto-suave); }
+
+.insumo-con-unidad { display: flex; }
+.insumo-con-unidad .crud-input {
+  flex: 1 1 auto;
+  border-radius: 8px 0 0 8px;
+  text-align: right;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+.insumo-con-unidad__sufijo {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1.5px solid var(--borde);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--crema-2);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--cafe-oscuro);
+  white-space: nowrap;
+}
+
+.insumo-resumen {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--crema);
+  font-size: 0.88rem;
+  color: var(--cafe-oscuro);
+}
+.insumo-resumen:empty { display: none; }
+
+/* "+ Envase": qué se va a sumar ("Cada uno: caja de 180 un. a $36.990, de Avícola El Roble") */
+.insumo-presentacion {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1.5px solid var(--borde);
+  border-radius: 8px;
+  background: var(--papel);
+  font-weight: 600;
+  color: var(--cafe-oscuro);
+}
+
+.insumo-proveedor { display: flex; gap: 8px; }
+.insumo-proveedor .crud-input { flex: 1 1 auto; }
+.insumo-proveedor__nuevo {
+  margin: 0;
+  padding: 0 14px;
+  background-color: var(--cafe);
+  white-space: nowrap;
+}
+
+/* Tabla de insumos: tipo y tamaño del envase debajo de la cantidad de envases */
+.insumo-tipo-envase { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--texto-suave); }
+
+/* "+ Envase" en las filas de insumos (llegaron más cajas, bidones o sacos) */
+.crud-btn-envase { background-color: var(--cafe-claro); color: var(--cafe-oscuro); }
+.crud-btn-envase:hover { background-color: var(--corteza-brillo); }
+
+/* Mermas: "Se perdió todo el envase" pone en la cantidad lo que le queda al envase */
+.merma-todo-envase {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 0.85rem/1.3 var(--fuente-texto);
+  color: var(--cafe);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.merma-todo-envase[hidden] { display: none; }
+.merma-todo-envase:hover { color: var(--cafe-hover); }
+.merma-todo-envase:focus-visible { outline: 3px solid var(--trigo); outline-offset: 2px; }
+
+@media (max-width: 520px) {
+  .insumo-form .crud-form-fila-doble { grid-template-columns: 1fr; }
+}

@@ -3,7 +3,7 @@ import time
 import unicodedata
 import json
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import IntegrityError, transaction
-from django.db.models import Case, Count, F, IntegerField, Prefetch, Q, Sum, Value, When
+from django.db.models import Case, Count, F, IntegerField, OuterRef, Prefetch, Q, Subquery, Sum, Value, When
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
@@ -30,7 +30,7 @@ from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
-    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma
+    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma, EnvaseInsumo
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -1152,18 +1152,19 @@ def reactivar_usuario(request, pk):
 
 @admin_required
 def gestion_inventario(request):
-    insumos = Insumo.objects.all().order_by('codigo', 'nombre')
+    # Cuántos envases le quedan a cada insumo, cuántos están en uso y el tipo del último que llegó
+    con_stock = Q(envases__restante__gt=0)
+    insumos = Insumo.objects.annotate(
+        envases_con_stock=Count('envases', filter=con_stock),
+        envases_en_uso=Count('envases', filter=con_stock & Q(envases__restante__lt=F('envases__contenido'))),
+        tipo_envase=Subquery(
+            EnvaseInsumo.objects.filter(insumo=OuterRef('pk')).order_by('-fecha_ingreso', '-pk').values('tipo')[:1]
+        ),
+    ).order_by('codigo', 'nombre')
 
     proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
 
-    ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
-    siguiente_id = 'NI001'
-    if ultimo and ultimo.codigo.startswith('NI'):
-        try:
-            num = int(ultimo.codigo.replace('NI', '')) + 1
-            siguiente_id = f'NI{num:03d}'
-        except ValueError:
-            siguiente_id = f'NI{insumos.count() + 1:03d}'
+    siguiente_id = _siguiente_codigo_insumo()     # se muestra en "Agregar insumo"; se asigna al guardar
 
     todos_los_productos = (
         Producto.objects.select_related('categoria').prefetch_related('turnos')
@@ -1188,156 +1189,227 @@ def gestion_inventario(request):
         'categorias_productos': categorias_productos,
         'proveedores': proveedores,
         'dias_semana': dias_semana,
+        'unidades_medida': Insumo.UNIDADES_MEDIDA,
+        # Sugerencias para "Tipo de envase": las de siempre y las que ya se usaron (se puede escribir otra)
+        'tipos_envase': sorted(
+            {'caja', 'bandeja de 6', 'bandeja de 12', 'bidón', 'saco', 'bolsa'}
+            | set(EnvaseInsumo.objects.exclude(tipo='envase').values_list('tipo', flat=True))
+        ),
     }
     return render(request, 'core/tabla_crud_insumos.html', contexto)
+
+
+# --- Insumos y sus envases (agregar insumo, "+ Envase" y editar) ---
+# Un insumo es el material (Huevo blanco grande, medido en un.) y su stock está repartido en envases:
+# cada saco, caja, bandeja o bidón con lo que le queda (EnvaseInsumo). "Agregar insumo" crea el
+# material con su primer envase, así que el stock parte con lo que trae ese envase; "+ Envase" suma los
+# que van llegando y una merma se descuenta del envase elegido. El código lo asigna el sistema.
+
+TOPE_CONTENIDO_INSUMO = Decimal('1000000')       # Insumo.kilos_por_saco: 8 dígitos con 2 decimales
+TOPE_PRECIO_ENVASE = Decimal('100000000')        # precios: 10 dígitos con 2 decimales
+LARGO_TIPO_ENVASE = 60                           # EnvaseInsumo.tipo
+MAXIMO_ENVASES_POR_INGRESO = 100
+
+
+class InsumoInvalido(Exception):
+    """Los datos del formulario de insumo no sirven; el mensaje es para el administrador."""
+
+
+def _siguiente_codigo_insumo():
+    """Siguiente código correlativo (NI001, NI002...): el mayor número usado + 1, aunque pase de NI999."""
+    usados = Insumo.objects.filter(codigo__regex=r'^NI[0-9]+$').values_list('codigo', flat=True)
+    return f'NI{max((int(codigo[2:]) for codigo in usados), default=0) + 1:03d}'
+
+
+def _decimal_o_none(valor):
+    """'12,5' o '12.5' -> Decimal('12.5'); vacío o inválido -> None."""
+    try:
+        numero = Decimal(str(valor or '').strip().replace(',', '.'))
+    except InvalidOperation:
+        return None
+    return numero if numero.is_finite() else None
+
+
+def _cantidad_con_unidad(cantidad, unidad):
+    """Decimal('47.70'), 'L' -> '47,7 L'; Decimal('550.00'), 'un.' -> '550 un.'"""
+    return f"{format(cantidad.normalize(), 'f').replace('.', ',')} {unidad}"
+
+
+def _con_punto(frase):
+    """Cierra la frase con punto, sin duplicarlo cuando termina en "un."."""
+    return frase if frase.endswith('.') else frase + '.'
+
+
+def _leer_precio_envase(texto, valor_defecto='0'):
+    precio = normalizar_precio(texto, valor_defecto=valor_defecto)
+    if precio >= TOPE_PRECIO_ENVASE:
+        raise InsumoInvalido('El precio es demasiado grande: revisa que esté bien escrito.')
+    return precio
+
+
+def _proveedor_elegido(post):
+    return Proveedor.objects.filter(pk=_entero_o_none(post.get('proveedor_id'))).first()
+
+
+def _datos_envase(post, unidad):
+    """Valida el envase del formulario: tipo, cuánto trae, precio y proveedor. Lanza InsumoInvalido."""
+    tipo = ' '.join(post.get('tipo_envase', '').split())
+    if not tipo:
+        raise InsumoInvalido('Indica el tipo de envase: caja, bandeja de 12, bidón, saco...')
+    if len(tipo) > LARGO_TIPO_ENVASE:
+        raise InsumoInvalido(f'El tipo de envase puede tener hasta {LARGO_TIPO_ENVASE} caracteres.')
+
+    contenido = _decimal_o_none(post.get('kilos_por_saco'))
+    if contenido is None or contenido <= 0:
+        raise InsumoInvalido('Indica cuánto trae el envase (por ejemplo 180 un., 20 L o 25 kg).')
+    if contenido >= TOPE_CONTENIDO_INSUMO:
+        raise InsumoInvalido('La cantidad del envase es demasiado grande: revisa que esté bien escrita.')
+    if unidad == 'un.' and contenido != contenido.to_integral_value():
+        raise InsumoInvalido('En unidades (un.) la cantidad va entera: no puede haber medio huevo.')
+
+    return {
+        'tipo': tipo,
+        'contenido': contenido.quantize(Decimal('0.01')),
+        'precio': _leer_precio_envase(post.get('precio_saco', 0)),
+        'proveedor': _proveedor_elegido(post),
+    }
+
+
+def _registrar_precio(insumo, proveedor, precio_anterior, origen):
+    """Deja en el historial de precios el cambio del precio de referencia del envase."""
+    variacion = Decimal('0.00')
+    if precio_anterior > 0:
+        variacion = ((insumo.precio_saco - precio_anterior) / precio_anterior) * Decimal('100.0')
+    HistorialPrecioInsumo.objects.create(
+        insumo=insumo,
+        proveedor=proveedor,
+        precio_saco=insumo.precio_saco,
+        precio_anterior=precio_anterior,
+        variacion_porcentaje=round(variacion, 2),
+        origen_cambio=origen,
+    )
 
 
 @admin_required
 @require_POST
 def crear_insumo(request):
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
-    codigo = request.POST.get('codigo', '').strip().upper()
-    nombre = request.POST.get('nombre', '').strip()
-    stock_sacos = request.POST.get('stock_sacos', 0)
-    kilos_por_saco = request.POST.get('kilos_por_saco', 25)
-    total_kg = request.POST.get('total_kg', None)
-    proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
-    precio_saco = normalizar_precio(request.POST.get('precio_saco', 0))
-
-    if not nombre:
-        messages.error(request, 'El nombre del producto es obligatorio.')
-        return redirect(next_url)
-
-    try:
-        stock_sacos = int(stock_sacos)
-    except (ValueError, TypeError):
-        stock_sacos = 0
-
-    try:
-        kilos_por_saco = Decimal(str(kilos_por_saco).replace(',', '.'))
-    except Exception:
-        kilos_por_saco = Decimal('25.00')
-
-    try:
-        if total_kg:
-            total_kg = Decimal(str(total_kg).replace(',', '.'))
-        else:
-            total_kg = stock_sacos * kilos_por_saco
-    except Exception:
-        total_kg = stock_sacos * kilos_por_saco
-
-    if not codigo:
-        ultimo = Insumo.objects.exclude(codigo='').order_by('-codigo').first()
-        if ultimo and ultimo.codigo.startswith('NI'):
-            try:
-                num = int(ultimo.codigo.replace('NI', '')) + 1
-                codigo = f'NI{num:03d}'
-            except ValueError:
-                codigo = f'NI{Insumo.objects.count() + 1:03d}'
-        else:
-            codigo = f'NI{Insumo.objects.count() + 1:03d}'
-
-    if Insumo.objects.filter(codigo=codigo).exists():
-        messages.error(request, f'Ya existe un producto con el ID {codigo}.')
-        return redirect(next_url)
-
-    # 1. Asignamos la creación a una variable para obtener el objeto recién creado
-    insumo_nuevo = Insumo.objects.create(
-        codigo=codigo,
-        nombre=nombre,
-        stock_sacos=stock_sacos,
-        kilos_por_saco=kilos_por_saco,
-        total_kg=total_kg,
-        proveedor_nombre=proveedor_nombre,
-        precio_saco=precio_saco,
-        tipo_insumo='Materia Prima',
-        unidad_medida='Kg'
-    )
-
-    # 2. Registramos el precio inicial en la tabla del historial
-    if precio_saco > 0:
-        HistorialPrecioInsumo.objects.create(
-            insumo=insumo_nuevo,
-            precio_saco=precio_saco,
-            precio_anterior=0,
-            variacion_porcentaje=0,
-            origen_cambio='Precio Inicial de Creación'
-        )
-
-    messages.success(request, f'Insumo "{nombre}" ({codigo}) agregado exitosamente.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
+    nombre = request.POST.get('nombre', '').strip()
+    unidad = request.POST.get('unidad_medida', '')
+    try:
+        if not nombre:
+            raise InsumoInvalido('El nombre del insumo es obligatorio.')
+        if unidad not in dict(Insumo.UNIDADES_MEDIDA):
+            raise InsumoInvalido('Selecciona la unidad de medida: kg, L o un.')
+        envase = _datos_envase(request.POST, unidad)
+    except InsumoInvalido as motivo:
+        messages.error(request, str(motivo))
+        return redirect(next_url)
+    proveedor = envase['proveedor']
+
+    # El código lo asigna el sistema. Si otro administrador guardó un insumo en el mismo instante
+    # y se llevó ese código (es único), se reintenta con el siguiente.
+    insumo_nuevo = None
+    for _ in range(3):
+        try:
+            with transaction.atomic():
+                insumo_nuevo = Insumo.objects.create(
+                    codigo=_siguiente_codigo_insumo(),
+                    nombre=nombre,
+                    unidad_medida=unidad,
+                    tipo_insumo='Materia Prima',
+                    kilos_por_saco=envase['contenido'],
+                    precio_saco=envase['precio'],
+                    proveedor_nombre=proveedor.nombre_proveedor if proveedor else '',
+                )
+                # El primer envase: el stock parte con lo que trae
+                insumo_nuevo.envases.create(
+                    tipo=envase['tipo'], contenido=envase['contenido'], restante=envase['contenido'],
+                    precio=envase['precio'], proveedor=proveedor,
+                )
+                insumo_nuevo.actualizar_stock()
+            break
+        except IntegrityError:
+            insumo_nuevo = None
+    if insumo_nuevo is None:
+        messages.error(request, 'No se pudo asignar un código al insumo. Inténtalo de nuevo.')
+        return redirect(next_url)
+
+    if insumo_nuevo.precio_saco > 0:
+        _registrar_precio(insumo_nuevo, proveedor, Decimal('0'), 'Precio Inicial de Creación')
+
+    contenido = _cantidad_con_unidad(envase['contenido'], insumo_nuevo.unidad)
+    messages.success(request, _con_punto(
+        f'Insumo "{insumo_nuevo.nombre}" ({insumo_nuevo.codigo}) agregado con su primer envase: '
+        f'{envase["tipo"]} de {contenido}'
+    ))
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def agregar_envase(request, pk):
+    """
+    "+ Envase": llegaron más envases de un insumo; solo se indica cuántos. El tipo, lo que trae cada
+    uno, el precio y el proveedor son los del insumo (si cambiaron, se actualizan antes en "Editar").
+    Otra presentación (una bandeja de 12 en vez de la caja de 180) se agrega como otro insumo.
+    """
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
+    cuantos = _entero_o_none(request.POST.get('cantidad_envases'))
+    if not cuantos or not 1 <= cuantos <= MAXIMO_ENVASES_POR_INGRESO:
+        messages.error(request, f'Indica cuántos envases llegaron (de 1 a {MAXIMO_ENVASES_POR_INGRESO}).')
+        return redirect(next_url)
+
+    with transaction.atomic():
+        insumo = get_object_or_404(Insumo.objects.select_for_update(), pk=pk)
+        ultimo = insumo.envases.order_by('-fecha_ingreso', '-pk').first()
+        tipo = ultimo.tipo if ultimo else 'envase'
+        proveedor = Proveedor.objects.filter(nombre_proveedor=insumo.proveedor_nombre).first() if insumo.proveedor_nombre else None
+        EnvaseInsumo.objects.bulk_create([
+            EnvaseInsumo(
+                insumo=insumo, tipo=tipo, contenido=insumo.kilos_por_saco, restante=insumo.kilos_por_saco,
+                precio=insumo.precio_saco, proveedor=proveedor,
+            )
+            for _ in range(cuantos)
+        ])
+        insumo.actualizar_stock()
+
+    contenido = _cantidad_con_unidad(insumo.kilos_por_saco, insumo.unidad)
+    stock = _cantidad_con_unidad(insumo.total_kg, insumo.unidad)
+    messages.success(request, _con_punto(
+        f'Se agregaron {cuantos} × {tipo} de {contenido} a "{insumo.nombre}". Stock total: {stock}'
+    ))
     return redirect(next_url)
 
 
 @admin_required
 @require_POST
 def editar_insumo(request, pk):
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+    """Edita el material: nombre, precio de referencia del envase y proveedor. El código, la unidad y
+    el stock no se editan aquí: el stock está en sus envases ("+ Envase" suma, "Merma" descuenta)."""
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     insumo = get_object_or_404(Insumo, pk=pk)
-
-    # 1. Guardamos el precio actual como "precio_anterior" antes de actualizarlo
     precio_anterior = insumo.precio_saco
 
-    codigo = request.POST.get('codigo', '').strip().upper()
     nombre = request.POST.get('nombre', '').strip()
-    stock_sacos = request.POST.get('stock_sacos', 0)
-    kilos_por_saco = request.POST.get('kilos_por_saco', insumo.kilos_por_saco)
-    total_kg = request.POST.get('total_kg', None)
-    proveedor_nombre = request.POST.get('proveedor_nombre', '').strip()
-    precio_saco = normalizar_precio(
-        request.POST.get('precio_saco'),
-        valor_defecto=insumo.precio_saco
-        )
-
-    if not nombre:
-        messages.error(request, 'El nombre del producto no puede estar vacío.')
+    try:
+        if not nombre:
+            raise InsumoInvalido('El nombre del insumo es obligatorio.')
+        precio_saco = _leer_precio_envase(request.POST.get('precio_saco'), valor_defecto=insumo.precio_saco)
+    except InsumoInvalido as motivo:
+        messages.error(request, str(motivo))
         return redirect(next_url)
-
-    if codigo and codigo != insumo.codigo:
-        if Insumo.objects.filter(codigo=codigo).exclude(pk=pk).exists():
-            messages.error(request, f'El código {codigo} ya está en uso por otro producto.')
-            return redirect(next_url)
-        insumo.codigo = codigo
-
-    try:
-        insumo.stock_sacos = int(stock_sacos)
-    except (ValueError, TypeError):
-        pass
-
-    try:
-        insumo.kilos_por_saco = Decimal(str(kilos_por_saco).replace(',', '.'))
-    except Exception:
-        pass
-
-    try:
-        if total_kg:
-            insumo.total_kg = Decimal(str(total_kg).replace(',', '.'))
-        else:
-            insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
-    except Exception:
-        insumo.total_kg = insumo.stock_sacos * insumo.kilos_por_saco
+    proveedor = _proveedor_elegido(request.POST)
 
     insumo.nombre = nombre
-    insumo.proveedor_nombre = proveedor_nombre
     insumo.precio_saco = precio_saco
+    insumo.proveedor_nombre = proveedor.nombre_proveedor if proveedor else ''
     insumo.save()
 
-    # 2. Si el precio cambió respecto al anterior, registramos la variación en el historial
     if precio_anterior != precio_saco:
-        variacion = Decimal('0.00')
-        if precio_anterior > 0:
-            variacion = ((precio_saco - precio_anterior) / precio_anterior) * Decimal('100.0')
-
-        HistorialPrecioInsumo.objects.create(
-            insumo=insumo,
-            precio_saco=precio_saco,
-            precio_anterior=precio_anterior,
-            variacion_porcentaje=round(variacion, 2),
-            origen_cambio='Actualización Manual (CRUD Insumos)'
-        )
+        _registrar_precio(insumo, proveedor, precio_anterior, 'Actualización Manual (CRUD Insumos)')
 
     messages.success(request, f'Insumo "{insumo.nombre}" ({insumo.codigo}) actualizado correctamente.')
-    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     return redirect(next_url)
 
 
@@ -1603,7 +1675,8 @@ def gestion_mermas(request):
     fecha, motivo y tipo. Reglas en core/mermas.py.
     """
     error = None
-    formulario = {'item': request.GET.get('item', ''), 'cantidad': '', 'motivo': '', 'detalle': ''}
+    item = mermas_inventario.item_preseleccionado(request.GET.get('item', ''))
+    formulario = {'item': item, 'cantidad': '', 'motivo': '', 'detalle': ''}
     if request.method == 'POST':
         formulario = {campo: request.POST.get(campo, '') for campo in formulario}
         try:

@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 from .models import (
     Usuario, Cliente, Cajero, Administrador, PuntosFidelizacion,
-    Categoria, Producto, Turno, Proveedor, Insumo, ProveedorInsumo,
+    Categoria, Producto, Turno, Proveedor, Insumo, ProveedorInsumo, EnvaseInsumo,
     Receta, IngredienteReceta, ProduccionDiaria,
     Carrito, ItemCarrito, Pedido, DetallePedido, Pago,
     Caja, CierreCaja
@@ -88,6 +88,11 @@ class ProveedorInsumoInline(admin.TabularInline):
     model = ProveedorInsumo
     extra = 1
 
+# Envases del insumo (cada saco, caja o bidón con lo que le queda): aquí se puede corregir uno mal ingresado
+class EnvaseInsumoInline(admin.TabularInline):
+    model = EnvaseInsumo
+    extra = 0
+
 @admin.register(Proveedor)
 class ProveedorAdmin(admin.ModelAdmin):
     list_display = ('rut', 'nombre_proveedor', 'telefono', 'email', 'costo_flete')
@@ -98,7 +103,11 @@ class InsumoAdmin(admin.ModelAdmin):
     list_display = ('nombre', 'tipo_insumo', 'unidad_medida', 'precio_unitario', 'stock_actual', 'stock_minimo')
     list_filter = ('tipo_insumo', 'unidad_medida')
     search_fields = ('nombre',)
-    inlines = [ProveedorInsumoInline]
+    inlines = [EnvaseInsumoInline, ProveedorInsumoInline]
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        form.instance.actualizar_stock()    # el stock es la suma de lo que queda en los envases
 
 class IngredienteRecetaInline(admin.TabularInline):
     model = IngredienteReceta

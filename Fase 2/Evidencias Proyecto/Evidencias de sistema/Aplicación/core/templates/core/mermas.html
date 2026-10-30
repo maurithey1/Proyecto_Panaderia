@@ -48,19 +48,20 @@
           <optgroup label="Productos de la panadería" data-grupo="producto">
             {% for o in opciones.productos %}
               <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock|unlocalize }}"
-                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio|unlocalize }}"
-                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.stock <= 0 %} disabled{% endif %}>
-                {{ o.nombre }}: {% if o.stock <= 0 %}sin stock{% else %}{{ o.stock }} {{ o.unidad }}{% endif %}
+                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio }}"
+                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.sin_stock %} disabled{% endif %}>
+                {{ o.etiqueta }}
               </option>
             {% endfor %}
           </optgroup>
+          <!-- De cada insumo, sus envases: el que está en uso aparte, los cerrados e iguales juntos -->
           <optgroup label="Insumos y materias primas" data-grupo="insumo">
             {% for o in opciones.insumos %}
-              <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock|unlocalize }}"
-                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio|unlocalize }}"
-                      data-contenido="{{ o.contenido }}" data-unidad-contenido="{{ o.unidad_contenido }}"
-                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.stock <= 0 %} disabled{% endif %}>
-                {{ o.nombre }}: {% if o.stock <= 0 %}sin stock{% else %}{{ o.stock }} {{ o.unidad }}{% endif %}
+              <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock }}"
+                      data-unidad="{{ o.unidad }}" data-precio="{{ o.precio }}" data-decimales="{{ o.decimales }}"
+                      data-envase="{{ o.tipo }}" data-total="{{ o.total }}"
+                      {% if o.valor == formulario.item %}selected{% endif %}{% if o.sin_stock %} disabled{% endif %}>
+                {{ o.etiqueta }}
               </option>
             {% endfor %}
           </optgroup>
@@ -70,12 +71,14 @@
       <div class="crud-form-grupo merma-formulario__cantidad">
         <label for="mermaCantidad">Cantidad perdida</label>
         <div class="merma-cantidad">
-          <input type="text" inputmode="numeric" autocomplete="off" id="mermaCantidad" name="cantidad"
-                 class="crud-input" value="{{ formulario.cantidad }}" maxlength="6" required
-                 pattern="[0-9]+" title="Solo números enteros, por ejemplo 3" placeholder="0"
+          <input type="text" inputmode="decimal" autocomplete="off" id="mermaCantidad" name="cantidad"
+                 class="crud-input" value="{{ formulario.cantidad }}" maxlength="10" required
+                 title="Solo números, por ejemplo 10 o 2,5" placeholder="0"
                  aria-describedby="mermaCantidadUnidad">
           <span class="merma-cantidad__unidad" id="mermaCantidadUnidad" data-unidad-etiqueta hidden></span>
         </div>
+        <!-- Solo para envases: se perdió todo lo que le quedaba -->
+        <button type="button" class="merma-todo-envase" data-todo-envase hidden>Se perdió todo el envase</button>
       </div>
 
       <!-- Resultado en vivo: lo que hay, lo que quedaría y lo que se pierde (solo con JavaScript) -->
@@ -209,7 +212,7 @@
                 <span class="crud-badge-cat">{{ m.get_tipo_display }}</span>
               </td>
               <td class="crud-col-centro merma-cifra">
-                {{ m.cantidad }}
+                {{ m.cantidad|floatformat:"-2" }}
                 {% if m.unidad == 'envases' or m.unidad == 'sacos' %}unid.{% else %}{{ m.unidad }}{% endif %}
               </td>
               <td>
@@ -217,7 +220,7 @@
                 {% if m.detalle %}<span class="merma-detalle">{{ m.detalle }}</span>{% endif %}
               </td>
               <td class="crud-col-centro merma-cifra">
-                {{ m.stock_anterior }} → {{ m.stock_resultante }}
+                {{ m.stock_anterior|floatformat:"-2" }} → {{ m.stock_resultante|floatformat:"-2" }}
               </td>
               <td class="crud-col-centro merma-cifra merma-perdida">{{ m.valor_estimado|clp }}</td>
               <td class="crud-col-centro">
@@ -249,7 +252,7 @@
       </p>
       <p class="confirmacion-modal__monto" data-confirmar-valor></p>
       <p class="confirmacion-modal__nota">
-        El stock pasa de <span data-confirmar-stock></span>. Una merma no se puede editar ni borrar después.
+        <span data-confirmar-stock></span> Una merma no se puede editar ni borrar después.
       </p>
     </div>
     <footer class="confirmacion-modal__pie">

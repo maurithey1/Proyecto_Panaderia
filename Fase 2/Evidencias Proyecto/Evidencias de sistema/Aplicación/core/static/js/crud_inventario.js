@@ -65,7 +65,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // ==========================================
 function abrirModalAgregarInsumo() {
   const modal = document.getElementById('modalAgregarInsumo');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    modal.style.display = 'flex';
+    actualizarResumenInsumo(document.getElementById('formAgregarInsumo'));
+  }
 }
 
 function cerrarModalAgregarInsumo() {
@@ -73,20 +76,127 @@ function cerrarModalAgregarInsumo() {
   if (modal) modal.style.display = 'none';
 }
 
-function abrirModalEditarInsumo(pk, codigo, nombre, stockSacos, kilosSaco, totalKg, proveedor, precioSaco) {
+// El proveedor se guarda por su nombre: se elige la opción con ese nombre (o ninguna)
+function seleccionarProveedor(select, nombre) {
+  if (!select) return;
+  const opcion = Array.from(select.options).find(o => o.value && o.text.trim() === (nombre || '').trim());
+  select.value = opcion ? opcion.value : '';
+}
+
+function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvase, proveedorNombre, precioSaco) {
   const form = document.getElementById('formEditarInsumo');
-  if (form) form.action = `/panel-admin/inventario/editar/${pk}/`;
+  if (form) {
+    form.action = `/panel-admin/inventario/editar/${pk}/`;
+    form.querySelector('[data-insumo-unidad]').value = unidad || 'kg';
+    form.querySelector('[data-insumo-contenido]').value = contenido || '';
+  }
 
   if (document.getElementById('edit_insumo_codigo')) document.getElementById('edit_insumo_codigo').value = codigo || '';
   if (document.getElementById('edit_insumo_nombre')) document.getElementById('edit_insumo_nombre').value = nombre || '';
-  if (document.getElementById('edit_insumo_stock_sacos')) document.getElementById('edit_insumo_stock_sacos').value = stockSacos || 0;
-  if (document.getElementById('edit_insumo_kilos_por_saco')) document.getElementById('edit_insumo_kilos_por_saco').value = kilosSaco || 25;
-  if (document.getElementById('edit_insumo_proveedor')) document.getElementById('edit_insumo_proveedor').value = proveedor || '';
-  if (document.getElementById('edit_insumo_precio_saco')) document.getElementById('edit_insumo_precio_saco').value = precioSaco || 0;
+  if (document.getElementById('edit_insumo_envase')) document.getElementById('edit_insumo_envase').value = `${tipoEnvase || 'envase'} de ${formatearCantidad(contenido)} ${unidad}`;
+  if (document.getElementById('edit_insumo_precio_saco')) document.getElementById('edit_insumo_precio_saco').value = formatearPrecio(String(precioSaco || ''));
+  seleccionarProveedor(document.getElementById('edit_insumo_proveedor'), proveedorNombre);
+
+  actualizarResumenInsumo(form);
 
   const modal = document.getElementById('modalEditarInsumo');
   if (modal) modal.style.display = 'flex';
 }
+
+// "+ Envase": solo se indica cuántos llegaron. El tipo, lo que trae cada uno, el precio y el proveedor
+// son los del insumo (si cambiaron, se actualizan en "Editar"; otra presentación es otro insumo).
+function abrirModalAgregarEnvase(pk, nombre, unidad, tipo, contenido, precio, proveedorNombre) {
+  const form = document.getElementById('formAgregarEnvase');
+  if (form) {
+    form.action = `/panel-admin/inventario/${pk}/envase/`;
+    form.querySelector('[data-insumo-unidad]').value = unidad || 'kg';
+    form.querySelector('[data-insumo-contenido]').value = contenido || '';
+    form.querySelector('[data-insumo-tipo]').value = tipo || 'envase';
+  }
+  const titulo = document.getElementById('envase_titulo');
+  if (titulo) titulo.textContent = `Agregar envases de ${nombre}`;
+
+  const presentacion = document.getElementById('envase_presentacion');
+  if (presentacion) {
+    const monto = Number(precio) > 0 ? ` a ${formatearPesos(Number(precio))}` : '';
+    const deProveedor = proveedorNombre ? `, de ${proveedorNombre}` : '';
+    presentacion.textContent = `Cada uno: ${tipo || 'envase'} de ${formatearCantidad(contenido)} ${unidad}${monto}${deProveedor}`;
+  }
+  if (document.getElementById('envase_cuantos')) document.getElementById('envase_cuantos').value = 1;
+
+  actualizarResumenInsumo(form);
+
+  const modal = document.getElementById('modalAgregarEnvase');
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalAgregarEnvase() {
+  const modal = document.getElementById('modalAgregarEnvase');
+  if (modal) modal.style.display = 'none';
+}
+
+// Formularios de insumo (agregar, editar y "+ Envase"): la unidad va pegada a la cantidad del envase,
+// el precio estimado por unidad se calcula solo ($36.990 / 180 = $205,50 por un.) y debajo se resume
+// qué queda en stock. En "un." la cantidad va entera (no hay medio huevo).
+function formatearCantidad(numero) {
+  return Number(numero).toLocaleString('es-CL', { maximumFractionDigits: 2 });
+}
+
+function formatearPesos(monto) {
+  const decimales = Number.isInteger(monto) ? 0 : 2;
+  return '$' + monto.toLocaleString('es-CL', { minimumFractionDigits: decimales, maximumFractionDigits: decimales });
+}
+
+function actualizarResumenInsumo(form) {
+  if (!form) return;
+  const campoUnidad = form.querySelector('[data-insumo-unidad]');
+  const inputContenido = form.querySelector('[data-insumo-contenido]');
+  if (!campoUnidad || !inputContenido) return;
+  const inputTipo = form.querySelector('[data-insumo-tipo]');
+  const inputCuantos = form.querySelector('[data-insumo-cuantos]');
+  const inputPrecio = form.querySelector('[data-insumo-precio]');
+  const precioUnidad = form.querySelector('[data-insumo-precio-unidad]');
+  const resumen = form.querySelector('[data-insumo-resumen]');
+
+  const unidad = campoUnidad.value;
+  const enteras = unidad === 'un.';
+  form.querySelectorAll('[data-insumo-sufijo]').forEach(sufijo => { sufijo.textContent = unidad; });
+  if (inputContenido.type === 'number') {
+    inputContenido.step = enteras ? '1' : '0.01';
+    inputContenido.min = enteras ? '1' : '0.01';
+  }
+
+  const contenido = parseFloat(inputContenido.value);
+  const precio = parseInt((inputPrecio ? inputPrecio.value : '').replace(/\D/g, ''), 10);
+  if (precioUnidad) {
+    precioUnidad.value = contenido > 0 && precio > 0
+      ? `${formatearPesos(Math.round(precio / contenido * 100) / 100)} por ${unidad}`
+      : '';
+  }
+  if (!resumen) return;
+  if (!(contenido > 0)) {
+    resumen.textContent = '';
+    return;
+  }
+
+  const tipo = (inputTipo && inputTipo.value.trim()) || 'envase';
+  const envase = `${tipo} de ${formatearCantidad(contenido)} ${unidad}`;
+  if (form.dataset.insumoModo === 'envase') {
+    const cuantos = parseInt(inputCuantos ? inputCuantos.value : '1', 10) || 0;
+    resumen.textContent = cuantos > 0
+      ? `Se suman ${cuantos} × ${envase} = ${formatearCantidad(cuantos * contenido)} ${unidad}.`.replace(/\.\.$/, '.')
+      : '';
+  } else {
+    resumen.textContent = `El insumo queda con 1 ${envase} en stock. Cuando lleguen más, usa "+ Envase" en la tabla.`;
+  }
+}
+
+['input', 'change'].forEach(tipo => {
+  document.addEventListener(tipo, function (evento) {
+    const form = evento.target.closest ? evento.target.closest('.insumo-form') : null;
+    if (form) actualizarResumenInsumo(form);
+  });
+});
 
 function cerrarModalEditarInsumo() {
   const modal = document.getElementById('modalEditarInsumo');

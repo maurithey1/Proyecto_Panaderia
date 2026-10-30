@@ -1,6 +1,6 @@
 {% extends "core/base_admin.html" %}
 {% load static %}
-{% load formato %}
+{% load formato l10n %}
 
 {% block titulo %}Gestión de Inventario, Productos y Proveedores{% endblock %}
 
@@ -53,13 +53,13 @@
       <table class="crud-tabla-pantallazo">
         <thead>
           <tr>
-            <th style="width: 10%;">ID</th>
-            <th style="width: 24%;">Nombre producto</th>
-            <th style="width: 14%;">Stock (Bolsa/saco)</th>
-            <th style="width: 10%;">Total Kg</th>
-            <th style="width: 18%;">Nombre Proveedor</th>
-            <th style="width: 12%;">Precio por saco(Kg)</th>
-            <th style="width: 12%;">Acciones</th>
+            <th style="width: 7%;">ID</th>
+            <th style="width: 20%;">Nombre producto</th>
+            <th style="width: 12%;">Envases</th>
+            <th style="width: 10%;">Stock total</th>
+            <th style="width: 15%;">Nombre Proveedor</th>
+            <th style="width: 10%;">Precio por envase</th>
+            <th style="width: 26%;">Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -67,20 +67,29 @@
             <tr>
               <td class="crud-col-id">{{ insumo.codigo|default:insumo.pk }}</td>
               <td class="crud-col-nombre">{{ insumo.nombre }}</td>
-              <td class="crud-col-centro">{{ insumo.stock_sacos }}</td>
-              <td class="crud-col-centro">{{ insumo.total_kg|floatformat:0 }}</td>
-              <td class="crud-col-proveedor">{{ insumo.proveedor.nombre_proveedor|default:insumo.proveedor_nombre|default:"-" }}</td>
+              <td class="crud-col-centro">
+                {{ insumo.envases_con_stock }}{% if insumo.envases_en_uso %} ({{ insumo.envases_en_uso }} en uso){% endif %}
+                {% if insumo.tipo_envase %}
+                  <small class="insumo-tipo-envase">{{ insumo.tipo_envase }} de {{ insumo.kilos_por_saco|floatformat:"-2" }} {{ insumo.unidad }}</small>
+                {% endif %}
+              </td>
+              <td class="crud-col-centro">{{ insumo.total_kg|floatformat:"-2" }} {{ insumo.unidad }}</td>
+              <td class="crud-col-proveedor">{{ insumo.proveedor_nombre|default:"-" }}</td>
               <td class="crud-col-precio">{{ insumo.precio_saco|clp }}</td>
               <td class="crud-col-acciones">
                 <!-- Pasa el ID del insumo por parámetro GET para filtrar automáticamente -->
-                <a href="{% url 'historial_precios_insumos' %}?insumo_id={{ insumo.pk }}" 
-                  class="crud-btn-accion" 
+                <a href="{% url 'historial_precios_insumos' %}?insumo_id={{ insumo.pk }}"
+                  class="crud-btn-accion"
                   style="background-color: #3e2a1d; color: #ffffff; text-decoration: none; display: inline-flex; align-items: center; justify-content: center;">
                   Historial
                 </a>
+                <button type="button" class="crud-btn-accion crud-btn-envase"
+                        onclick="abrirModalAgregarEnvase('{{ insumo.pk }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.unidad }}', '{{ insumo.tipo_envase|default:''|escapejs }}', '{{ insumo.kilos_por_saco|unlocalize }}', '{{ insumo.precio_saco|floatformat:0|unlocalize }}', '{{ insumo.proveedor_nombre|escapejs }}')">
+                  + Envase
+                </button>
                 <a href="{% url 'gestion_mermas' %}?item=insumo-{{ insumo.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
-                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.stock_sacos }}', '{{ insumo.kilos_por_saco }}', '{{ insumo.total_kg }}', '{{ insumo.proveedor.pk|default:'' }}', '{{ insumo.precio_saco|floatformat:0 }}')">
+                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.unidad }}', '{{ insumo.kilos_por_saco|unlocalize }}', '{{ insumo.tipo_envase|default:''|escapejs }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0|unlocalize }}')">
                   Editar
                 </button>
                 <button type="button" class="crud-btn-accion crud-btn-eliminar"
@@ -238,57 +247,88 @@
 <!-- MODALES DE INSUMOS                         -->
 <!-- ========================================== -->
 
-<!-- MODAL 1: Agregar Insumo -->
+<!-- Sugerencias para "Tipo de envase" (se puede escribir cualquier otro) -->
+<datalist id="tiposEnvase">
+  {% for tipo in tipos_envase %}
+    <option value="{{ tipo }}">
+  {% endfor %}
+</datalist>
+
+<!-- MODAL 1: Agregar Insumo (el material con su primer envase; el stock parte con lo que trae) -->
 <div class="crud-modal-backdrop" id="modalAgregarInsumo" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
       <h3>Agregar Nuevo Insumo</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarInsumo()">&times;</button>
     </div>
-    <form method="post" action="{% url 'crear_insumo' %}">
+    <form method="post" action="{% url 'crear_insumo' %}" class="insumo-form" id="formAgregarInsumo" data-insumo-modo="agregar">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=insumos">
       <div class="crud-modal-cuerpo">
-        <div class="crud-form-fila-doble">
+        <div class="crud-form-fila-doble insumo-fila-campos">
           <div class="crud-form-grupo">
-            <label for="insumo_codigo">Código / ID:</label>
-            <input type="text" id="insumo_codigo" name="codigo" required class="crud-input" placeholder="Ej: INS-001">
+            <label for="insumo_codigo">ID:</label>
+            <!-- Sin "name": el código no se envía, lo asigna el sistema al guardar -->
+            <input type="text" id="insumo_codigo" class="crud-input crud-input--readonly" value="{{ siguiente_id }}"
+                   readonly title="Lo asigna el sistema al guardar">
           </div>
           <div class="crud-form-grupo">
-            <label for="insumo_nombre">Nombre Insumo:</label>
-            <input type="text" id="insumo_nombre" name="nombre" required class="crud-input" placeholder="Ej: Harina de Trigo">
-          </div>
-        </div>
-        <div class="crud-form-fila-doble">
-          <div class="crud-form-grupo">
-            <label for="insumo_stock_sacos">Stock (Sacos/Bolsas):</label>
-            <input type="number" id="insumo_stock_sacos" name="stock_sacos" min="0" value="0" required class="crud-input">
-          </div>
-          <div class="crud-form-grupo">
-            <label for="insumo_kilos_por_saco">Kg por saco:</label>
-            <input type="number" step="0.01" id="insumo_kilos_por_saco" name="kilos_por_saco" value="25.00" required class="crud-input">
+            <label for="insumo_nombre">Nombre del producto:</label>
+            <input type="text" id="insumo_nombre" name="nombre" required maxlength="100" class="crud-input"
+                   placeholder="Ej: Huevo blanco grande">
           </div>
         </div>
-        <div class="crud-form-fila-doble">
+        <div class="crud-form-fila-doble insumo-fila-campos">
           <div class="crud-form-grupo">
-            <label for="insumo_proveedor">Proveedor:</label>
-            <div style="display: flex; gap: 8px;">
-              <select id="insumo_proveedor" name="proveedor_id" class="crud-input" style="flex: 1;">
-                <option value="">Selecciona un proveedor</option>
-                {% for prov in proveedores %}
-                  <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
-                {% endfor %}
-              </select>
-              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarProveedor()">
-                + Nuevo
-              </button>
+            <label for="insumo_tipo_envase">Tipo de envase:</label>
+            <input type="text" id="insumo_tipo_envase" name="tipo_envase" required maxlength="60" class="crud-input"
+                   list="tiposEnvase" placeholder="Ej: caja, bandeja de 12, bidón" data-insumo-tipo>
+          </div>
+          <div class="crud-form-grupo">
+            <label for="insumo_unidad">Unidad de medida:</label>
+            <select id="insumo_unidad" name="unidad_medida" required class="crud-input" data-insumo-unidad>
+              {% for valor, nombre in unidades_medida %}
+                <option value="{{ valor }}">{{ nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="crud-form-fila-doble insumo-fila-campos">
+          <div class="crud-form-grupo">
+            <label for="insumo_contenido">Cantidad del envase:</label>
+            <div class="insumo-con-unidad">
+              <input type="number" id="insumo_contenido" name="kilos_por_saco" min="0.01" step="0.01" required
+                     class="crud-input" placeholder="Ej: 180" data-insumo-contenido>
+              <span class="insumo-con-unidad__sufijo" data-insumo-sufijo>kg</span>
             </div>
           </div>
           <div class="crud-form-grupo">
-            <label for="insumo_precio_saco">Precio por Saco ($CLP):</label>
-            <input type="text" id="insumo_precio_saco" name="precio_saco" required class="crud-input input-precio" placeholder="$ 0">
+            <label for="insumo_precio_saco">Precio total del envase:</label>
+            <input type="text" id="insumo_precio_saco" name="precio_saco" required class="crud-input input-precio"
+                   placeholder="$ 0" data-insumo-precio>
           </div>
         </div>
+        <div class="crud-form-fila-doble insumo-fila-campos">
+          <div class="crud-form-grupo">
+            <label for="insumo_precio_unidad">Precio estimado por unidad:</label>
+            <input type="text" id="insumo_precio_unidad" class="crud-input crud-input--readonly" readonly
+                   placeholder="Se calcula solo" data-insumo-precio-unidad>
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="insumo_proveedor">Proveedor:</label>
+          <div class="insumo-proveedor">
+            <select id="insumo_proveedor" name="proveedor_id" class="crud-input">
+              <option value="">Selecciona un proveedor</option>
+              {% for prov in proveedores %}
+                <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="crud-btn-accion insumo-proveedor__nuevo" onclick="abrirModalAgregarProveedor()">+ Nuevo</button>
+          </div>
+        </div>
+        <!-- "El insumo queda con 1 caja de 180 un. en stock..." (crud_inventario.js) -->
+        <p class="insumo-resumen" data-insumo-resumen aria-live="polite"></p>
       </div>
       <div class="crud-modal-footer">
         <button type="button" class="crud-btn-cancelar" onclick="cerrarModalAgregarInsumo()">Cancelar</button>
@@ -298,61 +338,99 @@
   </div>
 </div>
 
-<!-- MODAL 2: Editar Insumo -->
+<!-- MODAL 2: Editar Insumo (el material; el stock está en sus envases) -->
 <div class="crud-modal-backdrop" id="modalEditarInsumo" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
       <h3>Editar Insumo</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarInsumo()">&times;</button>
     </div>
-    <form id="formEditarInsumo" method="post" action="">
+    <form id="formEditarInsumo" method="post" action="" class="insumo-form" data-insumo-modo="editar">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=insumos">
+      <!-- Sin "name": solo para calcular el precio por unidad del envase de referencia -->
+      <input type="hidden" data-insumo-unidad>
+      <input type="hidden" data-insumo-contenido>
       <div class="crud-modal-cuerpo">
-        <div class="crud-form-fila-doble">
+        <div class="crud-form-fila-doble insumo-fila-campos">
           <div class="crud-form-grupo">
-            <label for="edit_insumo_codigo">Código / ID:</label>
-            <input type="text" id="edit_insumo_codigo" name="codigo" required class="crud-input">
+            <label for="edit_insumo_codigo">ID:</label>
+            <input type="text" id="edit_insumo_codigo" class="crud-input crud-input--readonly" readonly>
           </div>
           <div class="crud-form-grupo">
-            <label for="edit_insumo_nombre">Nombre Insumo:</label>
-            <input type="text" id="edit_insumo_nombre" name="nombre" required class="crud-input">
-          </div>
-        </div>
-        <div class="crud-form-fila-doble">
-          <div class="crud-form-grupo">
-            <label for="edit_insumo_stock_sacos">Stock (Sacos/Bolsas):</label>
-            <input type="number" id="edit_insumo_stock_sacos" name="stock_sacos" min="0" required class="crud-input">
-          </div>
-          <div class="crud-form-grupo">
-            <label for="edit_insumo_kilos_por_saco">Kg por saco:</label>
-            <input type="number" step="0.01" id="edit_insumo_kilos_por_saco" name="kilos_por_saco" required class="crud-input">
+            <label for="edit_insumo_nombre">Nombre del producto:</label>
+            <input type="text" id="edit_insumo_nombre" name="nombre" required maxlength="100" class="crud-input">
           </div>
         </div>
-        <div class="crud-form-fila-doble">
+        <div class="crud-form-fila-doble insumo-fila-campos">
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_envase">Envase de referencia:</label>
+            <input type="text" id="edit_insumo_envase" class="crud-input crud-input--readonly" readonly>
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_precio_saco">Precio total del envase:</label>
+            <input type="text" id="edit_insumo_precio_saco" name="precio_saco" required class="crud-input input-precio"
+                   placeholder="$ 0" data-insumo-precio>
+          </div>
+        </div>
+        <div class="crud-form-fila-doble insumo-fila-campos">
+          <div class="crud-form-grupo">
+            <label for="edit_insumo_precio_unidad">Precio estimado por unidad:</label>
+            <input type="text" id="edit_insumo_precio_unidad" class="crud-input crud-input--readonly" readonly
+                   data-insumo-precio-unidad>
+          </div>
           <div class="crud-form-grupo">
             <label for="edit_insumo_proveedor">Proveedor:</label>
-            <div style="display: flex; gap: 8px;">
-              <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input" style="flex: 1;">
-                <option value="">Selecciona un proveedor</option>
-                {% for prov in proveedores %}
-                  <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
-                {% endfor %}
-              </select>
-              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarProveedor()">
-                + Nuevo
-              </button>
-            </div>
-          </div>
-          <div class="crud-form-grupo">
-            <label for="edit_insumo_precio_saco">Precio por Saco ($CLP):</label>
-            <input type="text" id="edit_insumo_precio_saco" name="precio_saco" required class="crud-input input-precio" placeholder="$ 0">
+            <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input">
+              <option value="">Selecciona un proveedor</option>
+              {% for prov in proveedores %}
+                <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
+              {% endfor %}
+            </select>
           </div>
         </div>
+        <p class="insumo-resumen">
+          El stock está en sus envases: "+ Envase" suma lo que llega y "Merma" descuenta lo que se pierde.
+        </p>
       </div>
       <div class="crud-modal-footer">
         <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEditarInsumo()">Cancelar</button>
         <button type="submit" class="crud-btn-actualizar">Actualizar Insumo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: + Envase (llegaron más envases de un insumo: solo se indica cuántos; el tipo, lo que trae,
+     el precio y el proveedor son los del insumo. Otra presentación se agrega como otro insumo) -->
+<div class="crud-modal-backdrop" id="modalAgregarEnvase" style="display: none;">
+  <div class="crud-modal-caja crud-modal-caja--alerta">
+    <div class="crud-modal-header">
+      <h3 id="envase_titulo">Agregar envases</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarEnvase()">&times;</button>
+    </div>
+    <form id="formAgregarEnvase" method="post" action="" class="insumo-form" data-insumo-modo="envase">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}?tab=insumos">
+      <!-- Sin "name": son los datos del insumo, solo para el resumen -->
+      <input type="hidden" data-insumo-unidad>
+      <input type="hidden" data-insumo-contenido>
+      <input type="hidden" data-insumo-tipo>
+      <div class="crud-modal-cuerpo">
+        <!-- "Cada uno: caja de 180 un. a $36.990, de Avícola El Roble" (crud_inventario.js) -->
+        <p class="insumo-presentacion" id="envase_presentacion"></p>
+        <div class="crud-form-grupo">
+          <label for="envase_cuantos">¿Cuántos llegaron?</label>
+          <input type="number" id="envase_cuantos" name="cantidad_envases" min="1" max="100" step="1" value="1" required
+                 class="crud-input" data-insumo-cuantos>
+        </div>
+        <!-- "Se suman 2 × caja de 180 un. = 360 un." (crud_inventario.js) -->
+        <p class="insumo-resumen" data-insumo-resumen aria-live="polite"></p>
+        <p class="insumo-ayuda">Si el precio o el proveedor cambiaron, actualízalos antes en "Editar".</p>
+      </div>
+      <div class="crud-modal-footer">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalAgregarEnvase()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar">Agregar envases</button>
       </div>
     </form>
   </div>

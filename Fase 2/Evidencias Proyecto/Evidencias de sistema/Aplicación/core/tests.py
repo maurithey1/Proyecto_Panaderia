@@ -3800,39 +3800,63 @@ class MermasTests(TestCase):
         self.assertIsNotNone(merma.fecha)
         self.assertEqual(merma.detalle, 'Bandeja de la tarde')
         avisos = [str(m) for m in get_messages(respuesta.wsgi_request)]
-        self.assertIn('Merma registrada: 3 unid. de Pan Amasado (quemado o mal horneado), '
+        self.assertIn('Merma registrada: 3 unid. de Pan Amasado por quemado o mal horneado, '
                       'pérdida estimada de $1.650. Quedan 17 unid.', avisos)
 
-    def test_merma_de_insumo_descuenta_unidades_y_recalcula_los_kilos(self):
-        respuesta = self._registrar(f'insumo-{self.harina.pk}', '2', 'HUMEDAD')
+    def test_merma_de_insumo_se_descuenta_del_envase_y_admite_decimales(self):
+        # La harina se creó con 5 envases de 25 kg; "insumo-<id>" descuenta del primero
+        respuesta = self._registrar(f'insumo-{self.harina.pk}', '2,5', 'HUMEDAD')
 
         avisos = [str(m) for m in get_messages(respuesta.wsgi_request)]
-        self.assertIn('Merma registrada: 2 unid. de Harina (humedad o contaminación), '
-                      'pérdida estimada de $43.980. Quedan 3 unid.', avisos)
+        self.assertIn('Merma registrada: 2,5 kg de Harina (envase) por humedad o contaminación, '
+                      'pérdida estimada de $2.199. Quedan 122,5 kg.', avisos)
         self.harina.refresh_from_db()
-        self.assertEqual(self.harina.stock_sacos, 3)
-        self.assertEqual(self.harina.total_kg, Decimal('75.00'))
-        self.assertEqual(self.harina.stock_actual, Decimal('75.00'))
+        self.assertEqual((self.harina.total_kg, self.harina.stock_sacos), (Decimal('122.50'), 4))
         merma = self.Merma.objects.get()
-        self.assertEqual((merma.tipo, merma.insumo, merma.unidad), ('INSUMO', self.harina, 'unid.'))
-        self.assertEqual(merma.valor_estimado, Decimal('43980.00'))     # 2 x $21.990
+        self.assertEqual((merma.tipo, merma.insumo, merma.unidad), ('INSUMO', self.harina, 'kg'))
+        self.assertEqual(merma.cantidad, Decimal('2.5'))
+        self.assertEqual(merma.envase.restante, Decimal('22.50'))
+        self.assertEqual((merma.stock_anterior, merma.stock_resultante), (Decimal('125'), Decimal('122.5')))
+        self.assertEqual(merma.valor_estimado, Decimal('2199.00'))     # 2,5 kg x ($21.990 / 25 kg)
 
-    def test_los_insumos_se_muestran_en_unidades_con_su_contenido(self):
+    def test_los_envases_se_ofrecen_uno_en_uso_y_los_cerrados_juntos(self):
         import re
 
-        self.Insumo.objects.create(
-            codigo='NI002', nombre='Aceite', stock_sacos=1, kilos_por_saco=Decimal('20'),
-            precio_saco=Decimal('41990'), unidad_medida='L',
+        huevo = self.Insumo.objects.create(
+            codigo='NI002', nombre='Huevo', unidad_medida='un.', kilos_por_saco=Decimal('180'),
+            precio_saco=Decimal('36990'),
         )
+        for restante in ('180', '180', '76'):
+            huevo.envases.create(tipo='caja', contenido=Decimal('180'), restante=Decimal(restante), precio=Decimal('36990'))
+        huevo.actualizar_stock()
         respuesta = self.client.get(reverse('gestion_mermas'))
         selector = re.search(r'<select id="mermaItem".*?</select>', respuesta.content.decode(), re.S).group()
 
-        self.assertIn('data-contenido="25" data-unidad-contenido="kg"', selector)
-        self.assertIn('data-contenido="20" data-unidad-contenido="L"', selector)
-        self.assertIn('Harina: 5 unid.', selector)
-        self.assertIn('Aceite: 1 unid.', selector)
+        self.assertIn('Huevo, caja: quedan 76 de 180 un. (en uso)', selector)
+        self.assertIn('Huevo, caja de 180 un. (sin abrir, 2)', selector)
+        self.assertIn('Harina, envase de 25 kg (sin abrir, 5)', selector)
+        self.assertIn('data-stock="76"', selector)
+        self.assertIn('data-unidad="un." data-precio="205.5" data-decimales=""', selector)    # $36.990 / 180
+        self.assertLess(selector.index('(en uso)'), selector.index('(sin abrir, 2)'))           # el que está en uso, primero
         self.assertNotIn('saco', selector)
-        self.assertNotIn('envase', selector)
+
+    def test_la_caja_en_uso_pierde_10_huevos_y_las_cerradas_no_cambian(self):
+        huevo = self.Insumo.objects.create(
+            codigo='NI002', nombre='Huevo', unidad_medida='un.', kilos_por_saco=Decimal('180'),
+            precio_saco=Decimal('36990'),
+        )
+        cajas = [huevo.envases.create(tipo='caja', contenido=Decimal('180'), restante=Decimal(r), precio=Decimal('36990'))
+                 for r in ('180', '180', '76')]
+        huevo.actualizar_stock()
+
+        respuesta = self._registrar(f'envase-{cajas[2].pk}', '10', 'DANO')
+
+        self.assertRedirects(respuesta, reverse('gestion_mermas'))
+        self.assertEqual([c.restante for c in huevo.envases.order_by('pk')], [Decimal('180'), Decimal('180'), Decimal('66')])
+        huevo.refresh_from_db()
+        self.assertEqual(huevo.total_kg, Decimal('426'))
+        self.assertEqual(self.Merma.objects.get().valor_estimado, Decimal('2055.00'))    # 10 x $205,50
+        self.assertEqual(self._registrar(f'envase-{cajas[2].pk}', '1,5', 'DANO').status_code, 400)  # no hay medio huevo
 
     def test_producto_por_kilo_se_descuenta_en_kilos(self):
         self._registrar(f'producto-{self.marraqueta.pk}', '4', 'SOBRANTE')
@@ -3861,12 +3885,15 @@ class MermasTests(TestCase):
         self.assertEqual(self.pan.stock, 20)
         self.assertFalse(self.Merma.objects.exists())
 
-    def test_merma_de_insumo_mayor_al_stock_se_rechaza(self):
-        respuesta = self._registrar(f'insumo-{self.harina.pk}', '6', 'HUMEDAD')
+    def test_merma_de_insumo_mayor_a_lo_que_le_queda_al_envase_se_rechaza(self):
+        respuesta = self._registrar(f'insumo-{self.harina.pk}', '26', 'HUMEDAD')
 
-        self.assertContains(respuesta, 'Solo hay 5 unid. de Harina: la cantidad (6 unid.)', status_code=400)
+        self.assertContains(
+            respuesta, 'Solo quedan 25 kg en ese envase (envase) de Harina: la cantidad (26 kg) excede el stock disponible.',
+            status_code=400,
+        )
         self.harina.refresh_from_db()
-        self.assertEqual(self.harina.stock_sacos, 5)
+        self.assertEqual(self.harina.total_kg, Decimal('125'))
 
     # --- Criterio 3: sin motivo no se registra ---
 
@@ -3927,9 +3954,11 @@ class MermasTests(TestCase):
         self.assertFalse(self.Merma.objects.exists())
 
     def test_desde_inventario_llega_con_el_item_elegido(self):
+        # Desde el inventario llega "insumo-<id>": queda elegido su envase por defecto
+        envase = self.harina.envases.first()
         respuesta = self.client.get(reverse('gestion_mermas'), {'item': f'insumo-{self.harina.pk}'})
-        self.assertContains(respuesta, f'value="insumo-{self.harina.pk}" data-nombre="Harina" data-stock="5"')
-        self.assertRegex(respuesta.content.decode(), rf'value="insumo-{self.harina.pk}"[^>]*\sselected')
+        self.assertContains(respuesta, f'value="envase-{envase.pk}" data-nombre="Harina" data-stock="25"')
+        self.assertRegex(respuesta.content.decode(), rf'value="envase-{envase.pk}"[^>]*\sselected')
 
         inventario = self.client.get(reverse('gestion_inventario'))
         self.assertContains(inventario, f'?item=producto-{self.pan.pk}')
@@ -3948,7 +3977,7 @@ class MermasTests(TestCase):
     def test_el_historial_muestra_los_ultimos_30_dias_y_suma_las_perdidas(self):
         with mock.patch('django.utils.timezone.now', return_value=self.AHORA):
             self._merma(f'producto-{self.pan.pk}', 2, 'QUEMADO', self.AHORA - timedelta(hours=2))          # $1.100
-            self._merma(f'insumo-{self.harina.pk}', 1, 'HUMEDAD', self.AHORA - timedelta(days=29))         # $21.990
+            self._merma(f'insumo-{self.harina.pk}', 25, 'HUMEDAD', self.AHORA - timedelta(days=29))        # $21.990
             self._merma(f'producto-{self.marraqueta.pk}', 1, 'SOBRANTE', self.AHORA - timedelta(days=31))  # fuera
             respuesta = self.client.get(reverse('gestion_mermas'))
 
@@ -3965,7 +3994,7 @@ class MermasTests(TestCase):
         with mock.patch('django.utils.timezone.now', return_value=self.AHORA):
             self._merma(f'producto-{self.pan.pk}', 2, 'QUEMADO', self.AHORA - timedelta(days=1))
             self._merma(f'producto-{self.pan.pk}', 1, 'VENCIMIENTO', self.AHORA - timedelta(days=1))
-            self._merma(f'insumo-{self.harina.pk}', 1, 'HUMEDAD', self.AHORA - timedelta(days=40))
+            self._merma(f'insumo-{self.harina.pk}', 25, 'HUMEDAD', self.AHORA - timedelta(days=40))
             url = reverse('gestion_mermas')
 
             por_motivo = self.client.get(url, {'motivo': 'QUEMADO'})
@@ -3977,3 +4006,205 @@ class MermasTests(TestCase):
         self.assertEqual([m.tipo for m in por_tipo.context['registros']], ['INSUMO'])
         self.assertEqual(len(fechas_al_reves.context['registros']), 3)
         self.assertEqual(len(basura.context['registros']), 2)    # filtros inválidos: últimos 30 días, todo
+
+
+class FormularioInsumoTests(TestCase):
+    """Insumos y sus envases: "Agregar insumo" crea el material con su primer envase (el stock parte
+    con lo que trae), "+ Envase" suma los que llegan y "Editar" cambia el material, no el stock."""
+
+    def setUp(self):
+        from .models import EnvaseInsumo, HistorialPrecioInsumo, Insumo, Proveedor
+
+        self.Insumo, self.Envase, self.Historial = Insumo, EnvaseInsumo, HistorialPrecioInsumo
+        admin = Usuario.objects.create_user('admin-insumos', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(admin)
+        self.avicola = Proveedor.objects.create(
+            rut='79.345.678-1', nombre_proveedor='Avícola El Roble', email='a@roble.test', telefono='+56 9 0000 0104',
+        )
+        self.molino = Proveedor.objects.create(
+            rut='76.543.210-3', nombre_proveedor='Molino La Espiga', email='m@espiga.test', telefono='+56 9 0000 0102',
+        )
+
+    def _crear(self, **campos):
+        datos = {
+            'nombre': 'Huevo blanco grande', 'tipo_envase': 'caja', 'kilos_por_saco': '180',
+            'unidad_medida': 'un.', 'precio_saco': '$ 36.990', 'proveedor_id': str(self.avicola.pk),
+        }
+        datos.update(campos)
+        return self.client.post(reverse('crear_insumo'), datos)
+
+    def _agregar_envases(self, insumo, **campos):
+        datos = {'cantidad_envases': '2'}
+        datos.update(campos)
+        return self.client.post(reverse('agregar_envase', args=[insumo.pk]), datos)
+
+    def _avisos(self, respuesta):
+        return [str(m) for m in get_messages(respuesta.wsgi_request)]
+
+    # --- Código automático ---
+
+    def test_el_codigo_lo_asigna_el_sistema_aunque_se_envie_otro(self):
+        self._crear(codigo='INS-777')
+        self._crear(nombre='Aceite vegetal', tipo_envase='bidón', kilos_por_saco='20', unidad_medida='L')
+
+        self.assertEqual(sorted(self.Insumo.objects.values_list('codigo', flat=True)), ['NI001', 'NI002'])
+
+    def test_el_codigo_sigue_correlativo_despues_de_ni999(self):
+        self.Insumo.objects.create(codigo='NI999', nombre='Viejo')
+        self.Insumo.objects.create(codigo='OTRO-1', nombre='Código a mano')
+
+        self._crear()
+
+        self.assertTrue(self.Insumo.objects.filter(codigo='NI1000').exists())
+
+    def test_el_formulario_muestra_el_proximo_codigo_sin_enviarlo(self):
+        self.Insumo.objects.create(codigo='NI004', nombre='Sal')
+        respuesta = self.client.get(reverse('gestion_inventario'))
+
+        self.assertContains(respuesta, 'value="NI005"')
+        self.assertNotContains(respuesta, 'name="codigo"')
+
+    # --- Agregar insumo: el stock parte con lo que trae el envase ---
+
+    def test_una_caja_de_180_huevos_deja_180_en_stock(self):
+        respuesta = self._crear()
+
+        huevo = self.Insumo.objects.get()
+        self.assertEqual((huevo.codigo, huevo.unidad, huevo.kilos_por_saco), ('NI001', 'un.', Decimal('180.00')))
+        self.assertEqual((huevo.total_kg, huevo.stock_sacos), (Decimal('180.00'), 1))
+        self.assertEqual(huevo.precio_unitario, Decimal('205.50'))    # $36.990 / 180
+        caja = huevo.envases.get()
+        self.assertEqual((caja.tipo, caja.contenido, caja.restante, caja.precio), ('caja', Decimal('180'), Decimal('180'), Decimal('36990')))
+        self.assertEqual(caja.proveedor, self.avicola)
+        self.assertEqual(huevo.proveedor_nombre, 'Avícola El Roble')
+        self.assertEqual(self.Historial.objects.get(insumo=huevo).proveedor, self.avicola)
+        self.assertIn('Insumo "Huevo blanco grande" (NI001) agregado con su primer envase: caja de 180 un.',
+                      self._avisos(respuesta))
+
+    def test_un_bidon_de_aceite_admite_litros_con_decimales(self):
+        self._crear(nombre='Aceite vegetal', tipo_envase='bidón', kilos_por_saco='4.5', unidad_medida='L')
+
+        aceite = self.Insumo.objects.get()
+        self.assertEqual((aceite.unidad, aceite.total_kg), ('L', Decimal('4.50')))
+
+    def test_en_unidades_no_hay_medio_huevo(self):
+        respuesta = self._crear(kilos_por_saco='180.5')
+
+        self.assertIn('En unidades (un.) la cantidad va entera: no puede haber medio huevo.', self._avisos(respuesta))
+        self.assertFalse(self.Insumo.objects.exists())
+
+    def test_datos_invalidos_no_crean_el_insumo(self):
+        casos = {
+            'unidad_medida': ('toneladas', 'Selecciona la unidad de medida'),
+            'kilos_por_saco': ('0', 'Indica cuánto trae el envase'),
+            'tipo_envase': ('  ', 'Indica el tipo de envase'),
+            'nombre': ('  ', 'El nombre del insumo es obligatorio.'),
+        }
+        for campo, (valor, mensaje) in casos.items():
+            with self.subTest(campo=campo):
+                respuesta = self._crear(**{campo: valor})
+                self.assertTrue(any(mensaje in aviso for aviso in self._avisos(respuesta)))
+        self.assertFalse(self.Insumo.objects.exists())
+
+    def test_un_insumo_creado_solo_con_unidades_completas_arma_sus_envases(self):
+        harina = self.Insumo.objects.create(codigo='NI001', nombre='Harina', stock_sacos=5, kilos_por_saco=Decimal('25'))
+
+        self.assertEqual((harina.total_kg, harina.stock_sacos), (Decimal('125'), 5))
+        self.assertEqual(harina.envases.count(), 5)
+
+    # --- "+ Envase" ---
+
+    def test_llegan_dos_cajas_mas_con_el_envase_precio_y_proveedor_del_insumo(self):
+        self._crear()
+        huevo = self.Insumo.objects.get()
+
+        respuesta = self._agregar_envases(huevo)
+
+        huevo.refresh_from_db()
+        self.assertEqual((huevo.total_kg, huevo.stock_sacos, huevo.envases.count()), (Decimal('540'), 3, 3))
+        nuevas = huevo.envases.order_by('-pk')[:2]
+        self.assertEqual({(c.tipo, c.contenido, c.restante, c.precio, c.proveedor) for c in nuevas},
+                         {('caja', Decimal('180'), Decimal('180'), Decimal('36990'), self.avicola)})
+        self.assertIn('Se agregaron 2 × caja de 180 un. a "Huevo blanco grande". Stock total: 540 un.', self._avisos(respuesta))
+
+    def test_el_envase_y_el_precio_no_se_cambian_desde_mas_envase(self):
+        # Otra presentación (bandeja de 12) se agrega como otro insumo; el precio se cambia en "Editar"
+        self._crear()
+        huevo = self.Insumo.objects.get()
+
+        self._agregar_envases(huevo, cantidad_envases='1', tipo_envase='bandeja de 12', kilos_por_saco='12', precio_saco='3000')
+
+        huevo.refresh_from_db()
+        self.assertEqual(huevo.total_kg, Decimal('360'))
+        self.assertEqual(set(huevo.envases.values_list('tipo', 'contenido', 'precio')),
+                         {('caja', Decimal('180'), Decimal('36990'))})
+
+    def test_el_precio_editado_se_aplica_a_los_envases_que_llegan_despues(self):
+        self._crear()
+        huevo = self.Insumo.objects.get()
+        self.client.post(reverse('editar_insumo', args=[huevo.pk]), {
+            'nombre': huevo.nombre, 'precio_saco': '$ 38.990', 'proveedor_id': str(self.avicola.pk),
+        })
+
+        self._agregar_envases(huevo, cantidad_envases='1')
+
+        self.assertEqual(list(huevo.envases.order_by('pk').values_list('precio', flat=True)),
+                         [Decimal('36990'), Decimal('38990')])    # la primera caja conserva lo que costó
+
+    def test_sin_cantidad_de_envases_no_se_suma_nada(self):
+        self._crear()
+        huevo = self.Insumo.objects.get()
+
+        for cuantos in ('0', '', '101', 'dos'):
+            with self.subTest(cuantos=cuantos):
+                respuesta = self._agregar_envases(huevo, cantidad_envases=cuantos)
+                self.assertTrue(any('Indica cuántos envases llegaron' in a for a in self._avisos(respuesta)))
+        self.assertEqual(huevo.envases.count(), 1)
+
+    # --- Editar: el material, no el stock ---
+
+    def test_editar_cambia_nombre_precio_y_proveedor_pero_no_el_stock_ni_el_codigo(self):
+        self._crear()
+        huevo = self.Insumo.objects.get()
+
+        self.client.post(reverse('editar_insumo', args=[huevo.pk]), {
+            'nombre': 'Huevo blanco extra', 'precio_saco': '$ 39.990', 'proveedor_id': str(self.molino.pk),
+            'codigo': 'XYZ', 'total_kg': '9999',
+        })
+
+        huevo.refresh_from_db()
+        self.assertEqual((huevo.codigo, huevo.nombre), ('NI001', 'Huevo blanco extra'))
+        self.assertEqual((huevo.precio_saco, huevo.proveedor_nombre), (Decimal('39990'), 'Molino La Espiga'))
+        self.assertEqual(huevo.total_kg, Decimal('180'))
+
+    # --- Tabla de inventario ---
+
+    def test_la_tabla_muestra_envases_stock_y_el_boton_para_sumar(self):
+        self._crear()
+        huevo = self.Insumo.objects.get()
+        caja = huevo.envases.get()
+        caja.restante = Decimal('76')
+        caja.save()
+        huevo.actualizar_stock()
+
+        respuesta = self.client.get(reverse('gestion_inventario'))
+
+        self.assertContains(respuesta, '1 (1 en uso)')
+        self.assertContains(respuesta, 'caja de 180 un.')
+        self.assertContains(respuesta, '76 un.')
+        self.assertContains(respuesta, 'abrirModalAgregarEnvase(')
+
+    # --- Migración: los insumos que ya existían reparten su stock en envases ---
+
+    def test_la_migracion_reparte_el_stock_existente_en_envases(self):
+        from importlib import import_module
+        from django.apps import apps
+
+        migracion = import_module('core.migrations.0015_envaseinsumo')
+        harina = self.Insumo.objects.create(codigo='NI001', nombre='Harina', kilos_por_saco=Decimal('25'))
+        self.Insumo.objects.filter(pk=harina.pk).update(total_kg=Decimal('80'), precio_saco=Decimal('21990'))
+
+        migracion.crear_envases_de_insumos_existentes(apps, None)
+
+        self.assertEqual(sorted(harina.envases.values_list('restante', flat=True)),
+                         [Decimal('5'), Decimal('25'), Decimal('25'), Decimal('25')])
