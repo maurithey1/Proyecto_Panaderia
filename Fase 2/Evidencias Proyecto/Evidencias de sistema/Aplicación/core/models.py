@@ -496,6 +496,31 @@ class ProduccionDiaria(models.Model):
         return f"Producción: {self.cantidad} un. de {self.producto.nombre} ({self.fecha_produccion.strftime('%d/%m/%Y')})"
 
 
+class ConsumoProduccion(models.Model):
+    """
+    Lo que gastó una hornada de cada insumo de la receta (HU-EP003-003): lo que pedía la receta, lo que
+    se descontó de los envases y lo que faltó. Si quedaba menos de lo que pedía, el panadero lo hace
+    rendir y la hornada se registra igual: la diferencia queda como déficit. Reglas en core/recetas.py.
+    """
+    produccion = models.ForeignKey(ProduccionDiaria, on_delete=models.CASCADE, related_name='consumos')
+    insumo = models.ForeignKey(Insumo, on_delete=models.SET_NULL, null=True, blank=True, related_name='consumos')
+    # Nombre y unidad se copian: el registro se conserva aunque el insumo se elimine
+    nombre_insumo = models.CharField(max_length=100)
+    unidad = models.CharField(max_length=10)
+    cantidad_receta = models.DecimalField(max_digits=12, decimal_places=3, verbose_name="Pedía la receta")
+    cantidad_usada = models.DecimalField(max_digits=12, decimal_places=3, verbose_name="Se descontó")
+    faltante = models.DecimalField(max_digits=12, decimal_places=3, default=0, verbose_name="Faltó")
+    costo = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Costo de lo usado")
+
+    class Meta:
+        ordering = ['-produccion__fecha_produccion', 'pk']
+        verbose_name = 'Consumo de producción'
+        verbose_name_plural = 'Consumos de producción'
+
+    def __str__(self):
+        return f"{self.produccion}: {self.cantidad_usada} {self.unidad} de {self.nombre_insumo}"
+
+
 class Notificacion(models.Model):
     TIPOS = (
         ('INSUMO', 'Materia Prima / Insumo'),

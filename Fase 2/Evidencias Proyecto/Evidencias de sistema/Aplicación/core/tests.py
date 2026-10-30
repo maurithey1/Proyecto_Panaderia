@@ -4208,3 +4208,201 @@ class FormularioInsumoTests(TestCase):
 
         self.assertEqual(sorted(harina.envases.values_list('restante', flat=True)),
                          [Decimal('5'), Decimal('25'), Decimal('25'), Decimal('25')])
+
+
+class RecetasTests(TestCase):
+    """Recetas (HU-EP003-003): los insumos de cada producto, su costo y margen, y el descuento al hornear."""
+
+    def setUp(self):
+        from .models import ConsumoProduccion, IngredienteReceta, Insumo, Notificacion, ProduccionDiaria
+
+        self.Insumo, self.Ingrediente = Insumo, IngredienteReceta
+        self.Consumo, self.Produccion, self.Notificacion = ConsumoProduccion, ProduccionDiaria, Notificacion
+        self.admin = Usuario.objects.create_user('admin-recetas', password='clave-larga-123', rol='ADMINISTRADOR')
+        self.client.force_login(self.admin)
+        categoria = Categoria.objects.create(nombre='Panes recetas')
+        self.pan = Producto.objects.create(categoria=categoria, nombre='Pan amasado', precio=Decimal('550'), stock=0)
+        self.marraqueta = Producto.objects.create(
+            categoria=categoria, nombre='Marraqueta', precio=Decimal('2190'), stock=0, unidad_medida='kg',
+        )
+        self.harina = self._insumo('Harina', 'kg', '25', '21990', ['25', '25'])
+        self.huevo = self._insumo('Huevo', 'un.', '180', '36990', ['180'])
+        self.aceite = self._insumo('Aceite', 'L', '20', '41990', ['20'])
+
+    def _insumo(self, nombre, unidad, contenido, precio, restantes):
+        insumo = self.Insumo.objects.create(
+            codigo=f'NI-{nombre}', nombre=nombre, unidad_medida=unidad,
+            kilos_por_saco=Decimal(contenido), precio_saco=Decimal(precio),
+        )
+        for restante in restantes:
+            insumo.envases.create(tipo='envase', contenido=Decimal(contenido), restante=Decimal(restante), precio=Decimal(precio))
+        insumo.actualizar_stock()
+        return insumo
+
+    def _receta(self, producto, accion='agregar', **datos):
+        return self.client.post(reverse('receta_producto', args=[producto.pk]), {'accion': accion, **datos})
+
+    def _hornada(self, producto, cantidad):
+        return self.client.post(reverse('registrar_produccion', args=[producto.pk]), {'cantidad': str(cantidad)})
+
+    def _avisos(self, respuesta):
+        return [str(m) for m in get_messages(respuesta.wsgi_request)]
+
+    def _detalle(self, producto):
+        return self.client.get(reverse('receta_producto', args=[producto.pk])).context['detalle']
+
+    # --- Criterio 1: se guarda la receta y se calcula el costo por unidad ---
+
+    def test_agregar_insumos_guarda_la_receta_y_calcula_el_costo(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')       # 62 g
+        self._receta(self.pan, insumo_id=self.huevo.pk, cantidad='0,5')       # medio huevo
+
+        cantidades = dict(self.Ingrediente.objects.filter(receta__producto=self.pan).values_list('insumo__nombre', 'cantidad'))
+        self.assertEqual(cantidades, {'Harina': Decimal('0.062'), 'Huevo': Decimal('0.5')})
+        detalle = self._detalle(self.pan)
+        # 0,062 kg x $879,60 + 0,5 x $205,50 = $54,54 + $102,75
+        self.assertEqual(round(detalle['costo'], 2), Decimal('157.29'))
+        self.assertEqual(round(detalle['margen'], 1), Decimal('66.0'))       # sobre $462,18 (sin IVA)
+
+    def test_la_receta_va_por_la_unidad_en_que_se_vende(self):
+        self.assertContains(self.client.get(reverse('receta_producto', args=[self.pan.pk])), 'por 1 unidad')
+        self.assertContains(self.client.get(reverse('receta_producto', args=[self.marraqueta.pk])), 'por 1 kg')
+
+    # --- Criterio 2: cambiar una cantidad recalcula costo y margen ---
+
+    def test_cambiar_la_cantidad_recalcula_el_costo_y_el_margen(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+        ingrediente = self.Ingrediente.objects.get()
+
+        respuesta = self._receta(self.pan, accion='cambiar', ingrediente_id=ingrediente.pk, cantidad='100')
+
+        self.assertIn('Cantidad de Harina actualizada: el costo se recalculó.', self._avisos(respuesta))
+        detalle = self._detalle(self.pan)
+        self.assertEqual(round(detalle['costo'], 2), Decimal('87.96'))       # 0,1 kg x $879,60
+        self.assertEqual(round(detalle['margen'], 1), Decimal('81.0'))
+
+    def test_si_sube_el_precio_del_insumo_sube_el_costo(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='100')
+        self.Insumo.objects.filter(pk=self.harina.pk).update(precio_saco=Decimal('25000'))
+
+        self.assertEqual(round(self._detalle(self.pan)['costo'], 2), Decimal('100.00'))   # 0,1 kg x $1.000
+
+    # --- Criterio 3: un insumo no se repite ---
+
+    def test_un_insumo_repetido_se_rechaza(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+        respuesta = self._receta(self.pan, insumo_id=self.harina.pk, cantidad='80')
+
+        self.assertIn('Harina ya está en la receta: modifica la cantidad del que ya existe.', self._avisos(respuesta))
+        self.assertEqual(self.Ingrediente.objects.get().cantidad, Decimal('0.062'))
+
+    # --- Criterio 4: la cantidad debe ser mayor a cero ---
+
+    def test_cantidad_cero_negativa_o_invalida_se_rechaza(self):
+        for cantidad in ('0', '-5', 'mucho', '1,5'):        # en gramos van enteros
+            with self.subTest(cantidad=cantidad):
+                respuesta = self._receta(self.pan, insumo_id=self.harina.pk, cantidad=cantidad)
+                self.assertTrue(any('mayor a cero' in aviso for aviso in self._avisos(respuesta)))
+        self.assertIn('La cantidad debe ser mayor a cero.',
+                      self._avisos(self._receta(self.pan, insumo_id=self.huevo.pk, cantidad='0')))
+        self.assertFalse(self.Ingrediente.objects.exists())
+
+    def test_quitar_un_insumo_de_la_receta(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+
+        self._receta(self.pan, accion='quitar', ingrediente_id=self.Ingrediente.objects.get().pk)
+
+        self.assertFalse(self.Ingrediente.objects.exists())
+
+    # --- La hornada descuenta los insumos ---
+
+    def test_la_hornada_descuenta_desde_el_envase_en_uso(self):
+        en_uso = self.harina.envases.first()
+        en_uso.restante = Decimal('10')
+        en_uso.save()
+        self.harina.actualizar_stock()
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+
+        respuesta = self._hornada(self.pan, 200)                   # 200 x 62 g = 12,4 kg
+
+        self.assertEqual(sorted(self.harina.envases.values_list('restante', flat=True)), [Decimal('0'), Decimal('22.6')])
+        self.harina.refresh_from_db()
+        self.pan.refresh_from_db()
+        self.assertEqual((self.harina.total_kg, self.pan.stock), (Decimal('22.6'), 200))
+        consumo = self.Consumo.objects.get()
+        self.assertEqual((consumo.cantidad_receta, consumo.cantidad_usada, consumo.faltante),
+                         (Decimal('12.4'), Decimal('12.4'), Decimal('0')))
+        self.assertEqual(consumo.costo, Decimal('10907.04'))        # 12,4 kg x $879,60
+        self.assertTrue(any('Insumos descontados: Harina 12,4 kg.' in a for a in self._avisos(respuesta)))
+
+    def test_si_no_alcanza_se_usa_lo_que_queda_y_queda_el_deficit(self):
+        envase = self.aceite.envases.get()
+        envase.restante = Decimal('1')
+        envase.save()
+        self.aceite.actualizar_stock()
+        self._receta(self.pan, insumo_id=self.aceite.pk, cantidad='100')    # 100 mL por pan
+
+        respuesta = self._hornada(self.pan, 20)                             # pide 2 L, queda 1 L
+
+        self.aceite.refresh_from_db()
+        self.pan.refresh_from_db()
+        self.assertEqual((self.aceite.total_kg, self.pan.stock), (Decimal('0'), 20))
+        consumo = self.Consumo.objects.get()
+        self.assertEqual((consumo.cantidad_receta, consumo.cantidad_usada, consumo.faltante),
+                         (Decimal('2'), Decimal('1'), Decimal('1')))
+        self.assertIn('Se usó todo lo que quedaba de Aceite (1 L): según la receta faltaron 1 L. '
+                      'Quedó registrado en el déficit de insumos.', self._avisos(respuesta))
+        self.assertTrue(self.Notificacion.objects.filter(titulo='Faltó Aceite en una hornada').exists())
+
+        deficit = self.client.get(reverse('deficit_insumos'))
+        self.assertContains(deficit, 'faltaron 1 L')
+        self.assertContains(deficit, '20 × Pan amasado')
+
+    def test_si_un_insumo_esta_en_cero_la_hornada_no_se_registra(self):
+        envase = self.aceite.envases.get()
+        envase.restante = Decimal('0')
+        envase.save()
+        self.aceite.actualizar_stock()
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+        self._receta(self.pan, insumo_id=self.aceite.pk, cantidad='10')
+
+        respuesta = self._hornada(self.pan, 20)
+
+        self.assertIn('No queda Aceite: registra lo que llegó con "+ Envase" antes de hornear.', self._avisos(respuesta))
+        self.pan.refresh_from_db()
+        self.harina.refresh_from_db()
+        self.assertEqual((self.pan.stock, self.harina.total_kg), (0, Decimal('50')))
+        self.assertFalse(self.Produccion.objects.exists())
+
+    def test_un_producto_sin_receta_solo_suma_su_stock(self):
+        respuesta = self._hornada(self.pan, 30)
+
+        self.pan.refresh_from_db()
+        self.assertEqual(self.pan.stock, 30)
+        self.assertFalse(self.Consumo.objects.exists())
+        self.assertTrue(any('no tiene receta' in aviso for aviso in self._avisos(respuesta)))
+
+    def test_la_cantidad_horneada_debe_ser_mayor_a_cero(self):
+        respuesta = self._hornada(self.pan, 0)
+
+        self.assertIn('Por favor, ingresa una cantidad horneada válida mayor a 0.', self._avisos(respuesta))
+        self.assertFalse(self.Produccion.objects.exists())
+
+    # --- Tabla de productos y permisos ---
+
+    def test_la_tabla_de_productos_marca_los_que_no_tienen_receta(self):
+        self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62')
+
+        respuesta = self.client.get(reverse('gestion_inventario'))
+
+        self.assertContains(respuesta, reverse('receta_producto', args=[self.pan.pk]))
+        self.assertContains(respuesta, 'Sin receta', count=1)                 # solo la marraqueta
+
+    def test_solo_el_administrador_ve_y_cambia_recetas(self):
+        cajero = Usuario.objects.create_user('cajero-recetas', password='clave-larga-123', rol='CAJERO')
+        self.client.force_login(cajero)
+
+        self.assertRedirects(self._receta(self.pan, insumo_id=self.harina.pk, cantidad='62'), reverse('inicio'),
+                             fetch_redirect_response=False)
+        self.assertRedirects(self.client.get(reverse('deficit_insumos')), reverse('inicio'), fetch_redirect_response=False)
+        self.assertFalse(self.Ingrediente.objects.exists())

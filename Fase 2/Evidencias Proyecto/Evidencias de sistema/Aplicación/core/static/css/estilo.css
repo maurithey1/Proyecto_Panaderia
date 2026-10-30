@@ -4959,3 +4959,113 @@ a.historial-paginacion__enlace--actual:hover {
 @media (max-width: 520px) {
   .insumo-form .crud-form-fila-doble { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================
+   RECETAS (HU-EP003-003) Y DÉFICIT DE INSUMOS
+   La receta usa el mismo esquema que mermas: la tarea a la izquierda (los insumos) y a la derecha la
+   ficha con el costo de elaboración y el margen. Terracota es lo que cuestan los insumos; trigo, lo
+   que le queda a la panadería.
+   ========================================================== */
+.receta-grilla {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 300px);
+  align-items: start;
+  gap: 16px 28px;
+}
+
+.receta-ingredientes { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+.receta-tabla td { vertical-align: middle; }
+.receta-subtotal { font-weight: 700; color: var(--terracota); }
+
+/* Cambiar la cantidad en la misma fila: "62 | g  Guardar" */
+.receta-cambiar { display: flex; align-items: center; gap: 10px; }
+.receta-cantidad { width: 130px; }
+.receta-cambiar .merma-enlace {
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--fuente-texto);
+  cursor: pointer;
+}
+.receta-cantidad .crud-input { width: 100%; min-width: 0; padding: 6px 10px; }
+
+.receta-quitar {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 0.85rem var(--fuente-texto);
+  color: var(--terracota);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.receta-quitar:hover { color: #923e1b; }
+.receta-quitar:focus-visible { outline: 3px solid var(--trigo); outline-offset: 2px; }
+
+.receta-vacia {
+  margin: 0;
+  padding: 18px;
+  border: 1.5px dashed var(--borde);
+  border-radius: 10px;
+  background: var(--papel);
+  color: var(--texto-suave);
+}
+
+/* Agregar un insumo: insumo, cantidad con su unidad y el botón, en una fila */
+.receta-agregar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px auto;
+  align-items: end;
+  gap: 12px;
+}
+.receta-agregar .crud-input { width: 100%; min-width: 0; }
+
+/* El medidor de la ficha: el costo ocupa su parte del precio sin IVA y la ganancia el resto */
+.receta-medidor .merma-medidor__queda { flex: 1; }
+
+/* "Sin receta" en la tabla de productos: falta completarla para saber el costo */
+.receta-sin { margin-left: 6px; background: var(--crema-2); color: var(--texto-suave); font-weight: 600; }
+
+/* "Receta" en las filas de productos */
+.crud-btn-receta {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--cafe-claro);
+  color: var(--cafe-oscuro);
+  text-decoration: none;
+}
+.crud-btn-receta:hover { background-color: var(--corteza-brillo); }
+
+.insumo-enlace-deficit { margin-right: 18px; }
+
+/* Déficit: cuánto faltó de cada insumo en el período */
+.deficit-resumen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+.deficit-resumen li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--borde);
+  border-radius: 10px;
+  background: var(--papel);
+  font-size: 0.88rem;
+  color: var(--texto-suave);
+}
+.deficit-resumen strong { color: var(--cafe-oscuro); }
+
+@media (max-width: 900px) {
+  .receta-grilla { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .receta-agregar { grid-template-columns: 1fr; }
+  .receta-cambiar { flex-wrap: wrap; }
+}

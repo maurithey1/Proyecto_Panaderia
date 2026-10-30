@@ -51,6 +51,8 @@ urlpatterns = [
     path('panel-admin/productos/editar/<int:pk>/', views.editar_producto, name='editar_producto'),
     path('panel-admin/productos/eliminar/<int:pk>/', views.eliminar_producto, name='eliminar_producto'),
     path('panel-admin/productos/produccion/<int:pk>/', views.registrar_produccion, name='registrar_produccion'),
+    path('panel-admin/productos/<int:pk>/receta/', views.receta_producto, name='receta_producto'),
+    path('panel-admin/inventario/deficit/', views.deficit_insumos, name='deficit_insumos'),
     path('panel-admin/categorias/crear/', views.crear_categoria, name='crear_categoria'),
 
     # Proveedores y Cotizaciones

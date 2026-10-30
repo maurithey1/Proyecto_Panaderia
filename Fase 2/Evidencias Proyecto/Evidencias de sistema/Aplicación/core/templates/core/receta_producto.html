@@ -1,0 +1,139 @@
+{% extends 'core/base_admin.html' %}
+{% load static formato %}
+
+{% block titulo %}Receta de {{ producto.nombre }}{% endblock %}
+
+{% block contenido %}
+<div class="crud-tarjeta-marco receta">
+
+  <div class="crud-cabecera-fila">
+    <div class="crud-enlace-superior">
+      <a href="{% url 'gestion_inventario' %}?tab=productos" class="crud-link-admin">← Volver a Productos</a>
+    </div>
+    <h1 class="crud-titulo-principal">Receta de {{ producto.nombre }}</h1>
+    <p class="merma-bajada">
+      Lo que lleva {{ texto_base }}, porque {% if base == 'kg' %}se vende por kilo{% else %}se vende por unidad{% endif %}.
+      Con el precio de cada insumo se calcula el costo de elaboración y el margen; al registrar una hornada,
+      se descuentan estos insumos.
+    </p>
+  </div>
+
+  <section class="merma-registro" aria-labelledby="recetaTitulo">
+    <h2 class="merma-subtitulo" id="recetaTitulo">Insumos {{ texto_base }}</h2>
+
+    <div class="receta-grilla">
+      <div class="receta-ingredientes">
+        {% if detalle.lineas %}
+          <div class="crud-tabla-responsive">
+            <table class="crud-tabla-pantallazo receta-tabla">
+              <caption class="sr-only">Insumos de la receta de {{ producto.nombre }}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Insumo</th>
+                  <th scope="col">Cantidad {{ texto_base }}</th>
+                  <th scope="col">Precio</th>
+                  <th scope="col">Costo</th>
+                  <th scope="col"><span class="sr-only">Quitar</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for linea in detalle.lineas %}
+                  <tr>
+                    <td class="crud-col-nombre"><strong>{{ linea.insumo.nombre }}</strong></td>
+                    <td>
+                      <!-- Cambiar la cantidad (criterio 2: el costo y el margen se recalculan) -->
+                      <form method="post" class="receta-cambiar">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="cambiar">
+                        <input type="hidden" name="ingrediente_id" value="{{ linea.ingrediente.pk }}">
+                        <label class="sr-only" for="cantidad{{ linea.ingrediente.pk }}">Cantidad de {{ linea.insumo.nombre }}</label>
+                        <div class="insumo-con-unidad receta-cantidad">
+                          <input type="text" inputmode="decimal" id="cantidad{{ linea.ingrediente.pk }}" name="cantidad"
+                                 value="{{ linea.cantidad }}" maxlength="10" class="crud-input">
+                          <span class="insumo-con-unidad__sufijo">{{ linea.unidad_ingreso }}</span>
+                        </div>
+                        <button type="submit" class="merma-enlace">Guardar</button>
+                      </form>
+                    </td>
+                    <td class="merma-cifra">{{ linea.precio_unidad|clp }} por {{ linea.insumo.unidad }}</td>
+                    <td class="merma-cifra receta-subtotal">${{ linea.subtotal|floatformat:"-1g" }}</td>
+                    <td class="crud-col-centro">
+                      <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="accion" value="quitar">
+                        <input type="hidden" name="ingrediente_id" value="{{ linea.ingrediente.pk }}">
+                        <button type="submit" class="receta-quitar" aria-label="Quitar {{ linea.insumo.nombre }} de la receta">Quitar</button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="receta-vacia">
+            Esta receta todavía no tiene insumos. Agrega el primero: por ejemplo, 62 g de harina por cada pan.
+          </p>
+        {% endif %}
+
+        <!-- Agregar un insumo (criterio 3: no se repite; criterio 4: cantidad mayor a cero) -->
+        <form method="post" class="receta-agregar" id="formAgregarIngrediente">
+          {% csrf_token %}
+          <input type="hidden" name="accion" value="agregar">
+          <div class="crud-form-grupo receta-agregar__insumo">
+            <label for="recetaInsumo">Insumo</label>
+            <select id="recetaInsumo" name="insumo_id" class="crud-input" required>
+              <option value="" data-unidad="g">Selecciona un insumo</option>
+              {% for item in insumos %}
+                <option value="{{ item.insumo.pk }}" data-unidad="{{ item.unidad_ingreso }}">{{ item.insumo.nombre }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="crud-form-grupo receta-agregar__cantidad">
+            <label for="recetaCantidad">Cantidad {{ texto_base }}</label>
+            <div class="insumo-con-unidad">
+              <input type="text" inputmode="decimal" id="recetaCantidad" name="cantidad" required maxlength="10"
+                     class="crud-input" placeholder="Ej: 62">
+              <span class="insumo-con-unidad__sufijo" data-receta-unidad>g</span>
+            </div>
+          </div>
+          <button type="submit" class="merma-boton receta-agregar__boton">Agregar insumo</button>
+        </form>
+        <p class="insumo-ayuda">
+          Los insumos que se miden en kg o L se escriben en gramos o mL (62 g, 15 mL); los que se cuentan, en unidades (0,5 huevo).
+        </p>
+      </div>
+
+      <!-- Costo de elaboración y margen: se calculan cada vez con el precio actual de los insumos -->
+      <aside class="merma-ficha receta-ficha" aria-label="Costo y margen">
+        <p class="merma-resumen__etiqueta">Costo de elaboración {{ texto_base }}</p>
+        <p class="merma-total">{{ detalle.costo|clp }}</p>
+        {% if detalle.margen is not None %}
+          <div class="merma-medidor receta-medidor" aria-hidden="true">
+            <span class="merma-medidor__pierde" style="width: {{ detalle.parte_costo }}%"></span>
+            <span class="merma-medidor__queda"></span>
+          </div>
+          <dl class="merma-ficha__cifras">
+            <div><dt>Precio de venta</dt><dd>{{ detalle.precio|clp }}</dd></div>
+            <div><dt>Sin IVA</dt><dd>{{ detalle.precio_neto|clp }}</dd></div>
+            <div><dt>Ganancia {{ texto_base }}</dt><dd>{{ detalle.ganancia|clp }}</dd></div>
+            <div class="merma-ficha__total"><dt>Margen (sin IVA)</dt><dd>{{ detalle.margen|floatformat:1 }}%</dd></div>
+          </dl>
+          <p class="merma-ficha__nota">
+            Terracota: lo que cuestan los insumos. Trigo: lo que le queda a la panadería, sin contar gas, luz ni sueldos.
+          </p>
+        {% else %}
+          <p class="merma-ficha__vacia">Agrega los insumos de la receta para ver el costo de elaboración y el margen.</p>
+        {% endif %}
+        <p class="merma-ficha__nota">
+          Se calcula con el precio actual de cada insumo: si cambia en "Editar insumo", el costo cambia solo.
+        </p>
+      </aside>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{% static 'js/receta.js' %}"></script>
+{% endblock %}

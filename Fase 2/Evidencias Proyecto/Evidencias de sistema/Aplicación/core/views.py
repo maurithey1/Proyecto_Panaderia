@@ -30,13 +30,15 @@ from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
-    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma, EnvaseInsumo
+    OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma, EnvaseInsumo, IngredienteReceta,
+    ConsumoProduccion
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
 from . import pedidos
 from . import caja as caja_pos
 from . import mermas as mermas_inventario
+from . import recetas as recetas_productos
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -1168,6 +1170,7 @@ def gestion_inventario(request):
 
     todos_los_productos = (
         Producto.objects.select_related('categoria').prefetch_related('turnos')
+        .annotate(ingredientes_receta=Count('receta__ingredientes'))    # 0: "Sin receta"
         .order_by('categoria__nombre', 'nombre')
     )
     categorias_productos = Categoria.objects.all().order_by('nombre')
@@ -1644,26 +1647,119 @@ def editar_producto(request, pk):
 @admin_required
 @require_POST
 def registrar_produccion(request, pk):
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
-    producto = get_object_or_404(Producto, pk=pk)
-    cantidad = _entero_o_none(request.POST.get('cantidad', 0))
-
-    if cantidad and cantidad > 0:
-        with transaction.atomic():
-            producto.stock += cantidad
-            producto.save(update_fields=['stock'])
-
-            ProduccionDiaria.objects.create(
-                producto=producto,
-                cantidad=cantidad,
-                responsable=request.user
-            )
-        messages.success(request, f'¡Hornada registrada! Se sumaron +{cantidad} un. a "{producto.nombre}". Stock actualizado: {producto.stock}.')
-    else:
-        messages.error(request, 'Por favor, ingresa una cantidad horneada válida mayor a 0.')
-
+    """
+    "+ Hornada": suma lo horneado al stock del producto y, si tiene receta, descuenta sus insumos de
+    los envases (el que está en uso primero). Si a un insumo le quedaba menos de lo que pedía, se usa
+    lo que había y la diferencia queda como déficit; si alguno está en cero, no se registra.
+    Reglas en core/recetas.py.
+    """
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
+    get_object_or_404(Producto, pk=pk)
+    cantidad = _entero_o_none(request.POST.get('cantidad', 0))
+    try:
+        produccion, consumos = recetas_productos.registrar_hornada(pk, cantidad, request.user)
+    except recetas_productos.ProduccionInvalida as motivo:
+        messages.error(request, str(motivo))
+        return redirect(next_url)
+
+    producto = produccion.producto
+    unidad = recetas_productos.base(producto)
+    mensaje = f'¡Hornada registrada! Se sumaron +{cantidad} {unidad} a "{producto.nombre}". Stock actualizado: {producto.stock}.'
+    if consumos:
+        descontado = '; '.join(
+            f'{c.nombre_insumo} {recetas_productos.numero(c.cantidad_usada)} {c.unidad}' for c in consumos
+        )
+        mensaje += f' Insumos descontados: {descontado}.'
+    else:
+        mensaje += ' El producto no tiene receta: no se descontaron insumos.'
+    messages.success(request, mensaje)
+    for consumo in consumos:
+        if consumo.faltante > 0:
+            messages.warning(
+                request,
+                f'Se usó todo lo que quedaba de {consumo.nombre_insumo} ({recetas_productos.numero(consumo.cantidad_usada)} '
+                f'{consumo.unidad}): según la receta faltaron {recetas_productos.numero(consumo.faltante)} {consumo.unidad}. '
+                f'Quedó registrado en el déficit de insumos.'
+            )
     return redirect(next_url)
+
+
+@admin_required
+@require_http_methods(['GET', 'POST'])
+def receta_producto(request, pk):
+    """
+    Receta de un producto (HU-EP003-003): los insumos que lleva por 1 unidad o por 1 kg (según cómo se
+    vende), con su costo de elaboración y el margen sobre el precio sin IVA. Los cambios se guardan uno
+    a uno (agregar, cambiar una cantidad, quitar) y el costo se recalcula. Reglas en core/recetas.py.
+    """
+    producto = get_object_or_404(Producto, pk=pk)
+    url_receta = reverse('receta_producto', args=[producto.pk])
+    if request.method == 'POST':
+        accion = request.POST.get('accion')
+        ingrediente = IngredienteReceta.objects.select_related('insumo').filter(
+            pk=_entero_o_none(request.POST.get('ingrediente_id')), receta__producto=producto,
+        ).first()
+        try:
+            if accion == 'agregar':
+                nuevo = recetas_productos.agregar_ingrediente(producto, _entero_o_none(request.POST.get('insumo_id')),
+                                                              request.POST.get('cantidad'))
+                messages.success(request, f'{nuevo.insumo.nombre} agregado a la receta.')
+            elif accion == 'cambiar' and ingrediente:
+                recetas_productos.cambiar_cantidad(ingrediente, request.POST.get('cantidad'))
+                messages.success(request, f'Cantidad de {ingrediente.insumo.nombre} actualizada: el costo se recalculó.')
+            elif accion == 'quitar' and ingrediente:
+                ingrediente.delete()
+                messages.success(request, f'{ingrediente.insumo.nombre} se quitó de la receta.')
+            else:
+                messages.error(request, 'No se encontró el insumo de la receta.')
+        except recetas_productos.RecetaInvalida as motivo:
+            messages.error(request, str(motivo))
+        return redirect(url_receta)
+
+    detalle = recetas_productos.detalle_costo(producto)
+    en_receta = {linea['insumo'].pk for linea in detalle['lineas']}
+    insumos = [
+        {'insumo': insumo, 'unidad_ingreso': recetas_productos.unidad_de_ingreso(insumo)}
+        for insumo in Insumo.objects.order_by('nombre') if insumo.pk not in en_receta
+    ]
+    contexto = {
+        'producto': producto,
+        'texto_base': recetas_productos.texto_base(producto),
+        'base': recetas_productos.base(producto),
+        'detalle': detalle,
+        'insumos': insumos,
+    }
+    return render(request, 'core/receta_producto.html', contexto)
+
+
+@admin_required
+@require_GET
+def deficit_insumos(request):
+    """
+    Déficit de insumos: las hornadas en que un insumo no alcanzó y se usó lo que quedaba. Sirve para
+    planificar compras y revisar recetas. Por defecto, los últimos 30 días.
+    """
+    filtros = mermas_inventario.leer_filtros(request.GET)
+    insumo_id = _entero_o_none(request.GET.get('insumo_id'))
+    inicio = timezone.make_aware(datetime.combine(filtros['desde'], datetime.min.time()))
+    fin = timezone.make_aware(datetime.combine(filtros['hasta'] + timedelta(days=1), datetime.min.time()))
+    registros = (
+        ConsumoProduccion.objects.filter(faltante__gt=0, produccion__fecha_produccion__gte=inicio,
+                                         produccion__fecha_produccion__lt=fin)
+        .select_related('produccion__producto', 'produccion__responsable')
+        .order_by('-produccion__fecha_produccion', 'pk')
+    )
+    if insumo_id:
+        registros = registros.filter(insumo_id=insumo_id)
+    registros = list(registros)
+    contexto = {
+        'registros': registros,
+        'resumen': recetas_productos.deficit(registros),
+        'filtros': filtros,
+        'insumo_id': insumo_id,
+        'insumos': Insumo.objects.order_by('nombre'),
+    }
+    return render(request, 'core/deficit_insumos.html', contexto)
 
 
 @admin_required

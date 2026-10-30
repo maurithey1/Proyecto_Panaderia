@@ -1,0 +1,99 @@
+{% extends 'core/base_admin.html' %}
+{% load static formato %}
+
+{% block titulo %}Déficit de insumos{% endblock %}
+
+{% block contenido %}
+<div class="crud-tarjeta-marco merma">
+
+  <div class="crud-cabecera-fila">
+    <div class="crud-enlace-superior">
+      <a href="{% url 'gestion_inventario' %}" class="crud-link-admin">← Volver a Gestión de inventario</a>
+    </div>
+    <h1 class="crud-titulo-principal">Déficit de insumos</h1>
+    <p class="merma-bajada">
+      Hornadas en que un insumo no alcanzó para la receta y se usó lo que quedaba. Si un insumo aparece
+      seguido, conviene comprar más o revisar cuánto pide la receta.
+    </p>
+  </div>
+
+  <section class="merma-historial" aria-labelledby="deficitTitulo">
+    <h2 class="sr-only" id="deficitTitulo">Faltantes del período</h2>
+
+    <form method="get" action="{% url 'deficit_insumos' %}" class="historial-barra-filtros merma-filtros"
+          aria-label="Filtrar el déficit de insumos">
+      <div class="historial-filtro-grupo">
+        <label for="filtroDesde">Desde</label>
+        <input type="date" id="filtroDesde" name="desde" class="crud-input" value="{{ filtros.desde|date:'Y-m-d' }}">
+      </div>
+      <div class="historial-filtro-grupo">
+        <label for="filtroHasta">Hasta</label>
+        <input type="date" id="filtroHasta" name="hasta" class="crud-input" value="{{ filtros.hasta|date:'Y-m-d' }}">
+      </div>
+      <div class="historial-filtro-grupo">
+        <label for="filtroInsumo">Insumo</label>
+        <select id="filtroInsumo" name="insumo_id" class="crud-input">
+          <option value="">Todos los insumos</option>
+          {% for insumo in insumos %}
+            <option value="{{ insumo.pk }}" {% if insumo.pk == insumo_id %}selected{% endif %}>{{ insumo.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="merma-filtros__acciones">
+        <button type="submit" class="merma-boton-secundario">Filtrar</button>
+        <a href="{% url 'deficit_insumos' %}" class="merma-enlace">Limpiar</a>
+      </div>
+    </form>
+
+    {% if resumen %}
+      <ul class="deficit-resumen" aria-label="Faltantes por insumo">
+        {% for fila in resumen %}
+          <li>
+            <strong>{{ fila.insumo }}</strong>
+            <span>faltaron {{ fila.faltante|floatformat:"-2" }} {{ fila.unidad }}
+              en {% if fila.veces == 1 %}1 hornada{% else %}{{ fila.veces }} hornadas{% endif %}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <div class="crud-tabla-responsive">
+      <table class="crud-tabla-pantallazo merma-tabla">
+        <caption class="sr-only">Hornadas con faltantes entre el {{ filtros.desde|date:"d/m/Y" }} y el {{ filtros.hasta|date:"d/m/Y" }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Hornada</th>
+            <th scope="col">Insumo</th>
+            <th scope="col">Pedía la receta</th>
+            <th scope="col">Se usó</th>
+            <th scope="col">Faltó</th>
+            <th scope="col">Responsable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for consumo in registros %}
+            <tr>
+              <td class="crud-col-centro merma-cifra">{{ consumo.produccion.fecha_produccion|date:"d/m/Y H:i" }}</td>
+              <td class="crud-col-nombre">{{ consumo.produccion.cantidad }} × {{ consumo.produccion.producto.nombre }}</td>
+              <td><strong>{{ consumo.nombre_insumo }}</strong></td>
+              <td class="crud-col-centro merma-cifra">{{ consumo.cantidad_receta|floatformat:"-2" }} {{ consumo.unidad }}</td>
+              <td class="crud-col-centro merma-cifra">{{ consumo.cantidad_usada|floatformat:"-2" }} {{ consumo.unidad }}</td>
+              <td class="crud-col-centro merma-cifra merma-perdida">{{ consumo.faltante|floatformat:"-2" }} {{ consumo.unidad }}</td>
+              <td class="crud-col-centro">
+                {% with quien=consumo.produccion.responsable %}
+                  {% if quien %}{{ quien.get_full_name|default:quien.username }}{% else %}—{% endif %}
+                {% endwith %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="merma-vacio">No hubo faltantes en este período: todas las hornadas tuvieron los insumos que pedía la receta.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

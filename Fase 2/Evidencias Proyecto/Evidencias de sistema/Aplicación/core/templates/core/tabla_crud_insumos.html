@@ -10,6 +10,7 @@
   
   <div class="crud-cabecera-fila">
     <div class="crud-enlace-superior">
+      <a href="{% url 'deficit_insumos' %}" class="crud-link-admin insumo-enlace-deficit">Déficit de insumos</a>
       <a href="{% url 'inicio_admin' %}" class="crud-link-admin">administrar catálogo</a>
     </div>
     
@@ -131,6 +132,7 @@
               <td class="crud-col-id">#{{ prod.pk }}</td>
               <td class="crud-col-nombre">
                 <strong>{{ prod.nombre }}</strong>
+                {% if not prod.ingredientes_receta %}<span class="crud-badge receta-sin">Sin receta</span>{% endif %}
                 {% if prod.descripcion %}
                   <small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">{{ prod.descripcion|truncatewords:6 }}</small>
                 {% endif %}
@@ -157,6 +159,7 @@
                         onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
                   + Hornada
                 </button>
+                <a href="{% url 'receta_producto' prod.pk %}" class="crud-btn-accion crud-btn-receta">Receta</a>
                 <a href="{% url 'gestion_mermas' %}?item=producto-{{ prod.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
                         data-pk="{{ prod.pk }}"
@@ -641,7 +644,8 @@
           <input type="number" id="prod_cant_horneada" name="cantidad" min="1" value="20" required class="crud-input" placeholder="Ej: 50">
         </div>
         <p style="font-size: 0.85rem; color: var(--texto-suave); margin: 0;">
-          Esta cantidad se sumará directamente al stock actual del producto y quedará guardada en el registro diario con la fecha y tu usuario.
+          Esta cantidad se sumará al stock del producto y quedará guardada en el registro diario con la fecha y tu usuario.
+          Si el producto tiene receta, se descuentan sus insumos (primero del envase en uso).
         </p>
       </div>
       <div class="crud-modal-footer">
