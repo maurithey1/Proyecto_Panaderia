@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard Administrador · Los Tres Spa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Young+Serif&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/core/static/css/estilo.css">
+  <style>
+    .admin-logo { text-decoration: none; }
+  </style>
+</head>
+
+<body class="admin-body">
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-espiga" viewBox="0 0 24 24">
+      <path d="M12 21V8" />
+      <path d="M12 3v2" />
+      <path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z" />
+      <path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6" />
+    </symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24">
+      <path d="M6 10.5C4.5 7 7.5 4 12 4s7.5 3 6 6.5c1.2.6 2 1.7 2 3.2V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-4.3c0-1.5.8-2.6 2-3.2z" />
+      <path d="M9.5 8.5l1.5 3M13 8l1.5 3" />
+    </symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24">
+      <circle cx="12" cy="7" r="4" />
+      <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+    </symbol>
+    <symbol id="i-filtro" viewBox="0 0 24 24">
+      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+    </symbol>
+  </svg>
+
+  <header class="admin-cabecera">
+    <div class="admin-contenedor admin-cabecera__fila">
+      <a class="admin-logo" href="#">
+        <svg class="icono" aria-hidden="true"><use href="#i-espiga" /></svg>
+        <span>Los Tres Spa</span>
+      </a>
+
+      <span class="admin-separador-v" aria-hidden="true"></span>
+
+      <nav class="admin-menu" aria-label="Navegación de administración">
+        <a href="vista_previa_inicio_admin.html" aria-current="page">Inicio</a>
+        <a href="vista_previa_kpis.html">Métricas y KPIs</a>
+        <a href="#">Comparador y estudio de mercado</a>
+        <a href="#">Órdenes de compra</a>
+        <a href="#">Gestión de inventario</a>
+        <a href="#">Mermas</a>
+      </nav>
+
+      <div class="admin-cabecera__acciones">
+        <div class="admin-dropdown">
+          <button type="button" class="admin-dropdown__toggle">
+            <svg class="icono" aria-hidden="true"><use href="#i-usuario" /></svg>
+            <span>Administrador</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="contenido" class="admin-main">
+    <div class="admin-contenedor admin-dashboard">
+
+      <!-- Fila: Ventas (Izq) + Separador + Stock (Der) -->
+      <div class="admin-top-grid">
+
+        <!-- Bloque Ventas con Gráficos Interactivos -->
+        <section class="admin-panel admin-panel--ventas">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h2 class="admin-panel__titulo" style="margin: 0;">Ventas y Rendimiento</h2>
+            <a href="vista_previa_kpis.html" class="crud-btn-accion" style="text-decoration: none; padding: 4px 10px; font-size: 0.82rem; background: var(--terracota); color: #fff; border-radius: 6px;">Ver KPIs completos →</a>
+          </div>
+          <div class="admin-graficos-container">
+            <div class="admin-grafico-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span class="admin-grafico-card__titulo" style="margin: 0;">Ventas: Octubre vs Noviembre</span>
+              </div>
+              <div style="position: relative; height: 190px; width: 100%;">
+                <canvas id="graficoBarrasInicio"></canvas>
+              </div>
+            </div>
+            <div class="admin-grafico-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span class="admin-grafico-card__titulo" style="margin: 0;">Tendencia de Ventas (Últimos 14 días)</span>
+              </div>
+              <div style="position: relative; height: 190px; width: 100%;">
+                <canvas id="graficoLineasInicio"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Divisor vertical central de la sección superior -->
+        <div class="admin-v-line" aria-hidden="true"></div>
+
+        <!-- Bloque Stock en Tiempo Real -->
+        <section class="admin-panel admin-panel--stock">
+          <h2 class="admin-panel__titulo">Stock Productos en Tiempo real</h2>
+          <div class="admin-stock-grid">
+            <article class="admin-card-stock">
+              <div class="admin-card-stock__img">
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+              </div>
+              <h3 class="admin-card-stock__nombre">Marraqueta Tradicional</h3>
+              <p class="admin-card-stock__unidades">Stock: <strong>48 unidades</strong></p>
+            </article>
+            <article class="admin-card-stock">
+              <div class="admin-card-stock__img">
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+              </div>
+              <h3 class="admin-card-stock__nombre">Hallulla Especial</h3>
+              <p class="admin-card-stock__unidades">Stock: <strong>36 unidades</strong></p>
+            </article>
+            <article class="admin-card-stock">
+              <div class="admin-card-stock__img">
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+              </div>
+              <h3 class="admin-card-stock__nombre">Empanada Pino Horno</h3>
+              <p class="admin-card-stock__unidades">Stock: <strong>14 unidades</strong></p>
+            </article>
+            <article class="admin-card-stock">
+              <div class="admin-card-stock__img">
+                <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+              </div>
+              <h3 class="admin-card-stock__nombre">Torta Tres Leches</h3>
+              <p class="admin-card-stock__unidades">Stock: <strong>6 unidades</strong></p>
+            </article>
+          </div>
+        </section>
+
+      </div>
+
+      <hr class="admin-hr">
+
+      <!-- Fila Inferior: Valor de materias primas por proveedor -->
+      <section class="admin-panel admin-panel--materias">
+        <div class="admin-panel__header-icon">
+          <svg class="icono admin-icono-filtro" aria-hidden="true"><use href="#i-filtro"/></svg>
+          <h2 class="admin-panel__titulo">Valor de materias primas por proveedor</h2>
+        </div>
+
+        <div class="admin-proveedores-grid">
+          <div class="admin-col-proveedor">
+            <h3 class="admin-col-proveedor__nombre">Molinera del Sur</h3>
+            <div class="admin-col-proveedor__items">
+              <article class="admin-card-materia">
+                <div class="admin-card-materia__img">
+                  <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                </div>
+                <p class="admin-card-materia__nombre">Harina Especial 25kg</p>
+                <p class="admin-card-materia__precio">$22.500</p>
+              </article>
+            </div>
+          </div>
+          <div class="admin-col-proveedor">
+            <h3 class="admin-col-proveedor__nombre">Molino La Estampa</h3>
+            <div class="admin-col-proveedor__items">
+              <article class="admin-card-materia">
+                <div class="admin-card-materia__img">
+                  <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                </div>
+                <p class="admin-card-materia__nombre">Harina Integral 25kg</p>
+                <p class="admin-card-materia__precio">$23.800</p>
+              </article>
+            </div>
+          </div>
+          <div class="admin-col-proveedor">
+            <h3 class="admin-col-proveedor__nombre">Distribuidora Lácteos Sur</h3>
+            <div class="admin-col-proveedor__items">
+              <article class="admin-card-materia">
+                <div class="admin-card-materia__img">
+                  <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                </div>
+                <p class="admin-card-materia__nombre">Mantequilla Bloque 5kg</p>
+                <p class="admin-card-materia__precio">$32.000</p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const fmtDinero = (v) => '$' + Math.round(v || 0).toLocaleString('es-CL');
+
+    // 1. Gráfico de Barras: Comparativa Mes Anterior vs Actual
+    const ctxBarras = document.getElementById('graficoBarrasInicio');
+    if (ctxBarras) {
+      new Chart(ctxBarras, {
+        type: 'bar',
+        data: {
+          labels: ['Semana 1', 'Semana 2', 'Semana 3', 'Semana 4'],
+          datasets: [
+            {
+              label: 'Octubre',
+              data: [820000, 940000, 890000, 1150000],
+              backgroundColor: '#c8a27a',
+              borderRadius: 4,
+            },
+            {
+              label: 'Noviembre',
+              data: [980000, 1050000, 1120000, 1280000],
+              backgroundColor: '#b4532a',
+              borderRadius: 4,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 10, padding: 8, font: { size: 11 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${fmtDinero(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                font: { size: 10 },
+                callback: (v) => '$' + (v >= 1000 ? (v / 1000) + 'k' : v)
+              },
+              grid: { color: '#f0e3ce' }
+            },
+            x: {
+              ticks: { font: { size: 10 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+
+    // 2. Gráfico de Líneas: Tendencia Últimos 14 días (POS vs Web)
+    const ctxLineas = document.getElementById('graficoLineasInicio');
+    if (ctxLineas) {
+      new Chart(ctxLineas, {
+        type: 'line',
+        data: {
+          labels: ['19/10', '20/10', '21/10', '22/10', '23/10', '24/10', '25/10', '26/10', '27/10', '28/10', '29/10', '30/10', '31/10', '01/11'],
+          datasets: [
+            {
+              label: 'POS',
+              data: [140000, 165000, 130000, 185000, 210000, 245000, 280000, 150000, 160000, 175000, 190000, 220000, 260000, 290000],
+              borderColor: '#7b4b2a',
+              backgroundColor: 'rgba(123, 75, 42, 0.12)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2,
+              pointRadius: 2.5,
+              pointHoverRadius: 5,
+            },
+            {
+              label: 'Webpay',
+              data: [75000, 90000, 60000, 95000, 110000, 130000, 150000, 80000, 85000, 90000, 105000, 120000, 140000, 160000],
+              borderColor: '#e3b25b',
+              backgroundColor: 'rgba(227, 178, 91, 0.12)',
+              fill: true,
+              tension: 0.35,
+              borderWidth: 2,
+              pointRadius: 2.5,
+              pointHoverRadius: 5,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { boxWidth: 10, padding: 8, font: { size: 11 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => ` ${ctx.dataset.label}: ${fmtDinero(ctx.raw)}`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                font: { size: 10 },
+                callback: (v) => '$' + (v >= 1000 ? (v / 1000) + 'k' : v)
+              },
+              grid: { color: '#f0e3ce' }
+            },
+            x: {
+              ticks: { font: { size: 10 } },
+              grid: { display: false }
+            }
+          }
+        }
+      });
+    }
+  });
+  </script>
+</body>
+</html>

@@ -1,0 +1,478 @@
+{% extends 'core/base_admin.html' %}
+{% load static formato %}
+
+{% block titulo %}Métricas e Indicadores Clave (KPIs){% endblock %}
+
+{% block contenido %}
+<div class="admin-contenedor kpi-dashboard">
+
+  <!-- CABECERA PRINCIPAL Y BARRA DE FILTROS -->
+  <header class="kpi-header">
+    <div class="kpi-header__textos">
+      <div class="kpi-tag-superior">
+        <span class="kpi-tag-punto"></span>
+        <span>Panel de Control Gerencial</span>
+      </div>
+      <h1 class="kpi-titulo-principal">Métricas e Indicadores Clave (KPIs)</h1>
+      <p class="kpi-subtitulo">
+        Monitoreo en tiempo real del desempeño de ventas, canales comerciales, cuadratura de caja, inventario, costos y producción.
+      </p>
+    </div>
+
+    <!-- Filtros de Período -->
+    <div class="kpi-filtros-card">
+      <form method="get" action="{% url 'dashboard_kpis' %}" class="kpi-filtros-form" id="formPeriodoKpi">
+        <div class="kpi-periodos-botones" role="group" aria-label="Seleccionar período">
+          <a href="?periodo=hoy" class="kpi-boton-filtro {% if periodo_seleccionado == 'hoy' %}activo{% endif %}">
+            Hoy
+          </a>
+          <a href="?periodo=7dias" class="kpi-boton-filtro {% if periodo_seleccionado == '7dias' %}activo{% endif %}">
+            Últimos 7 días
+          </a>
+          <a href="?periodo=mes" class="kpi-boton-filtro {% if periodo_seleccionado == 'mes' %}activo{% endif %}">
+            Últimos 30 días
+          </a>
+          <a href="?periodo=mes_calendario" class="kpi-boton-filtro {% if periodo_seleccionado == 'mes_calendario' %}activo{% endif %}">
+            Mes actual
+          </a>
+          <a href="?periodo=anio" class="kpi-boton-filtro {% if periodo_seleccionado == 'anio' %}activo{% endif %}">
+            Este año
+          </a>
+          <a href="?periodo=todo" class="kpi-boton-filtro {% if periodo_seleccionado == 'todo' %}activo{% endif %}">
+            Todo el histórico
+          </a>
+        </div>
+
+        <div class="kpi-filtro-fechas">
+          <input type="hidden" name="periodo" value="personalizado">
+          <label for="fechaDesde" class="kpi-label-fecha">Desde</label>
+          <input type="date" id="fechaDesde" name="desde" value="{{ desde_seleccionado }}" class="kpi-input-fecha" required>
+          
+          <label for="fechaHasta" class="kpi-label-fecha">Hasta</label>
+          <input type="date" id="fechaHasta" name="hasta" value="{{ hasta_seleccionado }}" class="kpi-input-fecha" required>
+
+          <button type="submit" class="kpi-boton-aplicar">
+            Filtrar fechas
+          </button>
+        </div>
+      </form>
+      <div class="kpi-periodo-activo-badge">
+        Período evaluado: <strong>{{ kpi.rango.nombre_periodo }}</strong>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================================= -->
+  <!-- 1. BLOQUE DE TARJETAS PRINCIPALES (KPI CARDS DE RESUMEN EJECUTIVO) -->
+  <!-- ========================================================================================= -->
+  <section class="kpi-resumen-grid" aria-label="Tarjetas principales de resumen">
+
+    <!-- Tarjeta 1: Ingresos Totales -->
+    <article class="kpi-card kpi-card--primaria">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">💰</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Ingresos Totales por Ventas</span>
+        <div class="kpi-card__monto">${{ kpi.total_ingresos|floatformat:0 }}</div>
+        <div class="kpi-card__variacion {% if kpi.variacion_ingresos_pct >= 0 %}positiva{% else %}negativa{% endif %}">
+          {% if kpi.variacion_ingresos_pct >= 0 %}
+            <span class="kpi-flecha">▲</span> +{{ kpi.variacion_ingresos_pct }}%
+          {% else %}
+            <span class="kpi-flecha">▼</span> {{ kpi.variacion_ingresos_pct }}%
+          {% endif %}
+          <small class="kpi-variacion-texto">vs período anterior</small>
+        </div>
+      </div>
+    </article>
+
+    <!-- Tarjeta 2: Ticket Promedio -->
+    <article class="kpi-card">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">🧾</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Ticket Promedio por Pedido</span>
+        <div class="kpi-card__monto">${{ kpi.ticket_promedio|floatformat:0 }}</div>
+        <p class="kpi-card__detalle">Gasto promedio por transacción confirmada</p>
+      </div>
+    </article>
+
+    <!-- Tarjeta 3: Volumen de Transacciones -->
+    <article class="kpi-card">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">🛒</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Volumen de Transacciones</span>
+        <div class="kpi-card__monto">{{ kpi.volumen_transacciones }} <span class="kpi-card__unidad">operaciones</span></div>
+        <div class="kpi-card__subdesglose">
+          <span>POS: <strong>{{ kpi.cant_pos }}</strong></span>
+          <span class="kpi-separador">•</span>
+          <span>Web: <strong>{{ kpi.cant_web }}</strong></span>
+        </div>
+      </div>
+    </article>
+
+    <!-- Tarjeta 4: Exactitud de Cuadratura de Caja -->
+    <article class="kpi-card">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">⚖️</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Exactitud Cuadratura de Caja</span>
+        <div class="kpi-card__monto">{{ kpi.porcentaje_cuadratura }}%</div>
+        <p class="kpi-card__detalle">
+          {{ kpi.cierres_cuadrados }} de {{ kpi.total_cierres }} turnos sin descuadre
+          {% if kpi.diferencia_neta_acumulada != 0 %}
+            <br><small>Dif. neta: <strong>${{ kpi.diferencia_neta_acumulada|floatformat:0 }}</strong></small>
+          {% endif %}
+        </p>
+      </div>
+    </article>
+
+    <!-- Tarjeta 5: Puntos de Fidelización -->
+    <article class="kpi-card">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">⭐</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Puntos Fidelización Vigentes</span>
+        <div class="kpi-card__monto">{{ kpi.total_puntos_vigentes }} <span class="kpi-card__unidad">pts</span></div>
+        <p class="kpi-card__detalle">{{ kpi.clientes_con_puntos }} clientes registrados con puntos</p>
+      </div>
+    </article>
+
+    <!-- Tarjeta 6: Alertas de Stock Crítico -->
+    <article class="kpi-card {% if kpi.total_alertas_stock > 0 %}kpi-card--alerta{% endif %}">
+      <div class="kpi-card__icono-box">
+        <span class="kpi-card__icono">⚠️</span>
+      </div>
+      <div class="kpi-card__cuerpo">
+        <span class="kpi-card__etiqueta">Alertas de Stock Crítico</span>
+        <div class="kpi-card__monto">{{ kpi.total_alertas_stock }} <span class="kpi-card__unidad">ítems</span></div>
+        <p class="kpi-card__detalle">Productos e insumos en o bajo mínimo</p>
+      </div>
+    </article>
+
+  </section>
+
+  <!-- ========================================================================================= -->
+  <!-- 2. SECCIÓN: VENTAS Y CANAL COMERCIAL (GRÁFICOS) -->
+  <!-- ========================================================================================= -->
+  <section class="kpi-bloque-seccion">
+    <div class="kpi-seccion-titulo">
+      <span class="kpi-seccion-numero">01</span>
+      <div>
+        <h2>Ventas y Desempeño Comercial</h2>
+        <p>Evolución de recaudación diaria, comparación por canales y distribución por categorías.</p>
+      </div>
+    </div>
+
+    <div class="kpi-grid-graficos">
+
+      <!-- Gráfico 1: Evolución Temporal de Ventas -->
+      <div class="kpi-panel-grafico kpi-panel-grafico--ancho">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Evolución de Ingresos por Día ($)</h3>
+            <span class="kpi-panel-grafico__bajada">Desglose de facturación entre POS físico y Webpay</span>
+          </div>
+          <div class="kpi-leyenda-custom">
+            <span class="kpi-leyenda-dot kpi-leyenda-dot--pos"></span> POS Presencial
+            <span class="kpi-leyenda-dot kpi-leyenda-dot--web" style="margin-left: 12px;"></span> Webpay Online
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper kpi-canvas-wrapper--alto">
+          <canvas id="graficoEvolucionVentas"></canvas>
+        </div>
+      </div>
+
+      <!-- Gráfico 2: Participación de Ventas por Canal -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Participación por Canal (%)</h3>
+            <span class="kpi-panel-grafico__bajada">POS (Tienda física) vs E-commerce (Webpay)</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoCanales"></canvas>
+        </div>
+        <div class="kpi-resumen-canales">
+          <div class="kpi-canal-item">
+            <span class="kpi-canal-nombre">Tienda Física (POS)</span>
+            <span class="kpi-canal-valor">${{ kpi.monto_pos|floatformat:0 }} ({{ kpi.pct_pos }}%)</span>
+          </div>
+          <div class="kpi-canal-item">
+            <span class="kpi-canal-nombre">E-commerce (Webpay)</span>
+            <span class="kpi-canal-valor">${{ kpi.monto_web|floatformat:0 }} ({{ kpi.pct_web }}%)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gráfico 3: Top 5 Productos más Vendidos -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3 id="tituloTop5">Top 5 Productos más Vendidos ($)</h3>
+            <span class="kpi-panel-grafico__bajada" id="bajadaTop5">Ranking por recaudación total en el período</span>
+          </div>
+          <div class="kpi-toggle-metricas" role="group" aria-label="Cambiar métrica">
+            <button type="button" id="btnTop5Monto" class="kpi-toggle-btn activo" onclick="cambiarMetricaTop5('monto')">
+              Por Dinero ($)
+            </button>
+            <button type="button" id="btnTop5Unidades" class="kpi-toggle-btn" onclick="cambiarMetricaTop5('unidades')">
+              Por Unidades
+            </button>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoTop5"></canvas>
+        </div>
+      </div>
+
+      <!-- Gráfico 4: Ventas por Categoría -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Distribución por Categoría (%)</h3>
+            <span class="kpi-panel-grafico__bajada">Panadería, Pastelería, Bebidas y Otros</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoCategorias"></canvas>
+        </div>
+      </div>
+
+      <!-- Gráfico 5: Preferencia de Entrega Web -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Preferencia de Entrega Web (%)</h3>
+            <span class="kpi-panel-grafico__bajada">Retiro en local vs Despacho en La Florida</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoEntregaWeb"></canvas>
+        </div>
+        <div class="kpi-resumen-canales">
+          <div class="kpi-canal-item">
+            <span class="kpi-canal-nombre">Retiro en Local</span>
+            <span class="kpi-canal-valor">{{ kpi.cant_retiro }} pedidos ({{ kpi.pct_retiro }}%)</span>
+          </div>
+          <div class="kpi-canal-item">
+            <span class="kpi-canal-nombre">Despacho Domicilio</span>
+            <span class="kpi-canal-valor">{{ kpi.cant_despacho }} pedidos ({{ kpi.pct_despacho }}%)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========================================================================================= -->
+  <!-- 3. SECCIÓN: CAJA Y FIDELIZACIÓN -->
+  <!-- ========================================================================================= -->
+  <section class="kpi-bloque-seccion">
+    <div class="kpi-seccion-titulo">
+      <span class="kpi-seccion-numero">02</span>
+      <div>
+        <h2>Caja y Fidelización de Clientes</h2>
+        <p>Control de cuadratura por turnos de cajeros y fidelización acumulada.</p>
+      </div>
+    </div>
+
+    <div class="kpi-grid-caja-fidelizacion">
+
+      <!-- Cuadratura de Caja Detallada -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Exactitud en Cuadratura de Turnos (%)</h3>
+            <span class="kpi-panel-grafico__bajada">Proporción de cierres conformes vs diferencias detectadas</span>
+          </div>
+        </div>
+        <div class="kpi-caja-indicador">
+          <div class="kpi-progreso-anillo">
+            <span class="kpi-progreso-porcentaje">{{ kpi.porcentaje_cuadratura }}%</span>
+            <span class="kpi-progreso-subtexto">Cuadratura perfecta</span>
+          </div>
+          <div class="kpi-caja-desglose">
+            <div class="kpi-caja-renglon">
+              <span>Turnos cuadrados sin descuadre:</span>
+              <strong class="texto-exito">{{ kpi.cierres_cuadrados }} turnos</strong>
+            </div>
+            <div class="kpi-caja-renglon">
+              <span>Turnos con sobrante de dinero:</span>
+              <strong class="texto-aviso">{{ kpi.cierres_con_sobrante }} turnos</strong>
+            </div>
+            <div class="kpi-caja-renglon">
+              <span>Turnos con faltante de dinero:</span>
+              <strong class="texto-peligro">{{ kpi.cierres_con_faltante }} turnos</strong>
+            </div>
+            <div class="kpi-caja-renglon kpi-caja-renglon--total">
+              <span>Diferencia Neta Acumulada:</span>
+              <strong class="{% if kpi.diferencia_neta_acumulada < 0 %}texto-peligro{% else %}texto-exito{% endif %}">
+                ${{ kpi.diferencia_neta_acumulada|floatformat:0 }}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fidelización y Clientes -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Club de Clientes y Puntos de Fidelización</h3>
+            <span class="kpi-panel-grafico__bajada">Programa de acumulación por compras</span>
+          </div>
+        </div>
+        <div class="kpi-fidelizacion-card-interna">
+          <div class="kpi-fidelizacion-stat">
+            <span class="kpi-fidelizacion-stat__valor">{{ kpi.total_puntos_vigentes }}</span>
+            <span class="kpi-fidelizacion-stat__etiqueta">Puntos vigentes totales</span>
+          </div>
+          <div class="kpi-fidelizacion-stat">
+            <span class="kpi-fidelizacion-stat__valor">{{ kpi.clientes_con_puntos }}</span>
+            <span class="kpi-fidelizacion-stat__etiqueta">Cuentas con puntos activos</span>
+          </div>
+          <div class="kpi-fidelizacion-stat">
+            <span class="kpi-fidelizacion-stat__valor">{{ kpi.promedio_puntos_cliente }}</span>
+            <span class="kpi-fidelizacion-stat__etiqueta">Promedio de puntos por cliente</span>
+          </div>
+        </div>
+        <p class="kpi-texto-ayuda">
+          💡 Los clientes acumulan puntos automáticamente tanto en ventas presenciales (POS) identificándose con su RUT como en compras por la tienda online.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========================================================================================= -->
+  <!-- 4. SECCIÓN: INVENTARIO, COSTOS Y PRODUCCIÓN -->
+  <!-- ========================================================================================= -->
+  <section class="kpi-bloque-seccion">
+    <div class="kpi-seccion-titulo">
+      <span class="kpi-seccion-numero">03</span>
+      <div>
+        <h2>Inventario, Producción y Costos</h2>
+        <p>Rentabilidad por receta, comparativa de adquisición por molinera y volumen elaborado.</p>
+      </div>
+    </div>
+
+    <div class="kpi-grid-graficos">
+
+      <!-- Gráfico 6: Margen Bruto por Producto (%) -->
+      <div class="kpi-panel-grafico kpi-panel-grafico--ancho">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Margen Bruto de Rentabilidad por Receta (%)</h3>
+            <span class="kpi-panel-grafico__bajada">Rentabilidad calculada entre precio de venta y costo de insumos</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper kpi-canvas-wrapper--alto">
+          <canvas id="graficoMargenes"></canvas>
+        </div>
+      </div>
+
+      <!-- Gráfico 7: Producción Diaria Horneada -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Producción Diaria Horneada (Unidades / Kg)</h3>
+            <span class="kpi-panel-grafico__bajada">Volumen total ingresado a stock por jornada</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoProduccion"></canvas>
+        </div>
+      </div>
+
+      <!-- Gráfico 8: Costo Total de Adquisición por Molinera -->
+      <div class="kpi-panel-grafico">
+        <div class="kpi-panel-grafico__cabecera">
+          <div>
+            <h3>Costo Total de Adquisición por Molinera ($)</h3>
+            <span class="kpi-panel-grafico__bajada">Precio promedio del saco + costo de flete</span>
+          </div>
+        </div>
+        <div class="kpi-canvas-wrapper">
+          <canvas id="graficoMolineras"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TABLA DE ALERTAS DE STOCK CRÍTICO -->
+    <div class="kpi-panel-alertas">
+      <div class="kpi-panel-alertas__cabecera">
+        <div class="kpi-alerta-badge-icono">⚠️</div>
+        <div>
+          <h3>Detalle de Alertas de Stock Crítico ({{ kpi.total_alertas_stock }} ítems bajo mínimo)</h3>
+          <p>Ítems que requieren reposición urgente para no interrumpir la venta ni la producción.</p>
+        </div>
+        <a href="{% url 'gestion_inventario' %}" class="kpi-boton-ir-inventario">Gestionar Inventario →</a>
+      </div>
+
+      <div class="kpi-tabla-responsive">
+        <table class="kpi-tabla">
+          <thead>
+            <tr>
+              <th>Tipo</th>
+              <th>Nombre del Ítem</th>
+              <th>Stock Actual</th>
+              <th>Umbral Mínimo</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for prod in kpi.productos_criticos %}
+              <tr>
+                <td><span class="kpi-badge-tipo kpi-badge-tipo--prod">Producto</span></td>
+                <td><strong>{{ prod.nombre }}</strong></td>
+                <td>{{ prod.stock }} {{ prod.get_unidad_medida_display }}</td>
+                <td>{{ prod.stock_critico }} {{ prod.get_unidad_medida_display }}</td>
+                <td><span class="badge-alerta-critico">Stock crítico</span></td>
+              </tr>
+            {% endfor %}
+
+            {% for ins in kpi.insumos_criticos %}
+              <tr>
+                <td><span class="kpi-badge-tipo kpi-badge-tipo--ins">Insumo</span></td>
+                <td><strong>{{ ins.nombre }}</strong></td>
+                <td>{{ ins.total_kg }} {{ ins.unidad }}</td>
+                <td>{{ ins.stock_minimo }} {{ ins.unidad }}</td>
+                <td><span class="badge-alerta-critico">Insumo bajo mínimo</span></td>
+              </tr>
+            {% endfor %}
+
+            {% if not kpi.productos_criticos and not kpi.insumos_criticos %}
+              <tr>
+                <td colspan="5" class="kpi-tabla-vacia">
+                  ✅ Todos los productos e insumos se encuentran sobre sus niveles mínimos de reposición.
+                </td>
+              </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+</div>
+
+{# Guardamos los datos de los gráficos de forma segura en un elemento script JSON #}
+<script id="datos-kpi-json" type="application/json">
+  {{ kpi.datos_graficos_json|safe }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<!-- Cargamos Chart.js versión 4 desde CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/dashboard_kpis.js' %}"></script>
+{% endblock %}

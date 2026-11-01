@@ -79,6 +79,17 @@
                 <small>{{ user.email|default:"Cliente registrado" }}</small>
               </div>
               <hr class="usuario-dropdown__divider">
+              {% if user.es_administrador %}
+                <a href="{% url 'inicio_admin' %}" class="usuario-dropdown__item">
+                  <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
+                  <span>Panel Administrador</span>
+                </a>
+                <a href="{% url 'dashboard_kpis' %}" class="usuario-dropdown__item">
+                  <svg class="icono" aria-hidden="true"><use href="#i-espiga"/></svg>
+                  <span>Métricas y KPIs</span>
+                </a>
+                <hr class="usuario-dropdown__divider">
+              {% endif %}
               <a href="{% url 'mis_pedidos' %}" class="usuario-dropdown__item">
                 <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
                 <span>Mis Pedidos</span>

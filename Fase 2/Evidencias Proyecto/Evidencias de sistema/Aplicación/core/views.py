@@ -39,6 +39,7 @@ from . import pedidos
 from . import caja as caja_pos
 from . import mermas as mermas_inventario
 from . import recetas as recetas_productos
+from . import kpis as metricas_kpi
 from .disponibilidad import esta_disponible, resumen as resumen_de_disponibilidad
 from .retiro import ahora as ahora_en_chile, dias_de_retiro, texto_retiro, validar_retiro
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -1031,12 +1032,31 @@ def admin_required(view_func):
 def inicio_admin(request):
     productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
     tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
+    datos_graficos = metricas_kpi.obtener_graficos_inicio_admin()
 
     contexto = {
         'productos_stock': productos_stock,
         'tarifas_proveedores': tarifas_proveedores,
+        'datos_graficos_inicio': datos_graficos,
     }
     return render(request, 'core/inicio_admin.html', contexto)
+
+
+@admin_required
+def dashboard_kpis(request):
+    periodo = request.GET.get('periodo', 'mes')
+    desde = request.GET.get('desde', None)
+    hasta = request.GET.get('hasta', None)
+
+    datos_kpi = metricas_kpi.calcular_metricas_kpi(periodo=periodo, desde=desde, hasta=hasta)
+
+    contexto = {
+        'kpi': datos_kpi,
+        'periodo_seleccionado': periodo,
+        'desde_seleccionado': desde or '',
+        'hasta_seleccionado': hasta or '',
+    }
+    return render(request, 'core/dashboard_kpis.html', contexto)
 
 
 @admin_required

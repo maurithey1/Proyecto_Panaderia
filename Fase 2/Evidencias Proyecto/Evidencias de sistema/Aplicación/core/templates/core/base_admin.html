@@ -87,6 +87,7 @@
 
       <nav class="admin-menu" aria-label="Navegación de administración">
         <a href="{% url 'inicio_admin' %}"{% if request.resolver_match.url_name == 'inicio_admin' %} aria-current="page"{% endif %}>Inicio</a>
+        <a href="{% url 'dashboard_kpis' %}"{% if request.resolver_match.url_name == 'dashboard_kpis' %} aria-current="page"{% endif %}>Métricas y KPIs</a>
         <a href="{% url 'comparar_cotizaciones' %}"{% if request.resolver_match.url_name == 'comparar_cotizaciones' %} aria-current="page"{% endif %}>Comparador y estudio de mercado</a>
         <a href="{% url 'lista_ordenes_compra' %}"{% if 'ordenes-compra' in request.path %} aria-current="page"{% endif %}>Órdenes de compra</a>
         <a href="{% url 'gestion_inventario' %}">Gestión de inventario</a>
@@ -147,17 +148,26 @@
               <small>Administrador</small>
             </div>
             <hr class="admin-dropdown__divider">
+            <a href="{% url 'dashboard_kpis' %}" class="admin-dropdown__item">
+              <svg class="icono" aria-hidden="true"><use href="#i-filtro" /></svg>
+              <span>Métricas y KPIs</span>
+            </a>
             <a href="{% url 'gestion_usuarios' %}" class="admin-dropdown__item">
-              <svg class="icono" aria-hidden="true">
-                <use href="#i-usuario" />
-              </svg>
+              <svg class="icono" aria-hidden="true"><use href="#i-usuario" /></svg>
               <span>Gestionar usuarios</span>
             </a>
             <hr class="admin-dropdown__divider">
+            <a href="{% url 'inicio_cajero' %}" class="admin-dropdown__item">
+              <svg class="icono" aria-hidden="true"><use href="#i-pan" /></svg>
+              <span>Ir a Punto de Venta (POS)</span>
+            </a>
+            <a href="{% url 'inicio' %}" class="admin-dropdown__item">
+              <svg class="icono" aria-hidden="true"><use href="#i-espiga" /></svg>
+              <span>Ir a Tienda de Clientes</span>
+            </a>
+            <hr class="admin-dropdown__divider">
             <a href="{% url 'logout' %}" class="admin-dropdown__item admin-dropdown__item--danger">
-              <svg class="icono" aria-hidden="true">
-                <use href="#i-salir" />
-              </svg>
+              <svg class="icono" aria-hidden="true"><use href="#i-salir" /></svg>
               <span>Cerrar sesión</span>
             </a>
           </div>

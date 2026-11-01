@@ -114,6 +114,18 @@
           <svg class="icono" aria-hidden="true"><use href="#i-caja"/></svg>
           <span>Cierre de caja</span>
         </a>
+        {% if user.es_administrador %}
+          <div style="border-top: 1px dashed var(--borde); margin: 10px 0; padding-top: 10px;">
+            <a href="{% url 'inicio_admin' %}" class="cajero-sidebar__link">
+              <svg class="icono" aria-hidden="true"><use href="#i-inicio"/></svg>
+              <span>Panel Admin</span>
+            </a>
+            <a href="{% url 'dashboard_kpis' %}" class="cajero-sidebar__link">
+              <svg class="icono" aria-hidden="true"><use href="#i-historial"/></svg>
+              <span>Métricas y KPIs</span>
+            </a>
+          </div>
+        {% endif %}
       </nav>
 
       <!-- WIDGET INFERIOR CON FECHA / HORA -->

@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Métricas e Indicadores Clave (KPIs) · Los Tres Spa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Young+Serif&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/core/static/css/estilo.css">
+  <style>
+    /* Estilos de compatibilidad para previsualización estática */
+    .admin-logo { text-decoration: none; }
+  </style>
+</head>
+
+<body class="admin-body">
+
+  {# Iconos SVG reutilizables #}
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-espiga" viewBox="0 0 24 24">
+      <path d="M12 21V8" />
+      <path d="M12 3v2" />
+      <path d="M12 9c-2.2-.6-3.4-2.4-3.4-4.6 2.2.6 3.4 2.4 3.4 4.6zM12 9c2.2-.6 3.4-2.4 3.4-4.6-2.2.6-3.4 2.4-3.4 4.6z" />
+      <path d="M12 15c-2.2-.6-3.4-2.4-3.4-4.6M12 15c2.2-.6 3.4-2.4 3.4-4.6" />
+    </symbol>
+    <symbol id="i-usuario" viewBox="0 0 24 24">
+      <circle cx="12" cy="7" r="4" />
+      <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+    </symbol>
+  </svg>
+
+  <header class="admin-cabecera">
+    <div class="admin-contenedor admin-cabecera__fila">
+      <a class="admin-logo" href="vista_previa_inicio_admin.html">
+        <svg class="icono" aria-hidden="true"><use href="#i-espiga" /></svg>
+        <span>Los Tres Spa</span>
+      </a>
+
+      <span class="admin-separador-v" aria-hidden="true"></span>
+
+      <nav class="admin-menu" aria-label="Navegación de administración">
+        <a href="vista_previa_inicio_admin.html">Inicio</a>
+        <a href="vista_previa_kpis.html" aria-current="page">Métricas y KPIs</a>
+        <a href="vista_previa_inicio_admin.html#comparador">Comparador y estudio de mercado</a>
+        <a href="vista_previa_inicio_admin.html#ordenes">Órdenes de compra</a>
+        <a href="vista_previa_inicio_admin.html#inventario">Gestión de inventario</a>
+        <a href="vista_previa_inicio_admin.html#mermas">Mermas</a>
+      </nav>
+
+      <div class="admin-cabecera__acciones">
+        <div class="admin-dropdown">
+          <button type="button" class="admin-dropdown__toggle">
+            <svg class="icono" aria-hidden="true"><use href="#i-usuario" /></svg>
+            <span>Administrador</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main id="contenido" class="admin-main">
+    <div class="admin-contenedor kpi-dashboard">
+
+      <!-- CABECERA PRINCIPAL Y BARRA DE FILTROS -->
+      <header class="kpi-header">
+        <div class="kpi-header__textos">
+          <div class="kpi-tag-superior">
+            <span class="kpi-tag-punto"></span>
+            <span>Panel de Control Gerencial</span>
+          </div>
+          <h1 class="kpi-titulo-principal">Métricas e Indicadores Clave (KPIs)</h1>
+          <p class="kpi-subtitulo">
+            Monitoreo en tiempo real del desempeño de ventas, canales comerciales, cuadratura de caja, inventario, costos y producción.
+          </p>
+        </div>
+
+        <!-- Filtros de Período -->
+        <div class="kpi-filtros-card">
+          <div class="kpi-filtros-form">
+            <div class="kpi-periodos-botones" role="group" aria-label="Seleccionar período">
+              <button type="button" class="kpi-boton-filtro">Hoy</button>
+              <button type="button" class="kpi-boton-filtro">Últimos 7 días</button>
+              <button type="button" class="kpi-boton-filtro activo">Últimos 30 días</button>
+              <button type="button" class="kpi-boton-filtro">Mes actual</button>
+              <button type="button" class="kpi-boton-filtro">Este año</button>
+              <button type="button" class="kpi-boton-filtro">Todo el histórico</button>
+            </div>
+
+            <div class="kpi-filtro-fechas">
+              <label for="fechaDesde" class="kpi-label-fecha">Desde</label>
+              <input type="date" id="fechaDesde" value="2026-10-01" class="kpi-input-fecha">
+              
+              <label for="fechaHasta" class="kpi-label-fecha">Hasta</label>
+              <input type="date" id="fechaHasta" value="2026-11-01" class="kpi-input-fecha">
+
+              <button type="button" class="kpi-boton-aplicar">Filtrar fechas</button>
+            </div>
+          </div>
+          <div class="kpi-periodo-activo-badge">
+            Período evaluado: <strong>Últimos 30 días</strong> (01/10/2026 al 01/11/2026)
+          </div>
+        </div>
+      </header>
+
+      <!-- 1. BLOQUE DE TARJETAS PRINCIPALES (KPI CARDS) -->
+      <section class="kpi-resumen-grid" aria-label="Tarjetas principales de resumen">
+
+        <!-- Tarjeta 1: Ingresos Totales -->
+        <article class="kpi-card kpi-card--primaria">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">💰</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Ingresos Totales por Ventas</span>
+            <div class="kpi-card__monto">$4.850.400</div>
+            <div class="kpi-card__variacion positiva">
+              <span class="kpi-flecha">▲</span> +14.8%
+              <small class="kpi-variacion-texto">vs período anterior</small>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tarjeta 2: Ticket Promedio -->
+        <article class="kpi-card">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">🧾</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Ticket Promedio por Pedido</span>
+            <div class="kpi-card__monto">$6.210</div>
+            <p class="kpi-card__detalle">Gasto promedio por transacción confirmada</p>
+          </div>
+        </article>
+
+        <!-- Tarjeta 3: Volumen de Transacciones -->
+        <article class="kpi-card">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">🛒</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Volumen de Transacciones</span>
+            <div class="kpi-card__monto">781 <span class="kpi-card__unidad">operaciones</span></div>
+            <div class="kpi-card__subdesglose">
+              <span>POS: <strong>524</strong></span>
+              <span class="kpi-separador">•</span>
+              <span>Web: <strong>257</strong></span>
+            </div>
+          </div>
+        </article>
+
+        <!-- Tarjeta 4: Exactitud de Cuadratura de Caja -->
+        <article class="kpi-card">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">⚖️</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Exactitud Cuadratura de Caja</span>
+            <div class="kpi-card__monto">96.7%</div>
+            <p class="kpi-card__detalle">
+              58 de 60 turnos sin descuadre
+              <br><small>Dif. neta acumulada: <strong>+$450</strong></small>
+            </p>
+          </div>
+        </article>
+
+        <!-- Tarjeta 5: Puntos de Fidelización -->
+        <article class="kpi-card">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">⭐</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Puntos Fidelización Vigentes</span>
+            <div class="kpi-card__monto">34.920 <span class="kpi-card__unidad">pts</span></div>
+            <p class="kpi-card__detalle">142 clientes registrados con puntos activos</p>
+          </div>
+        </article>
+
+        <!-- Tarjeta 6: Alertas de Stock Crítico -->
+        <article class="kpi-card kpi-card--alerta">
+          <div class="kpi-card__icono-box">
+            <span class="kpi-card__icono">⚠️</span>
+          </div>
+          <div class="kpi-card__cuerpo">
+            <span class="kpi-card__etiqueta">Alertas de Stock Crítico</span>
+            <div class="kpi-card__monto">3 <span class="kpi-card__unidad">ítems</span></div>
+            <p class="kpi-card__detalle">Productos e insumos en o bajo mínimo</p>
+          </div>
+        </article>
+
+      </section>
+
+      <!-- 2. SECCIÓN: VENTAS Y CANAL COMERCIAL (GRÁFICOS) -->
+      <section class="kpi-bloque-seccion">
+        <div class="kpi-seccion-titulo">
+          <span class="kpi-seccion-numero">01</span>
+          <div>
+            <h2>Ventas y Desempeño Comercial</h2>
+            <p>Evolución de recaudación diaria, comparación por canales y distribución por categorías.</p>
+          </div>
+        </div>
+
+        <div class="kpi-grid-graficos">
+
+          <!-- Gráfico 1: Evolución Temporal de Ventas -->
+          <div class="kpi-panel-grafico kpi-panel-grafico--ancho">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Evolución de Ingresos por Día ($)</h3>
+                <span class="kpi-panel-grafico__bajada">Desglose de facturación entre POS físico y Webpay</span>
+              </div>
+              <div class="kpi-leyenda-custom">
+                <span class="kpi-leyenda-dot kpi-leyenda-dot--pos"></span> POS Presencial
+                <span class="kpi-leyenda-dot kpi-leyenda-dot--web" style="margin-left: 12px;"></span> Webpay Online
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper kpi-canvas-wrapper--alto">
+              <canvas id="graficoEvolucionVentas"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 2: Participación de Ventas por Canal -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Participación por Canal (%)</h3>
+                <span class="kpi-panel-grafico__bajada">POS (Tienda física) vs E-commerce (Webpay)</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoCanales"></canvas>
+            </div>
+            <div class="kpi-resumen-canales">
+              <div class="kpi-canal-item">
+                <span class="kpi-canal-nombre">Tienda Física (POS)</span>
+                <span class="kpi-canal-valor">$3.210.000 (66.2%)</span>
+              </div>
+              <div class="kpi-canal-item">
+                <span class="kpi-canal-nombre">E-commerce (Webpay)</span>
+                <span class="kpi-canal-valor">$1.640.400 (33.8%)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gráfico 3: Top 5 Productos más Vendidos -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3 id="tituloTop5">Top 5 Productos más Vendidos ($)</h3>
+                <span class="kpi-panel-grafico__bajada" id="bajadaTop5">Ranking por recaudación total en el período</span>
+              </div>
+              <div class="kpi-toggle-metricas" role="group" aria-label="Cambiar métrica">
+                <button type="button" id="btnTop5Monto" class="kpi-toggle-btn activo" onclick="cambiarMetricaTop5('monto')">
+                  Por Dinero ($)
+                </button>
+                <button type="button" id="btnTop5Unidades" class="kpi-toggle-btn" onclick="cambiarMetricaTop5('unidades')">
+                  Por Unidades
+                </button>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoTop5"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 4: Ventas por Categoría -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Distribución por Categoría (%)</h3>
+                <span class="kpi-panel-grafico__bajada">Panadería, Pastelería, Bebidas y Otros</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoCategorias"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 5: Preferencia de Entrega Web -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Preferencia de Entrega Web (%)</h3>
+                <span class="kpi-panel-grafico__bajada">Retiro en local vs Despacho en La Florida</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoEntregaWeb"></canvas>
+            </div>
+            <div class="kpi-resumen-canales">
+              <div class="kpi-canal-item">
+                <span class="kpi-canal-nombre">Retiro en Local</span>
+                <span class="kpi-canal-valor">175 pedidos (68.1%)</span>
+              </div>
+              <div class="kpi-canal-item">
+                <span class="kpi-canal-nombre">Despacho Domicilio</span>
+                <span class="kpi-canal-valor">82 pedidos (31.9%)</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 3. SECCIÓN: CAJA Y FIDELIZACIÓN -->
+      <section class="kpi-bloque-seccion">
+        <div class="kpi-seccion-titulo">
+          <span class="kpi-seccion-numero">02</span>
+          <div>
+            <h2>Caja y Fidelización de Clientes</h2>
+            <p>Control de cuadratura por turnos de cajeros y fidelización acumulada.</p>
+          </div>
+        </div>
+
+        <div class="kpi-grid-caja-fidelizacion">
+
+          <!-- Cuadratura de Caja Detallada -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Exactitud en Cuadratura de Turnos (%)</h3>
+                <span class="kpi-panel-grafico__bajada">Proporción de cierres conformes vs diferencias detectadas</span>
+              </div>
+            </div>
+            <div class="kpi-caja-indicador">
+              <div class="kpi-progreso-anillo">
+                <span class="kpi-progreso-porcentaje">96.7%</span>
+                <span class="kpi-progreso-subtexto">Cuadratura perfecta</span>
+              </div>
+              <div class="kpi-caja-desglose">
+                <div class="kpi-caja-renglon">
+                  <span>Turnos cuadrados sin descuadre:</span>
+                  <strong class="texto-exito">58 turnos</strong>
+                </div>
+                <div class="kpi-caja-renglon">
+                  <span>Turnos con sobrante de dinero:</span>
+                  <strong class="texto-aviso">1 turno (+$1.200)</strong>
+                </div>
+                <div class="kpi-caja-renglon">
+                  <span>Turnos con faltante de dinero:</span>
+                  <strong class="texto-peligro">1 turno (-$750)</strong>
+                </div>
+                <div class="kpi-caja-renglon kpi-caja-renglon--total">
+                  <span>Diferencia Neta Acumulada:</span>
+                  <strong class="texto-exito">+$450</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fidelización y Clientes -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Club de Clientes y Puntos de Fidelización</h3>
+                <span class="kpi-panel-grafico__bajada">Programa de acumulación por compras</span>
+              </div>
+            </div>
+            <div class="kpi-fidelizacion-card-interna">
+              <div class="kpi-fidelizacion-stat">
+                <span class="kpi-fidelizacion-stat__valor">34.920</span>
+                <span class="kpi-fidelizacion-stat__etiqueta">Puntos vigentes totales</span>
+              </div>
+              <div class="kpi-fidelizacion-stat">
+                <span class="kpi-fidelizacion-stat__valor">142</span>
+                <span class="kpi-fidelizacion-stat__etiqueta">Cuentas con puntos activos</span>
+              </div>
+              <div class="kpi-fidelizacion-stat">
+                <span class="kpi-fidelizacion-stat__valor">245.9</span>
+                <span class="kpi-fidelizacion-stat__etiqueta">Promedio de puntos por cliente</span>
+              </div>
+            </div>
+            <p class="kpi-texto-ayuda">
+              💡 Los clientes acumulan puntos automáticamente tanto en ventas presenciales (POS) identificándose con su RUT como en compras por la tienda online.
+            </p>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 4. SECCIÓN: INVENTARIO, COSTOS Y PRODUCCIÓN -->
+      <section class="kpi-bloque-seccion">
+        <div class="kpi-seccion-titulo">
+          <span class="kpi-seccion-numero">03</span>
+          <div>
+            <h2>Inventario, Producción y Costos</h2>
+            <p>Rentabilidad por receta, comparativa de adquisición por molinera y volumen elaborado.</p>
+          </div>
+        </div>
+
+        <div class="kpi-grid-graficos">
+
+          <!-- Gráfico 6: Margen Bruto por Producto (%) -->
+          <div class="kpi-panel-grafico kpi-panel-grafico--ancho">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Margen Bruto de Rentabilidad por Receta (%)</h3>
+                <span class="kpi-panel-grafico__bajada">Rentabilidad calculada entre precio de venta y costo de insumos</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper kpi-canvas-wrapper--alto">
+              <canvas id="graficoMargenes"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 7: Producción Diaria Horneada -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Producción Diaria Horneada (Unidades / Kg)</h3>
+                <span class="kpi-panel-grafico__bajada">Volumen total ingresado a stock por jornada</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoProduccion"></canvas>
+            </div>
+          </div>
+
+          <!-- Gráfico 8: Costo Total de Adquisición por Molinera -->
+          <div class="kpi-panel-grafico">
+            <div class="kpi-panel-grafico__cabecera">
+              <div>
+                <h3>Costo Total de Adquisición por Molinera ($)</h3>
+                <span class="kpi-panel-grafico__bajada">Precio promedio del saco + costo de flete</span>
+              </div>
+            </div>
+            <div class="kpi-canvas-wrapper">
+              <canvas id="graficoMolineras"></canvas>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- TABLA DE ALERTAS DE STOCK CRÍTICO -->
+        <div class="kpi-panel-alertas">
+          <div class="kpi-panel-alertas__cabecera">
+            <div class="kpi-alerta-badge-icono">⚠️</div>
+            <div>
+              <h3>Detalle de Alertas de Stock Crítico (3 ítems bajo mínimo)</h3>
+              <p>Ítems que requieren reposición urgente para no interrumpir la venta ni la producción.</p>
+            </div>
+            <a href="#" class="kpi-boton-ir-inventario">Gestionar Inventario →</a>
+          </div>
+
+          <div class="kpi-tabla-responsive">
+            <table class="kpi-tabla">
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Nombre del Ítem</th>
+                  <th>Stock Actual</th>
+                  <th>Umbral Mínimo</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="kpi-badge-tipo kpi-badge-tipo--prod">Producto</span></td>
+                  <td><strong>Marraqueta Tradicional (kg)</strong></td>
+                  <td>4 kg</td>
+                  <td>10 kg</td>
+                  <td><span class="badge-alerta-critico">Stock crítico</span></td>
+                </tr>
+                <tr>
+                  <td><span class="kpi-badge-tipo kpi-badge-tipo--prod">Producto</span></td>
+                  <td><strong>Empanada de Pino Horno</strong></td>
+                  <td>3 un.</td>
+                  <td>12 un.</td>
+                  <td><span class="badge-alerta-critico">Stock crítico</span></td>
+                </tr>
+                <tr>
+                  <td><span class="kpi-badge-tipo kpi-badge-tipo--ins">Insumo</span></td>
+                  <td><strong>Levadura Fresca 500g</strong></td>
+                  <td>2.5 kg</td>
+                  <td>5.0 kg</td>
+                  <td><span class="badge-alerta-critico">Insumo bajo mínimo</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Datos para JavaScript -->
+  <script id="datos-kpi-json" type="application/json">
+    {
+      "evolucion_labels": ["18/10", "19/10", "20/10", "21/10", "22/10", "23/10", "24/10", "25/10", "26/10", "27/10", "28/10", "29/10", "30/10", "31/10", "01/11"],
+      "evolucion_pos": [140000, 165000, 130000, 185000, 210000, 245000, 280000, 150000, 160000, 175000, 190000, 220000, 260000, 290000, 210000],
+      "evolucion_web": [75000, 90000, 60000, 95000, 110000, 130000, 150000, 80000, 85000, 90000, 105000, 120000, 140000, 160000, 120000],
+      "canales_labels": ["POS (Presencial)", "E-commerce (Webpay)"],
+      "canales_montos": [3210000, 1640400],
+      "canales_pct": [66.2, 33.8],
+      "top5_nombres": ["Marraqueta Tradicional", "Hallulla Especial", "Pan Amasado Campo", "Torta Cuatro Leches", "Empanada Pino"],
+      "top5_montos": [1420000, 1180000, 780000, 560000, 480000],
+      "top5_unidades": [710, 620, 520, 28, 240],
+      "categorias_nombres": ["Panadería", "Pastelería", "Empanadas", "Bebidas y Cafetería"],
+      "categorias_montos": [2950000, 980000, 540000, 380400],
+      "categorias_pct": [60.8, 20.2, 11.1, 7.9],
+      "entrega_labels": ["Retiro en Local", "Despacho a Domicilio"],
+      "entrega_cantidades": [175, 82],
+      "entrega_pct": [68.1, 31.9],
+      "margenes_nombres": ["Pan Batido", "Marraqueta", "Hallulla", "Empanada Pino", "Brazo de Reina", "Torta Manjar"],
+      "margenes_pct": [68.5, 64.2, 62.0, 55.4, 52.8, 48.0],
+      "margenes_precios": [2000, 2000, 1900, 2000, 4500, 14000],
+      "margenes_costos": [630, 716, 722, 892, 2124, 7280],
+      "molineras_nombres": ["Molinera del Sur", "Molino La Estampa", "Molino Koke", "Harinas San Cristóbal"],
+      "molineras_saco": [22500, 23800, 21900, 24200],
+      "molineras_flete": [2500, 1800, 3200, 1500],
+      "molineras_total": [25000, 25600, 25100, 25700],
+      "produccion_labels": ["19/10", "20/10", "21/10", "22/10", "23/10", "24/10", "25/10", "26/10", "27/10", "28/10", "29/10", "30/10", "31/10", "01/11"],
+      "produccion_cantidades": [340, 310, 390, 420, 510, 580, 320, 350, 410, 430, 490, 560, 610, 480]
+    }
+  </script>
+
+  <!-- Script Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="./Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/core/static/js/dashboard_kpis.js"></script>
+
+  <script>
+    // Interactividad en vivo para los botones de período en la vista previa
+    document.addEventListener('DOMContentLoaded', function () {
+      const botones = document.querySelectorAll('.kpi-periodos-botones .kpi-boton-filtro');
+      const badgePeriodo = document.querySelector('.kpi-periodo-activo-badge strong');
+      const cardMonto = document.querySelector('.kpi-card--primaria .kpi-card__monto');
+      const cardTicket = document.querySelectorAll('.kpi-card .kpi-card__monto')[1];
+      const cardVolumen = document.querySelectorAll('.kpi-card .kpi-card__monto')[2];
+
+      const datasetsPorPeriodo = {
+        'Hoy': {
+          monto: '$330.000',
+          ticket: '$5.890',
+          volumen: '56 operaciones',
+          badge: 'Hoy (01/11/2026)',
+          evolucionLabels: ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'],
+          evolucionPos: [25000, 48000, 62000, 31000, 45000, 52000, 22000],
+          evolucionWeb: [12000, 20000, 35000, 18000, 22000, 25000, 10000],
+          top5Montos: [95000, 82000, 64000, 45000, 44000],
+          top5Uds: [48, 42, 36, 4, 22],
+        },
+        'Últimos 7 días': {
+          monto: '$1.420.000',
+          ticket: '$6.120',
+          volumen: '232 operaciones',
+          badge: 'Últimos 7 días (25/10/2026 al 01/11/2026)',
+          evolucionLabels: ['25/10', '26/10', '27/10', '28/10', '29/10', '30/10', '31/10'],
+          evolucionPos: [150000, 160000, 175000, 190000, 220000, 260000, 290000],
+          evolucionWeb: [80000, 85000, 90000, 105000, 120000, 140000, 160000],
+          top5Montos: [420000, 350000, 230000, 180000, 140000],
+          top5Uds: [210, 180, 150, 10, 70],
+        },
+        'Últimos 30 días': {
+          monto: '$4.850.400',
+          ticket: '$6.210',
+          volumen: '781 operaciones',
+          badge: 'Últimos 30 días (01/10/2026 al 01/11/2026)',
+          evolucionLabels: ["18/10", "19/10", "20/10", "21/10", "22/10", "23/10", "24/10", "25/10", "26/10", "27/10", "28/10", "29/10", "30/10", "31/10", "01/11"],
+          evolucionPos: [140000, 165000, 130000, 185000, 210000, 245000, 280000, 150000, 160000, 175000, 190000, 220000, 260000, 290000, 210000],
+          evolucionWeb: [75000, 90000, 60000, 95000, 110000, 130000, 150000, 80000, 85000, 90000, 105000, 120000, 140000, 160000, 120000],
+          top5Montos: [1420000, 1180000, 780000, 560000, 480000],
+          top5Uds: [710, 620, 520, 28, 240],
+        },
+        'Mes actual': {
+          monto: '$330.000',
+          ticket: '$5.890',
+          volumen: '56 operaciones',
+          badge: 'Mes actual (Noviembre 2026)',
+          evolucionLabels: ['01/11'],
+          evolucionPos: [210000],
+          evolucionWeb: [120000],
+          top5Montos: [95000, 82000, 64000, 45000, 44000],
+          top5Uds: [48, 42, 36, 4, 22],
+        },
+        'Este año': {
+          monto: '$42.350.000',
+          ticket: '$6.050',
+          volumen: '6.990 operaciones',
+          badge: 'Este año 2026',
+          evolucionLabels: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov'],
+          evolucionPos: [2800000, 3100000, 3400000, 3200000, 3600000, 3900000, 3700000, 3800000, 4100000, 4300000, 330000],
+          evolucionWeb: [1200000, 1300000, 1500000, 1400000, 1700000, 1900000, 1800000, 1850000, 2050000, 2150000, 120000],
+          top5Montos: [12400000, 9800000, 6500000, 4800000, 4100000],
+          top5Uds: [6200, 5100, 4300, 240, 2050],
+        },
+        'Todo el histórico': {
+          monto: '$58.200.000',
+          ticket: '$6.020',
+          volumen: '9.660 operaciones',
+          badge: 'Histórico Completo',
+          evolucionLabels: ['2024', '2025', '2026'],
+          evolucionPos: [8500000, 16200000, 31000000],
+          evolucionWeb: [3200000, 7100000, 14200000],
+          top5Montos: [16800000, 13500000, 8900000, 6700000, 5600000],
+          top5Uds: [8400, 7100, 5900, 335, 2800],
+        }
+      };
+
+      botones.forEach(btn => {
+        btn.addEventListener('click', function () {
+          botones.forEach(b => b.classList.remove('activo'));
+          this.classList.add('activo');
+
+          const texto = this.textContent.trim();
+          const datosP = datasetsPorPeriodo[texto];
+          if (!datosP) return;
+
+          if (badgePeriodo) badgePeriodo.textContent = datosP.badge;
+          if (cardMonto) cardMonto.textContent = datosP.monto;
+          if (cardTicket) cardTicket.textContent = datosP.ticket;
+          if (cardVolumen) cardVolumen.innerHTML = `${datosP.volumen.split(' ')[0]} <span class="kpi-card__unidad">operaciones</span>`;
+
+          // Actualizar gráfico de evolución de ventas
+          const canvasEvolucion = document.getElementById('graficoEvolucionVentas');
+          const chartEvolucion = Chart.getChart(canvasEvolucion);
+          if (chartEvolucion) {
+            chartEvolucion.data.labels = datosP.evolucionLabels;
+            chartEvolucion.data.datasets[0].data = datosP.evolucionPos;
+            chartEvolucion.data.datasets[1].data = datosP.evolucionWeb;
+            chartEvolucion.update();
+          }
+
+          // Actualizar gráfico de Top 5
+          if (window.chartInstanciaTop5) {
+            if (window.metricaTop5Actual === 'unidades') {
+              window.chartInstanciaTop5.data.datasets[0].data = datosP.top5Uds;
+            } else {
+              window.chartInstanciaTop5.data.datasets[0].data = datosP.top5Montos;
+            }
+            window.chartInstanciaTop5.update();
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -9,17 +9,28 @@
   <!-- Fila: Ventas (Izq) + Separador + Stock (Der) -->
   <div class="admin-top-grid">
 
-    <!-- Bloque Ventas -->
+    <!-- Bloque Ventas con Gráficos Interactivos -->
     <section class="admin-panel admin-panel--ventas">
-      <h2 class="admin-panel__titulo">Ventas ultimo mes</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+        <h2 class="admin-panel__titulo" style="margin: 0;">Ventas y Rendimiento</h2>
+        <a href="{% url 'dashboard_kpis' %}" class="crud-btn-accion" style="text-decoration: none; padding: 4px 10px; font-size: 0.82rem;">Ver KPIs completos →</a>
+      </div>
       <div class="admin-graficos-container">
         <div class="admin-grafico-card">
-          <span class="admin-grafico-card__titulo">Ventas Mes anterior / Actual</span>
-          <div class="admin-grafico-placeholder">[ Gráfico Barras ]</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="admin-grafico-card__titulo" style="margin: 0;">Ventas: {{ datos_graficos_inicio.nombre_mes_anterior|default:"Mes anterior" }} vs {{ datos_graficos_inicio.nombre_mes_actual|default:"Actual" }}</span>
+          </div>
+          <div style="position: relative; height: 190px; width: 100%;">
+            <canvas id="graficoBarrasInicio"></canvas>
+          </div>
         </div>
         <div class="admin-grafico-card">
-          <span class="admin-grafico-card__titulo">Comparación ventas Mes abril / Mayo</span>
-          <div class="admin-grafico-placeholder">[ Gráfico Líneas ]</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span class="admin-grafico-card__titulo" style="margin: 0;">Tendencia de Ventas (Últimos 14 días)</span>
+          </div>
+          <div style="position: relative; height: 190px; width: 100%;">
+            <canvas id="graficoLineasInicio"></canvas>
+          </div>
         </div>
       </div>
     </section>
@@ -81,4 +92,147 @@
   </section>
 
 </div>
+
+{# Datos para inicializar los gráficos de la página principal #}
+<script id="datos-inicio-admin-json" type="application/json">
+  {{ datos_graficos_inicio.json_graficos_inicio|default:"{}"|safe }}
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const elem = document.getElementById('datos-inicio-admin-json');
+  if (!elem) return;
+
+  let datos = {};
+  try {
+    datos = JSON.parse(elem.textContent);
+  } catch (e) {
+    console.error('Error al parsear datos de gráficos:', e);
+    return;
+  }
+
+  const fmtDinero = (v) => '$' + Math.round(v || 0).toLocaleString('es-CL');
+
+  // 1. Gráfico de Barras: Comparativa Mes Anterior vs Actual
+  const ctxBarras = document.getElementById('graficoBarrasInicio');
+  if (ctxBarras && datos.semanas_labels) {
+    new Chart(ctxBarras, {
+      type: 'bar',
+      data: {
+        labels: datos.semanas_labels,
+        datasets: [
+          {
+            label: datos.nombre_mes_anterior || 'Mes anterior',
+            data: datos.ventas_mes_anterior || [0, 0, 0, 0],
+            backgroundColor: '#c8a27a',
+            borderRadius: 4,
+          },
+          {
+            label: datos.nombre_mes_actual || 'Mes actual',
+            data: datos.ventas_mes_actual || [0, 0, 0, 0],
+            backgroundColor: '#b4532a',
+            borderRadius: 4,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 10, padding: 8, font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${fmtDinero(ctx.raw)}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              font: { size: 10 },
+              callback: (v) => '$' + (v >= 1000 ? (v / 1000) + 'k' : v)
+            },
+            grid: { color: '#f0e3ce' }
+          },
+          x: {
+            ticks: { font: { size: 10 } },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  // 2. Gráfico de Líneas: Tendencia Últimos 14 días (POS vs Web)
+  const ctxLineas = document.getElementById('graficoLineasInicio');
+  if (ctxLineas && datos.dias_labels) {
+    new Chart(ctxLineas, {
+      type: 'line',
+      data: {
+        labels: datos.dias_labels,
+        datasets: [
+          {
+            label: 'POS',
+            data: datos.tendencia_pos || [],
+            borderColor: '#7b4b2a',
+            backgroundColor: 'rgba(123, 75, 42, 0.12)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+          },
+          {
+            label: 'Webpay',
+            data: datos.tendencia_web || [],
+            borderColor: '#e3b25b',
+            backgroundColor: 'rgba(227, 178, 91, 0.12)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 10, padding: 8, font: { size: 11 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${fmtDinero(ctx.raw)}`
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              font: { size: 10 },
+              callback: (v) => '$' + (v >= 1000 ? (v / 1000) + 'k' : v)
+            },
+            grid: { color: '#f0e3ce' }
+          },
+          x: {
+            ticks: { font: { size: 10 } },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+});
+</script>
 {% endblock %}

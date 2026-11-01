@@ -51,7 +51,10 @@
           </p>
         </div>
 
-        <div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <a href="{% url 'dashboard_kpis' %}" class="crud-btn-accion" style="text-decoration: none; padding: 10px 16px; font-weight: 700; border-radius: 8px;">
+            📊 KPIs de Adquisición
+          </a>
           <a href="{% url 'crear_orden_compra' %}" class="crud-btn-primario" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; border-radius: 8px; box-shadow: 0 4px 10px rgba(74, 46, 24, 0.15);">
             <span style="font-size: 1.2rem; line-height: 1;">+</span> Generar Orden de Compra
           </a>

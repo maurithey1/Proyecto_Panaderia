@@ -4406,3 +4406,55 @@ class RecetasTests(TestCase):
                              fetch_redirect_response=False)
         self.assertRedirects(self.client.get(reverse('deficit_insumos')), reverse('inicio'), fetch_redirect_response=False)
         self.assertFalse(self.Ingrediente.objects.exists())
+
+
+class DashboardKpisTests(TestCase):
+    def setUp(self):
+        self.admin = Usuario.objects.create_user(
+            username='admin-kpi-test',
+            password='Password123!',
+            rol='ADMINISTRADOR',
+            is_staff=True
+        )
+        self.cajero = Usuario.objects.create_user(
+            username='cajero-kpi-test',
+            password='Password123!',
+            rol='CAJERO'
+        )
+
+    def test_requiere_autenticacion_y_rol_administrador(self):
+        url = reverse('dashboard_kpis')
+        # Anónimo
+        resp_anon = self.client.get(url)
+        self.assertRedirects(resp_anon, reverse('login'))
+
+        # Cajero (sin permisos)
+        self.client.force_login(self.cajero)
+        resp_cajero = self.client.get(url)
+        self.assertRedirects(resp_cajero, reverse('inicio'))
+
+    def test_administrador_accede_correctamente_a_kpis(self):
+        self.client.force_login(self.admin)
+        url = reverse('dashboard_kpis')
+        respuesta = self.client.get(url)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn('kpi', respuesta.context)
+        self.assertIn('periodo_seleccionado', respuesta.context)
+        self.assertContains(respuesta, 'Métricas e Indicadores Clave (KPIs)')
+
+    def test_filtros_de_periodo_responden_sin_errores(self):
+        self.client.force_login(self.admin)
+        url = reverse('dashboard_kpis')
+        for periodo in ['hoy', '7dias', 'mes', 'mes_calendario', 'anio', 'todo']:
+            resp = self.client.get(url, {'periodo': periodo})
+            self.assertEqual(resp.status_code, 200)
+
+    def test_inicio_admin_incluye_graficos_interactivos(self):
+        self.client.force_login(self.admin)
+        url = reverse('inicio_admin')
+        respuesta = self.client.get(url)
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIn('datos_graficos_inicio', respuesta.context)
+        self.assertContains(respuesta, 'graficoBarrasInicio')
+        self.assertContains(respuesta, 'graficoLineasInicio')
+
