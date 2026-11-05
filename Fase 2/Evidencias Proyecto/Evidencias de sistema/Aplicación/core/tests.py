@@ -3515,12 +3515,14 @@ class MercadoOdepaTests(TestCase):
         self.client.force_login(self.admin)
         self.harina = Insumo.objects.create(codigo='NI001', nombre='Harina 000', kilos_por_saco=Decimal('25'))
         self.registros = [
-            _registro_odepa('2026-10-19', 'Punilla', '1204,933333', region='Región de Ñuble'),
+            _registro_odepa('2026-10-19', 'Punilla', '1204,933333'),
             _registro_odepa('2026-10-19', 'Oriente', '1312,741935'),
-            _registro_odepa('2026-10-19', 'Valparaíso', '1340,000000', region='Región de Valparaíso'),
-            _registro_odepa('2026-10-12', 'Punilla', '1190,5', region='Región de Ñuble'),
+            _registro_odepa('2026-10-19', 'Poniente', '1340,000000'),
+            _registro_odepa('2026-10-12', 'Punilla', '1190,5'),
         ]
-        self.odepa = _odepa_falso({'r2026': self.registros})
+        # Registro de otra región: el estudio solo considera la Región Metropolitana de Santiago.
+        self.registro_otra_region = _registro_odepa('2026-10-19', 'Valparaíso', '900', region='Región de Valparaíso')
+        self.odepa = _odepa_falso({'r2026': self.registros + [self.registro_otra_region]})
 
     def _vincular(self, producto='Harina sin polvos de hornear'):
         self.harina.producto_odepa = producto
@@ -3537,6 +3539,13 @@ class MercadoOdepaTests(TestCase):
         punilla = next(p for p in una_semana if p['sector'] == 'Punilla')
         self.assertEqual(punilla['precio_promedio'], Decimal('1204.93'))
         self.assertEqual(punilla['unidad'], '$/kilo')
+
+    def test_solo_se_consideran_precios_de_la_region_metropolitana(self):
+        from . import mercado
+        with mock.patch.object(mercado, '_llamar', self.odepa):
+            precios = mercado.obtener_precios('Harina sin polvos de hornear')
+        self.assertEqual({p['region'] for p in precios}, {mercado.REGION_ESTUDIO})
+        self.assertNotIn('Valparaíso', {p['sector'] for p in precios})
 
     def test_registros_con_precios_invalidos_se_omiten(self):
         from . import mercado
@@ -3599,7 +3608,7 @@ class MercadoOdepaTests(TestCase):
         estudio = mercado.estudio_mercado(self.harina)
 
         self.assertEqual(str(estudio['fecha']), '2026-10-19')
-        self.assertEqual([f.sector for f in estudio['mas_baratos']], ['Punilla', 'Oriente', 'Valparaíso'])
+        self.assertEqual([f.sector for f in estudio['mas_baratos']], ['Punilla', 'Oriente', 'Poniente'])
         self.assertEqual(estudio['cantidad_puntos'], 3)
         self.assertEqual(estudio['minimo'], Decimal('1204.93'))
         self.assertEqual(estudio['maximo'], Decimal('1340.00'))

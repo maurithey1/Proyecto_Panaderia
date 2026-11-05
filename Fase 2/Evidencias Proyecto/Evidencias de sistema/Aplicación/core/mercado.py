@@ -25,6 +25,8 @@ SEMANAS_A_GUARDAR = 4
 LIMITE_REGISTROS = 5000
 MAS_BARATOS = 10
 UNIDAD_POR_KILO = '$/kilo'
+# El estudio de mercado se limita a la Región Metropolitana de Santiago (nombre exacto en ODEPA).
+REGION_ESTUDIO = 'Región Metropolitana de Santiago'
 
 # Productos de ODEPA útiles para una panadería (nombres exactos tal como los publica ODEPA).
 PRODUCTOS_ODEPA = [
@@ -90,7 +92,7 @@ def obtener_precios(producto, semanas=SEMANAS_A_GUARDAR):
     registros = []
     for id_recurso in _recursos_por_anio():
         resultado = _llamar(
-            'datastore_search', resource_id=id_recurso, filters=json.dumps({'Producto': producto}),
+            'datastore_search', resource_id=id_recurso, filters=json.dumps({'Producto': producto, 'Region': REGION_ESTUDIO}),
             sort='Fecha inicio desc', limit=LIMITE_REGISTROS,
         )
         registros = resultado.get('records', [])
@@ -103,6 +105,8 @@ def obtener_precios(producto, semanas=SEMANAS_A_GUARDAR):
     precios = []
     for registro in registros:
         if registro['Fecha inicio'] not in ultimas_fechas:
+            continue
+        if registro.get('Region') != REGION_ESTUDIO:
             continue
         minimo = _a_decimal(registro.get('Precio minimo'))
         maximo = _a_decimal(registro.get('Precio maximo'))
@@ -160,7 +164,7 @@ def estudio_mercado(insumo, precio_saco_mas_barato=None):
     if not insumo.producto_odepa:
         return None
     precios = PrecioMercado.objects.filter(
-        insumo=insumo, fuente=FUENTE, producto_fuente=insumo.producto_odepa,
+        insumo=insumo, fuente=FUENTE, producto_fuente=insumo.producto_odepa, region=REGION_ESTUDIO,
     )
     ultima_fecha = precios.aggregate(f=Max('fecha'))['f']
     if ultima_fecha is None:
