@@ -1,9 +1,9 @@
-param(
+﻿param(
     [string]$Destino = (Join-Path (Get-Location) "Proyecto_Panaderia-codigo")
 )
 
 $Repositorio = "https://github.com/maurithey1/Proyecto_Panaderia.git"
-$RutaAplicacion = "/Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicación/**"
+$RutaAplicacion = "/Fase 2/Evidencias Proyecto/Evidencias de sistema/Aplicaci*n/**"
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "Git no está instalado o no está disponible en PATH."
