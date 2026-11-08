@@ -466,7 +466,7 @@
 </div>
 
 {# Guardamos los datos de los gráficos de forma segura en un elemento script JSON #}
-<script id="datos-kpi-json" type="application/json">
+<script id="datos-kpi-json" type="application/json" data-url-detalle="{% url 'detalle_kpi' %}">
   {{ kpi.datos_graficos_json|safe }}
 </script>
 {% endblock %}

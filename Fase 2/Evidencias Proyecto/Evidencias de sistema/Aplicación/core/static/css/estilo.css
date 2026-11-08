@@ -5733,3 +5733,57 @@ a.historial-paginacion__enlace--actual:hover {
   color: var(--terracota);
   box-shadow: 0 1px 3px rgba(62, 42, 29, 0.1);
 }
+
+/* Panel de detalle que se despliega al marcar un elemento de un gráfico */
+.kpi-detalle {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--crema-2, #f5ead6);
+  border: 1.5px solid var(--borde);
+  border-radius: var(--radio);
+  font-size: 0.88rem;
+}
+
+.kpi-detalle__cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--cafe-oscuro);
+}
+
+.kpi-detalle__cerrar {
+  background: none;
+  border: 1px solid var(--borde);
+  border-radius: 999px;
+  padding: 0.15rem 0.7rem;
+  cursor: pointer;
+  color: var(--cafe-oscuro);
+}
+
+.kpi-detalle__resumen,
+.kpi-detalle__vacio {
+  margin: 0.5rem 0;
+  color: var(--texto-suave);
+}
+
+.kpi-detalle__subtitulo {
+  margin: 0.8rem 0 0.3rem;
+  font-weight: 600;
+  color: var(--cafe-oscuro);
+}
+
+.kpi-detalle__tabla {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.kpi-detalle__tabla th,
+.kpi-detalle__tabla td {
+  text-align: left;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--borde);
+}
+.kpi-panel-grafico[hidden] {
+  display: none;
+}

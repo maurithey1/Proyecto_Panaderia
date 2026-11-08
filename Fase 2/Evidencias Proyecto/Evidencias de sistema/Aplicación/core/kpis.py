@@ -572,3 +572,169 @@ def obtener_graficos_inicio_admin():
         'nombre_mes_actual': nombre_mes_actual,
         'json_graficos_inicio': json_graficos_inicio,
     }
+
+
+def detalle_kpi(tipo, valor, periodo='mes', desde=None, hasta=None):
+    """
+    Detalle de ventas para un elemento marcado en los gráficos del dashboard.
+
+    `tipo` puede ser 'canal' (PRESENCIAL o WEB), 'producto' (nombre) o 'categoria' (nombre).
+    Usa los detalles de venta (DetallePedido) de los pedidos válidos del período seleccionado.
+    Devuelve None si el tipo no es válido.
+    """
+    rango = _obtener_rango_fechas(periodo, desde, hasta)
+    inicio, fin = rango['inicio_actual'], rango['fin_actual']
+
+    estados_validos = ['PAGADO', 'PREPARACION', 'LISTO', 'ENTREGADO']
+    pedidos = Pedido.objects.filter(estado__in=estados_validos)
+    if inicio:
+        pedidos = pedidos.filter(fecha__gte=inicio, fecha__lte=fin)
+
+    detalles = DetallePedido.objects.filter(pedido__in=pedidos)
+    if tipo == 'canal':
+        if valor not in ('PRESENCIAL', 'WEB'):
+            return None
+        detalles = detalles.filter(pedido__canal=valor)
+        titulo = 'POS (Presencial)' if valor == 'PRESENCIAL' else 'E-commerce (Webpay)'
+        agrupar, etiqueta = 'producto__nombre', 'Producto'
+    elif tipo == 'categoria':
+        if valor == 'Sin categoría':
+            detalles = detalles.filter(producto__categoria__isnull=True)
+        else:
+            detalles = detalles.filter(producto__categoria__nombre=valor)
+        titulo = valor
+        agrupar, etiqueta = 'producto__nombre', 'Producto'
+    elif tipo == 'producto':
+        detalles = detalles.filter(producto__nombre=valor)
+        titulo = valor
+        agrupar, etiqueta = 'pedido__canal', 'Canal'
+    else:
+        return None
+
+    total = detalles.aggregate(monto=Sum('subtotal'), unidades=Sum('cantidad'))
+    nombres_canal = {'PRESENCIAL': 'POS (Presencial)', 'WEB': 'E-commerce (Webpay)'}
+    filas = []
+    for fila in detalles.values(agrupar).annotate(
+        monto=Sum('subtotal'), unidades=Sum('cantidad')
+    ).order_by('-monto')[:15]:
+        nombre = fila[agrupar] or 'Sin nombre'
+        filas.append({
+            'nombre': nombres_canal.get(nombre, nombre),
+            'unidades': int(fila['unidades'] or 0),
+            'monto': float(fila['monto'] or 0),
+        })
+
+    ids_pedidos = detalles.values_list('pedido_id', flat=True).distinct()
+    recientes = []
+    for pedido in Pedido.objects.filter(id__in=ids_pedidos).order_by('-fecha')[:8]:
+        recientes.append({
+            'id': pedido.id,
+            'fecha': timezone.localtime(pedido.fecha).strftime('%d/%m/%Y %H:%M'),
+            'canal': nombres_canal.get(pedido.canal, pedido.canal),
+            'total': float(pedido.total),
+        })
+
+    return {
+        'tipo': tipo,
+        'titulo': titulo,
+        'etiqueta_filas': etiqueta,
+        'periodo': rango['nombre_periodo'],
+        'total_monto': float(total['monto'] or 0),
+        'total_unidades': int(total['unidades'] or 0),
+        'total_pedidos': len(ids_pedidos),
+        'filas': filas,
+        'pedidos_recientes': recientes,
+    }
+
+def graficos_adquisicion():
+    """
+    Datos de los gráficos de adquisición (órdenes de compra a molineras):
+    gasto por molinera, órdenes por estado y gasto por materia prima.
+    Las órdenes canceladas no cuentan como gasto.
+    """
+    from .models import OrdenCompra, DetalleOrdenCompra
+
+    validas = OrdenCompra.objects.exclude(estado='CANCELADA')
+
+    por_proveedor = list(
+        validas.values('proveedor__nombre_proveedor')
+        .annotate(monto=Sum('total'), ordenes=Count('id')).order_by('-monto')
+    )
+    nombres_estado = dict(OrdenCompra.ESTADOS)
+    por_estado = list(OrdenCompra.objects.values('estado').annotate(ordenes=Count('id')).order_by('-ordenes'))
+    por_insumo = list(
+        DetalleOrdenCompra.objects.filter(orden__in=validas)
+        .values('insumo__nombre').annotate(monto=Sum('subtotal'), kilos=Sum('total_kilos'))
+        .order_by('-monto')[:8]
+    )
+
+    return {
+        'proveedores_nombres': [f['proveedor__nombre_proveedor'] for f in por_proveedor],
+        'proveedores_montos': [float(f['monto'] or 0) for f in por_proveedor],
+        'estados_claves': [f['estado'] for f in por_estado],
+        'estados_nombres': [nombres_estado.get(f['estado'], f['estado']) for f in por_estado],
+        'estados_cantidades': [f['ordenes'] for f in por_estado],
+        'insumos_nombres': [f['insumo__nombre'] for f in por_insumo],
+        'insumos_montos': [float(f['monto'] or 0) for f in por_insumo],
+        'total_gastado': float(validas.aggregate(t=Sum('total'))['t'] or 0),
+        'total_ordenes': OrdenCompra.objects.count(),
+    }
+
+
+def detalle_adquisicion(tipo, valor):
+    """
+    Detalle de las órdenes de compra de una molinera, un estado o una materia prima marcados
+    en los gráficos. Devuelve None si el tipo no es válido.
+    """
+    from .models import OrdenCompra, DetalleOrdenCompra
+
+    ordenes = OrdenCompra.objects.select_related('proveedor')
+    nombres_estado = dict(OrdenCompra.ESTADOS)
+    if tipo == 'proveedor':
+        ordenes = ordenes.filter(proveedor__nombre_proveedor=valor).exclude(estado='CANCELADA')
+        titulo = valor
+    elif tipo == 'estado':
+        if valor not in nombres_estado:
+            return None
+        ordenes = ordenes.filter(estado=valor)
+        titulo = nombres_estado[valor]
+    elif tipo == 'insumo':
+        ordenes = ordenes.filter(detalles__insumo__nombre=valor).exclude(estado='CANCELADA').distinct()
+        titulo = valor
+    else:
+        return None
+
+    renglones = DetalleOrdenCompra.objects.filter(orden__in=ordenes)
+    if tipo == 'insumo':
+        renglones = renglones.filter(insumo__nombre=valor)
+    totales = renglones.aggregate(monto=Sum('subtotal'), kilos=Sum('total_kilos'))
+
+    lista = []
+    for orden in ordenes.order_by('-fecha_emision')[:10]:
+        lista.append({
+            'codigo': orden.codigo,
+            'fecha': timezone.localtime(orden.fecha_emision).strftime('%d/%m/%Y'),
+            'proveedor': orden.proveedor.nombre_proveedor,
+            'estado': nombres_estado.get(orden.estado, orden.estado),
+            'total': float(orden.total or 0),
+        })
+
+    materias = [
+        {
+            'nombre': f['insumo__nombre'],
+            'kilos': float(f['kilos'] or 0),
+            'monto': float(f['monto'] or 0),
+        }
+        for f in renglones.values('insumo__nombre').annotate(
+            monto=Sum('subtotal'), kilos=Sum('total_kilos')).order_by('-monto')[:10]
+    ]
+
+    return {
+        'tipo': tipo,
+        'titulo': titulo,
+        'total_ordenes': ordenes.count(),
+        'total_monto': float(totales['monto'] or 0),
+        'total_kilos': float(totales['kilos'] or 0),
+        'materias': materias,
+        'ordenes': lista,
+    }

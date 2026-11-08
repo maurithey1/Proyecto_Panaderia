@@ -4467,3 +4467,103 @@ class DashboardKpisTests(TestCase):
         self.assertContains(respuesta, 'graficoBarrasInicio')
         self.assertContains(respuesta, 'graficoLineasInicio')
 
+
+
+class DetalleKpiTests(TestCase):
+    """Detalle que se despliega al marcar un canal, producto o categoría en los gráficos."""
+
+    def setUp(self):
+        from .models import DetallePedido, Pedido
+        self.admin = Usuario.objects.create_user('admin-detalle', password='Password123!', rol='ADMINISTRADOR')
+        self.cajero = Usuario.objects.create_user('cajero-detalle', password='Password123!', rol='CAJERO')
+        panes = Categoria.objects.create(nombre='Panes')
+        tortas = Categoria.objects.create(nombre='Tortas')
+        pan = Producto.objects.create(categoria=panes, nombre='Marraqueta', descripcion='.', precio=Decimal('1000'), stock=10)
+        torta = Producto.objects.create(categoria=tortas, nombre='Torta Tres Leches', descripcion='.', precio=Decimal('9000'), stock=5)
+        web = Pedido.objects.create(estado='PAGADO', canal='WEB', total=Decimal('11000'))
+        pos = Pedido.objects.create(estado='PAGADO', canal='PRESENCIAL', total=Decimal('3000'))
+        pendiente = Pedido.objects.create(estado='PENDIENTE', canal='WEB', total=Decimal('9000'))
+        DetallePedido.objects.create(pedido=web, producto=pan, cantidad=2, precio_unitario=Decimal('1000'), subtotal=Decimal('2000'))
+        DetallePedido.objects.create(pedido=web, producto=torta, cantidad=1, precio_unitario=Decimal('9000'), subtotal=Decimal('9000'))
+        DetallePedido.objects.create(pedido=pos, producto=pan, cantidad=3, precio_unitario=Decimal('1000'), subtotal=Decimal('3000'))
+        DetallePedido.objects.create(pedido=pendiente, producto=torta, cantidad=1, precio_unitario=Decimal('9000'), subtotal=Decimal('9000'))
+        self.client.force_login(self.admin)
+
+    def _detalle(self, tipo, valor):
+        return self.client.get(reverse('detalle_kpi'), {'tipo': tipo, 'valor': valor, 'periodo': 'todo'})
+
+    def test_detalle_de_un_canal_agrupa_por_producto(self):
+        datos = self._detalle('canal', 'WEB').json()
+        self.assertEqual(datos['total_monto'], 11000.0)
+        self.assertEqual(datos['total_unidades'], 3)
+        self.assertEqual(datos['total_pedidos'], 1)
+        self.assertEqual([f['nombre'] for f in datos['filas']], ['Torta Tres Leches', 'Marraqueta'])
+
+    def test_detalle_de_un_producto_agrupa_por_canal_y_excluye_pedidos_no_pagados(self):
+        datos = self._detalle('producto', 'Torta Tres Leches').json()
+        self.assertEqual(datos['total_monto'], 9000.0)   # el pedido pendiente no cuenta
+        self.assertEqual([f['nombre'] for f in datos['filas']], ['E-commerce (Webpay)'])
+
+    def test_detalle_de_una_categoria(self):
+        datos = self._detalle('categoria', 'Panes').json()
+        self.assertEqual(datos['total_unidades'], 5)
+        self.assertEqual(datos['total_pedidos'], 2)
+        self.assertEqual(len(datos['pedidos_recientes']), 2)
+
+    def test_tipo_o_canal_invalido_devuelve_400(self):
+        self.assertEqual(self._detalle('otro', 'x').status_code, 400)
+        self.assertEqual(self._detalle('canal', 'TELEFONO').status_code, 400)
+
+    def test_solo_el_administrador_puede_ver_el_detalle(self):
+        self.client.logout()
+        self.assertRedirects(self._detalle('canal', 'WEB'), reverse('login') , fetch_redirect_response=False)
+        self.client.force_login(self.cajero)
+        self.assertEqual(self._detalle('canal', 'WEB').status_code, 302)
+
+class GraficosAdquisicionTests(TestCase):
+    """Gráficos interactivos de órdenes de compra y detalle al marcar un elemento."""
+
+    def setUp(self):
+        from .models import DetalleOrdenCompra, Insumo, OrdenCompra, Proveedor
+        self.admin = Usuario.objects.create_user('admin-adq', password='Password123!', rol='ADMINISTRADOR')
+        self.cajero = Usuario.objects.create_user('cajero-adq', password='Password123!', rol='CAJERO')
+        molinera = Proveedor.objects.create(nombre_proveedor='Molinera Uno', rut='76.111.111-1')
+        otra = Proveedor.objects.create(nombre_proveedor='Molinera Dos', rut='76.222.222-2')
+        harina = Insumo.objects.create(codigo='NI900', nombre='Harina 000', kilos_por_saco=Decimal('25'))
+        azucar = Insumo.objects.create(codigo='NI901', nombre='Azúcar', kilos_por_saco=Decimal('25'))
+        o1 = OrdenCompra.objects.create(codigo='OC-1', proveedor=molinera, estado='EMITIDA', total=Decimal('100000'))
+        o2 = OrdenCompra.objects.create(codigo='OC-2', proveedor=otra, estado='RECEPCIONADA', total=Decimal('50000'))
+        o3 = OrdenCompra.objects.create(codigo='OC-3', proveedor=molinera, estado='CANCELADA', total=Decimal('70000'))
+        DetalleOrdenCompra.objects.create(orden=o1, insumo=harina, cantidad_sacos=4, kilos_por_saco=Decimal('25'), precio_unitario=Decimal('25000'))
+        DetalleOrdenCompra.objects.create(orden=o2, insumo=azucar, cantidad_sacos=2, kilos_por_saco=Decimal('25'), precio_unitario=Decimal('25000'))
+        DetalleOrdenCompra.objects.create(orden=o3, insumo=harina, cantidad_sacos=7, kilos_por_saco=Decimal('25'), precio_unitario=Decimal('10000'))
+        self.client.force_login(self.admin)
+
+    def test_datos_de_graficos_excluyen_ordenes_canceladas_del_gasto(self):
+        datos = self.client.get(reverse('graficos_adquisicion')).json()
+        self.assertEqual(datos['total_gastado'], 150000.0)
+        self.assertEqual(datos['total_ordenes'], 3)
+        self.assertEqual(datos['proveedores_nombres'], ['Molinera Uno', 'Molinera Dos'])
+        self.assertEqual(datos['insumos_nombres'], ['Harina 000', 'Azúcar'])
+        self.assertIn('CANCELADA', datos['estados_claves'])
+
+    def test_detalle_por_proveedor_estado_e_insumo(self):
+        url = reverse('detalle_adquisicion')
+        proveedor = self.client.get(url, {'tipo': 'proveedor', 'valor': 'Molinera Uno'}).json()
+        self.assertEqual(proveedor['total_ordenes'], 1)      # la cancelada no cuenta
+        self.assertEqual(proveedor['total_monto'], 100000.0)
+        estado = self.client.get(url, {'tipo': 'estado', 'valor': 'CANCELADA'}).json()
+        self.assertEqual(estado['ordenes'][0]['codigo'], 'OC-3')
+        insumo = self.client.get(url, {'tipo': 'insumo', 'valor': 'Harina 000'}).json()
+        self.assertEqual(insumo['total_kilos'], 100.0)
+
+    def test_detalle_invalido_devuelve_400(self):
+        url = reverse('detalle_adquisicion')
+        self.assertEqual(self.client.get(url, {'tipo': 'otro', 'valor': 'x'}).status_code, 400)
+        self.assertEqual(self.client.get(url, {'tipo': 'estado', 'valor': 'NOEXISTE'}).status_code, 400)
+
+    def test_solo_el_administrador_accede_y_la_lista_trae_el_panel(self):
+        self.assertContains(self.client.get(reverse('lista_ordenes_compra')), 'panelGraficosAdquisicion')
+        self.client.force_login(self.cajero)
+        self.assertEqual(self.client.get(reverse('graficos_adquisicion')).status_code, 302)
+        self.assertEqual(self.client.get(reverse('detalle_adquisicion'), {'tipo': 'estado', 'valor': 'EMITIDA'}).status_code, 302)

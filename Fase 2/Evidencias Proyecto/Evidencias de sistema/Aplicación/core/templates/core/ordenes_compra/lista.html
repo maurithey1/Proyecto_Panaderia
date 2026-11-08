@@ -52,9 +52,9 @@
         </div>
 
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <a href="{% url 'dashboard_kpis' %}" class="crud-btn-accion" style="text-decoration: none; padding: 10px 16px; font-weight: 700; border-radius: 8px;">
+          <button type="button" id="btnGraficosAdquisicion" class="crud-btn-accion" aria-expanded="false" aria-controls="panelGraficosAdquisicion" style="padding: 10px 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">
             📊 KPIs de Adquisición
-          </a>
+          </button>
           <a href="{% url 'crear_orden_compra' %}" class="crud-btn-primario" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; border-radius: 8px; box-shadow: 0 4px 10px rgba(74, 46, 24, 0.15);">
             <span style="font-size: 1.2rem; line-height: 1;">+</span> Generar Orden de Compra
           </a>
@@ -62,6 +62,27 @@
       </div>
     </div>
 
+    <!-- PANEL DE GRÁFICOS INTERACTIVOS DE ADQUISICIÓN (se despliega con el icono 📊) -->
+    <div id="panelGraficosAdquisicion" class="kpi-panel-grafico" hidden
+         data-url-datos="{% url 'graficos_adquisicion' %}" data-url-detalle="{% url 'detalle_adquisicion' %}"
+         style="margin-bottom: 20px;">
+      <p id="resumenGraficosAdquisicion" class="kpi-panel-grafico__bajada" style="margin-bottom: 12px;">Cargando gráficos…</p>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+        <div>
+          <h3 style="font-size: 1rem;">Gasto por molinera</h3>
+          <div class="kpi-canvas-wrapper"><canvas id="graficoAdqProveedores"></canvas></div>
+        </div>
+        <div>
+          <h3 style="font-size: 1rem;">Órdenes por estado</h3>
+          <div class="kpi-canvas-wrapper"><canvas id="graficoAdqEstados"></canvas></div>
+        </div>
+        <div>
+          <h3 style="font-size: 1rem;">Gasto por materia prima</h3>
+          <div class="kpi-canvas-wrapper"><canvas id="graficoAdqInsumos"></canvas></div>
+        </div>
+      </div>
+      <div id="detalleGraficosAdquisicion" class="kpi-detalle" aria-live="polite" hidden></div>
+    </div>
     <!-- BARRA DE FILTROS Y BÚSQUEDA -->
     <form method="get" class="crud-filtros-fila" style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; background: #faf6f0; padding: 14px 16px; border-radius: 10px; border: 1px solid #eddcd0;">
       <div style="flex: 1; min-width: 220px;">
@@ -240,4 +261,10 @@
   </section>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Chart.js versión 4 desde CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="{% static 'js/ordenes_compra_graficos.js' %}"></script>
 {% endblock %}

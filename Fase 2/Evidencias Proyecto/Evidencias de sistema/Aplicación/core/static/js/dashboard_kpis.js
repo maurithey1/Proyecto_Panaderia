@@ -498,7 +498,130 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
   }
-});
+
+  // ==========================================================================
+  // Interactividad: al marcar un canal, producto o categoría se despliega su detalle
+  // ==========================================================================
+  const urlDetalle = jsonElem.dataset.urlDetalle;
+  const parametrosPeriodo = new URLSearchParams(window.location.search);
+
+  // Crea (una sola vez) el panel de detalle debajo del gráfico
+  function obtenerPanelDetalle(canvas) {
+    const contenedor = canvas.closest('.kpi-panel-grafico');
+    let panel = contenedor.querySelector('.kpi-detalle');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'kpi-detalle';
+      panel.setAttribute('aria-live', 'polite');
+      panel.hidden = true;
+      contenedor.appendChild(panel);
+    }
+    return panel;
+  }
+
+  function crearElemento(etiqueta, clase, texto) {
+    const el = document.createElement(etiqueta);
+    if (clase) el.className = clase;
+    if (texto !== undefined) el.textContent = texto;
+    return el;
+  }
+
+  function crearTabla(columnas, filas) {
+    const tabla = crearElemento('table', 'kpi-detalle__tabla');
+    const cabecera = crearElemento('tr');
+    columnas.forEach((c) => cabecera.appendChild(crearElemento('th', '', c)));
+    tabla.appendChild(cabecera);
+    filas.forEach((fila) => {
+      const tr = crearElemento('tr');
+      fila.forEach((celda) => tr.appendChild(crearElemento('td', '', celda)));
+      tabla.appendChild(tr);
+    });
+    return tabla;
+  }
+
+  function mostrarDetalle(canvas, info) {
+    const panel = obtenerPanelDetalle(canvas);
+    panel.replaceChildren();
+
+    const cabecera = crearElemento('div', 'kpi-detalle__cabecera');
+    cabecera.appendChild(crearElemento('strong', '', `Detalle: ${info.titulo}`));
+    const cerrar = crearElemento('button', 'kpi-detalle__cerrar', 'Cerrar ✕');
+    cerrar.type = 'button';
+    cerrar.addEventListener('click', () => { panel.hidden = true; });
+    cabecera.appendChild(cerrar);
+    panel.appendChild(cabecera);
+
+    panel.appendChild(crearElemento(
+      'p', 'kpi-detalle__resumen',
+      `${info.periodo}: ${formatearDinero(info.total_monto)} · ${info.total_unidades} unidades · ${info.total_pedidos} pedidos`
+    ));
+
+    if (info.filas.length) {
+      panel.appendChild(crearTabla(
+        [info.etiqueta_filas, 'Unidades', 'Monto'],
+        info.filas.map((f) => [f.nombre, String(f.unidades), formatearDinero(f.monto)])
+      ));
+    }
+    if (info.pedidos_recientes.length) {
+      panel.appendChild(crearElemento('p', 'kpi-detalle__subtitulo', 'Últimos pedidos'));
+      panel.appendChild(crearTabla(
+        ['Pedido', 'Fecha', 'Canal', 'Total'],
+        info.pedidos_recientes.map((p) => [`#${p.id}`, p.fecha, p.canal, formatearDinero(p.total)])
+      ));
+    }
+    if (!info.filas.length && !info.pedidos_recientes.length) {
+      panel.appendChild(crearElemento('p', 'kpi-detalle__vacio', 'Sin ventas registradas en el período.'));
+    }
+    panel.hidden = false;
+  }
+
+  async function cargarDetalle(canvas, tipo, valor) {
+    const panel = obtenerPanelDetalle(canvas);
+    panel.replaceChildren(crearElemento('p', 'kpi-detalle__vacio', 'Cargando detalle…'));
+    panel.hidden = false;
+
+    const params = new URLSearchParams({ tipo, valor });
+    ['periodo', 'desde', 'hasta'].forEach((k) => {
+      if (parametrosPeriodo.get(k)) params.set(k, parametrosPeriodo.get(k));
+    });
+    try {
+      const respuesta = await fetch(`${urlDetalle}?${params.toString()}`, { credentials: 'same-origin' });
+      if (!respuesta.ok) throw new Error('Respuesta no válida');
+      mostrarDetalle(canvas, await respuesta.json());
+    } catch (e) {
+      panel.replaceChildren(crearElemento('p', 'kpi-detalle__vacio', 'No se pudo cargar el detalle. Intenta nuevamente.'));
+    }
+  }
+
+  // Conecta un gráfico: `resolverValor(indice)` devuelve el valor a consultar (o null si no hay datos)
+  function hacerInteractivo(idCanvas, tipo, resolverValor) {
+    const canvas = document.getElementById(idCanvas);
+    if (!canvas || !urlDetalle || !window.Chart) return;
+    const grafico = Chart.getChart(canvas);
+    if (!grafico) return;
+    canvas.style.cursor = 'default';
+    grafico.options.onHover = (evento, elementos) => {
+      const activo = elementos.length > 0 && resolverValor(elementos[0].index) !== null;
+      evento.native.target.style.cursor = activo ? 'pointer' : 'default';
+    };
+    grafico.options.onClick = (evento, elementos) => {
+      if (!elementos.length) return;
+      const valor = resolverValor(elementos[0].index);
+      if (valor !== null) cargarDetalle(canvas, tipo, valor);
+    };
+    grafico.update();
+  }
+
+  const canalesClave = ['PRESENCIAL', 'WEB'];
+  hacerInteractivo('graficoCanales', 'canal', (i) => {
+    const hayVentas = ((datos.canales_montos || [])[0] || 0) + ((datos.canales_montos || [])[1] || 0) > 0;
+    return hayVentas ? canalesClave[i] : null;
+  });
+  hacerInteractivo('graficoTop5', 'producto', (i) => (datos.top5_nombres || [])[i] ?? null);
+  hacerInteractivo('graficoCategorias', 'categoria', (i) => {
+    const hay = datos.categorias_montos && datos.categorias_montos.length > 0;
+    return hay ? (datos.categorias_nombres[i] ?? null) : null;
+  });});
 
 // Función para enviar el formulario con rango de fechas personalizado
 function aplicarRangoPersonalizado() {

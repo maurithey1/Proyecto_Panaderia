@@ -1060,6 +1060,21 @@ def dashboard_kpis(request):
 
 
 @admin_required
+@require_GET
+def detalle_kpi(request):
+    """Devuelve en JSON el detalle de ventas del canal, producto o categoría marcado en un gráfico."""
+    datos = metricas_kpi.detalle_kpi(
+        request.GET.get('tipo', ''),
+        request.GET.get('valor', ''),
+        periodo=request.GET.get('periodo', 'mes'),
+        desde=request.GET.get('desde') or None,
+        hasta=request.GET.get('hasta') or None,
+    )
+    if datos is None:
+        return JsonResponse({'error': 'Elemento no válido.'}, status=400)
+    return JsonResponse(datos)
+
+@admin_required
 def gestion_usuarios(request):
     clientes = Cliente.objects.select_related('user', 'puntos').all().order_by('-user__date_joined')
     personal = Usuario.objects.filter(
@@ -2868,6 +2883,22 @@ def lista_ordenes_compra(request):
     }
     return render(request, 'core/ordenes_compra/lista.html', contexto)
 
+
+@admin_required
+@require_GET
+def graficos_adquisicion(request):
+    """Datos en JSON de los gráficos de órdenes de compra (gasto por molinera, estado y materia prima)."""
+    return JsonResponse(metricas_kpi.graficos_adquisicion())
+
+
+@admin_required
+@require_GET
+def detalle_adquisicion(request):
+    """Detalle en JSON de la molinera, estado o materia prima marcados en los gráficos de adquisición."""
+    datos = metricas_kpi.detalle_adquisicion(request.GET.get('tipo', ''), request.GET.get('valor', ''))
+    if datos is None:
+        return JsonResponse({'error': 'Elemento no válido.'}, status=400)
+    return JsonResponse(datos)
 
 @admin_required
 def crear_orden_compra(request):

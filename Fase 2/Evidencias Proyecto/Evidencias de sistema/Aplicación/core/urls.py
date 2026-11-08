@@ -29,6 +29,7 @@ urlpatterns = [
     # Panel Administrador
     path('panel-admin/', views.inicio_admin, name='inicio_admin'),
     path('panel-admin/kpis/', views.dashboard_kpis, name='dashboard_kpis'),
+    path('panel-admin/kpis/detalle/', views.detalle_kpi, name='detalle_kpi'),
     path('panel-admin/usuarios/', views.gestion_usuarios, name='gestion_usuarios'),
     path('panel-admin/inventario/historial-precios/', views.historial_precios_insumos, name='historial_precios_insumos'),
     path('panel-admin/usuarios/desactivar/<int:pk>/', views.desactivar_usuario, name='desactivar_usuario'),
@@ -67,6 +68,8 @@ urlpatterns = [
 
     # Órdenes de Compra a Molineras (RQF9)
     path('panel-admin/ordenes-compra/', views.lista_ordenes_compra, name='lista_ordenes_compra'),
+    path('panel-admin/ordenes-compra/graficos/', views.graficos_adquisicion, name='graficos_adquisicion'),
+    path('panel-admin/ordenes-compra/graficos/detalle/', views.detalle_adquisicion, name='detalle_adquisicion'),
     path('panel-admin/ordenes-compra/crear/', views.crear_orden_compra, name='crear_orden_compra'),
     path('panel-admin/ordenes-compra/<int:pk>/pdf/', views.ver_orden_compra_pdf, name='ver_orden_compra_pdf'),
     path('panel-admin/ordenes-compra/<int:pk>/descargar-pdf/', views.descargar_orden_compra_pdf, name='descargar_orden_compra_pdf'),
