@@ -5787,3 +5787,62 @@ a.historial-paginacion__enlace--actual:hover {
 .kpi-panel-grafico[hidden] {
   display: none;
 }
+
+/* Diseño compacto de los gráficos plegables: miniatura que se despliega al pulsarla */
+.kpi-panel--mini {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+}
+
+.kpi-panel--mini:hover {
+  border-color: var(--terracota, #b4532a);
+  box-shadow: 0 6px 20px rgba(180, 83, 42, 0.12);
+  transform: translateY(-2px);
+}
+
+.kpi-panel--mini .kpi-canvas-wrapper {
+  height: 90px !important;
+  transition: height 0.3s ease;
+  overflow: hidden;
+}
+
+.kpi-panel--mini .kpi-canvas-wrapper canvas {
+  pointer-events: none;
+}
+
+.kpi-panel--mini .kpi-resumen-canales,
+.kpi-panel--mini .kpi-detalle,
+.kpi-panel--mini .kpi-toggle-metricas {
+  display: none !important;
+}
+
+.kpi-panel--mini .kpi-panel-grafico__cabecera {
+  margin-bottom: 0.5rem;
+}
+
+.kpi-panel--desplegado .kpi-canvas-wrapper {
+  height: 260px;
+  transition: height 0.3s ease;
+}
+
+.kpi-mini-toggle {
+  align-self: flex-start;
+  white-space: nowrap;
+  background: var(--crema-2, #f5ead6);
+  color: var(--cafe-oscuro, #3e2a1d);
+  border: 1px solid var(--borde, #e6d5bc);
+  border-radius: 999px;
+  padding: 0.25rem 0.85rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+}
+
+.kpi-mini-toggle:hover,
+.kpi-mini-toggle:focus-visible {
+  background: var(--trigo, #e3b25b);
+  color: #ffffff;
+  transform: scale(1.04);
+}

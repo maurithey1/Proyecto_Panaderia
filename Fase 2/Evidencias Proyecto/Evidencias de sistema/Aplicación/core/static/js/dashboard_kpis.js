@@ -621,7 +621,89 @@ document.addEventListener('DOMContentLoaded', function () {
   hacerInteractivo('graficoCategorias', 'categoria', (i) => {
     const hay = datos.categorias_montos && datos.categorias_montos.length > 0;
     return hay ? (datos.categorias_nombres[i] ?? null) : null;
-  });});
+  });
+
+  // ==========================================================================
+  // Diseño diminuto interactivo: los gráficos inician muy pequeños (miniatura)
+  // y al apretarlos se despliegan en su tamaño completo.
+  // ==========================================================================
+  function hacerDiminutoPlegable(idCanvas) {
+    const canvas = document.getElementById(idCanvas);
+    if (!canvas || !window.Chart) return;
+    const grafico = Chart.getChart(canvas);
+    if (!grafico) return;
+
+    const tarjeta = canvas.closest('.kpi-panel-grafico');
+    if (!tarjeta) return;
+
+    const cabecera = tarjeta.querySelector('.kpi-panel-grafico__cabecera');
+    const opcionesOriginales = {
+      leyenda: grafico.options.plugins?.legend?.display ?? true,
+      tooltip: grafico.options.plugins?.tooltip?.enabled ?? true,
+    };
+
+    // Botón indicador para desplegar o reducir
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'kpi-mini-toggle';
+    boton.setAttribute('aria-controls', idCanvas);
+    if (cabecera) {
+      cabecera.appendChild(boton);
+    } else {
+      tarjeta.insertBefore(boton, tarjeta.firstChild);
+    }
+
+    function aplicar(desplegado) {
+      tarjeta.classList.toggle('kpi-panel--mini', !desplegado);
+      tarjeta.classList.toggle('kpi-panel--desplegado', desplegado);
+      boton.innerHTML = desplegado ? '▴ Reducir gráfico' : '🔍 Desplegar gráfico ▾';
+      boton.setAttribute('aria-expanded', String(desplegado));
+      boton.title = desplegado ? 'Hacer clic para reducir a miniatura' : 'Hacer clic para desplegar gráfico completo';
+
+      // En modo diminuto ocultamos leyenda y tooltips para que la miniatura se vea limpia y nítida
+      if (grafico.options.plugins) {
+        if (grafico.options.plugins.legend) {
+          grafico.options.plugins.legend.display = desplegado ? opcionesOriginales.leyenda : false;
+        }
+        if (grafico.options.plugins.tooltip) {
+          grafico.options.plugins.tooltip.enabled = desplegado ? opcionesOriginales.tooltip : false;
+        }
+      }
+
+      // Si se reduce, cerramos el panel de detalle si estuviera abierto
+      if (!desplegado) {
+        const detalle = tarjeta.querySelector('.kpi-detalle');
+        if (detalle) detalle.hidden = true;
+      }
+
+      grafico.update();
+      requestAnimationFrame(() => {
+        grafico.resize();
+      });
+    }
+
+    // Al hacer clic en el botón toggle
+    boton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const estaMini = tarjeta.classList.contains('kpi-panel--mini');
+      aplicar(estaMini);
+    });
+
+    // Al apretar la tarjeta en modo diminuto, se despliega
+    tarjeta.addEventListener('click', (e) => {
+      if (!tarjeta.classList.contains('kpi-panel--mini')) return;
+      // No interferir con botones internos si los hubiera
+      if (e.target.closest('.kpi-toggle-metricas')) return;
+      aplicar(true);
+    });
+
+    // Inicia en modo diminuto
+    aplicar(false);
+  }
+
+  // Aplicar a los gráficos solicitados (Canal, Top 5 Productos, Categorías y Entrega Web)
+  ['graficoCanales', 'graficoTop5', 'graficoCategorias', 'graficoEntregaWeb'].forEach(hacerDiminutoPlegable);
+});
 
 // Función para enviar el formulario con rango de fechas personalizado
 function aplicarRangoPersonalizado() {
