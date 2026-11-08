@@ -624,85 +624,257 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // ==========================================================================
-  // Diseño diminuto interactivo: los gráficos inician muy pequeños (miniatura)
-  // y al apretarlos se despliegan en su tamaño completo.
+  // Ventana emergente (Modal / Lightbox): los gráficos se ven pequeños en la
+  // tarjeta y al hacerles clic se despliegan en el centro en tamaño grande.
   // ==========================================================================
-  function hacerDiminutoPlegable(idCanvas) {
-    const canvas = document.getElementById(idCanvas);
-    if (!canvas || !window.Chart) return;
-    const grafico = Chart.getChart(canvas);
-    if (!grafico) return;
+  const modal = document.getElementById('kpiModalGrande');
+  const modalTitulo = document.getElementById('kpiModalTitulo');
+  const modalSubtitulo = document.getElementById('kpiModalSubtitulo');
+  const modalCanvas = document.getElementById('kpiModalCanvas');
+  const modalCerrar = document.getElementById('kpiModalCerrar');
+  const modalControles = document.getElementById('kpiModalControles');
+  const modalDetalle = document.getElementById('kpiModalDetalle');
+  let chartModalInstancia = null;
 
+  function cerrarModal() {
+    if (!modal) return;
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    if (chartModalInstancia) {
+      chartModalInstancia.destroy();
+      chartModalInstancia = null;
+    }
+    if (modalDetalle) {
+      modalDetalle.hidden = true;
+      modalDetalle.replaceChildren();
+    }
+    if (modalControles) {
+      modalControles.hidden = true;
+      modalControles.replaceChildren();
+    }
+  }
+
+  if (modalCerrar) {
+    modalCerrar.addEventListener('click', cerrarModal);
+  }
+  if (modal) {
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) cerrarModal();
+    });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && modal && !modal.hidden) {
+      cerrarModal();
+    }
+  });
+
+  function abrirEnModal(idCanvasOriginal) {
+    const canvasOriginal = document.getElementById(idCanvasOriginal);
+    if (!canvasOriginal || !window.Chart || !modal || !modalCanvas) return;
+    const chartOriginal = Chart.getChart(canvasOriginal);
+    if (!chartOriginal) return;
+
+    const tarjeta = canvasOriginal.closest('.kpi-panel-grafico');
+    const h3 = tarjeta ? tarjeta.querySelector('h3') : null;
+    const bajada = tarjeta ? tarjeta.querySelector('.kpi-panel-grafico__bajada') : null;
+
+    if (modalTitulo) modalTitulo.textContent = h3 ? h3.textContent.trim() : 'Gráfico';
+    if (modalSubtitulo) modalSubtitulo.textContent = bajada ? bajada.textContent.trim() : '';
+
+    if (chartModalInstancia) {
+      chartModalInstancia.destroy();
+      chartModalInstancia = null;
+    }
+    if (modalDetalle) {
+      modalDetalle.hidden = true;
+      modalDetalle.replaceChildren();
+    }
+    if (modalControles) {
+      modalControles.hidden = true;
+      modalControles.replaceChildren();
+    }
+
+    // Configuración ampliada y en alta resolución para el modal
+    const configClon = JSON.parse(JSON.stringify({
+      type: chartOriginal.config.type,
+      data: chartOriginal.config.data,
+    }));
+
+    // Opciones adaptadas para tamaño grande
+    const opcionesModal = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: configClon.type !== 'bar' || idCanvasOriginal === 'graficoEvolucionVentas',
+          position: 'bottom',
+          labels: {
+            boxWidth: 16,
+            padding: 18,
+            font: { size: 13, weight: '600' }
+          }
+        },
+        tooltip: {
+          enabled: true,
+          padding: 12,
+          titleFont: { size: 14, weight: 'bold' },
+          bodyFont: { size: 13 },
+          callbacks: {
+            label: function (ctx) {
+              const valor = ctx.raw;
+              if (typeof valor === 'number') {
+                if (idCanvasOriginal === 'graficoProduccion') return ` Horneado: ${valor} unidades`;
+                if (idCanvasOriginal === 'graficoMargenes') return ` Margen: ${valor}%`;
+                if (idCanvasOriginal === 'graficoEntregaWeb') return ` ${ctx.label}: ${valor} pedidos`;
+                return ` ${ctx.dataset.label || ctx.label || ''}: ${formatearDinero(valor)}`;
+              }
+              return ` ${ctx.label}: ${valor}`;
+            }
+          }
+        }
+      }
+    };
+
+    // Ajustes específicos según el gráfico
+    if (configClon.type === 'doughnut') {
+      opcionesModal.cutout = '62%';
+    }
+    if (chartOriginal.config.options.indexAxis === 'y') {
+      opcionesModal.indexAxis = 'y';
+      opcionesModal.scales = {
+        x: {
+          beginAtZero: true,
+          grid: { color: '#f0e3ce' },
+          ticks: {
+            callback: (v) => '$' + (v >= 1000 ? (v / 1000) + 'k' : v)
+          }
+        },
+        y: { grid: { display: false } }
+      };
+    } else if (chartOriginal.config.options.scales?.y) {
+      opcionesModal.scales = {
+        y: {
+          beginAtZero: true,
+          grid: { color: '#f0e3ce' },
+          ticks: {
+            callback: (v) => typeof v === 'number' && v >= 1000 ? '$' + (v / 1000) + 'k' : v
+          }
+        },
+        x: { grid: { display: false } }
+      };
+    }
+
+    // Si es interactivo para detalle, agregamos soporte de clic dentro del modal
+    if (idCanvasOriginal === 'graficoCanales' || idCanvasOriginal === 'graficoTop5' || idCanvasOriginal === 'graficoCategorias') {
+      opcionesModal.onHover = (evento, elementos) => {
+        evento.native.target.style.cursor = elementos.length > 0 ? 'pointer' : 'default';
+      };
+      opcionesModal.onClick = (evento, elementos) => {
+        if (!elementos.length) return;
+        const idx = elementos[0].index;
+        let tipo = '', valor = null;
+        if (idCanvasOriginal === 'graficoCanales') {
+          tipo = 'canal';
+          valor = ['PRESENCIAL', 'WEB'][idx];
+        } else if (idCanvasOriginal === 'graficoTop5') {
+          tipo = 'producto';
+          valor = (datos.top5_nombres || [])[idx];
+        } else if (idCanvasOriginal === 'graficoCategorias') {
+          tipo = 'categoria';
+          valor = (datos.categorias_nombres || [])[idx];
+        }
+        if (tipo && valor) {
+          cargarDetalle(modalCanvas, tipo, valor);
+        }
+      };
+    }
+
+    // Controles interactivos para Top 5 en el modal (Por Dinero / Por Unidades)
+    if (idCanvasOriginal === 'graficoTop5' && modalControles) {
+      modalControles.hidden = false;
+      const btnMonto = document.createElement('button');
+      btnMonto.type = 'button';
+      btnMonto.className = 'kpi-toggle-btn ' + (window.metricaTop5Actual === 'monto' ? 'activo' : '');
+      btnMonto.textContent = 'Por Dinero ($)';
+
+      const btnUds = document.createElement('button');
+      btnUds.type = 'button';
+      btnUds.className = 'kpi-toggle-btn ' + (window.metricaTop5Actual === 'unidades' ? 'activo' : '');
+      btnUds.textContent = 'Por Unidades';
+
+      btnMonto.addEventListener('click', () => {
+        btnMonto.classList.add('activo');
+        btnUds.classList.remove('activo');
+        if (window.cambiarMetricaTop5) window.cambiarMetricaTop5('monto');
+        chartModalInstancia.data.datasets[0].data = datos.top5_montos || [];
+        chartModalInstancia.data.datasets[0].label = 'Recaudación ($)';
+        chartModalInstancia.data.datasets[0].backgroundColor = colores.terracota;
+        chartModalInstancia.update();
+      });
+
+      btnUds.addEventListener('click', () => {
+        btnUds.classList.add('activo');
+        btnMonto.classList.remove('activo');
+        if (window.cambiarMetricaTop5) window.cambiarMetricaTop5('unidades');
+        chartModalInstancia.data.datasets[0].data = datos.top5_unidades || [];
+        chartModalInstancia.data.datasets[0].label = 'Unidades Vendidas';
+        chartModalInstancia.data.datasets[0].backgroundColor = colores.cafe;
+        chartModalInstancia.update();
+      });
+
+      modalControles.appendChild(btnMonto);
+      modalControles.appendChild(btnUds);
+    }
+
+    chartModalInstancia = new Chart(modalCanvas, {
+      type: configClon.type,
+      data: configClon.data,
+      options: opcionesModal
+    });
+
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  }
+
+  // Habilita el diseño de gráfico pequeño y la apertura en modal al hacer clic
+  function habilitarGraficoModal(idCanvas) {
+    const canvas = document.getElementById(idCanvas);
+    if (!canvas) return;
     const tarjeta = canvas.closest('.kpi-panel-grafico');
     if (!tarjeta) return;
 
-    const cabecera = tarjeta.querySelector('.kpi-panel-grafico__cabecera');
-    const opcionesOriginales = {
-      leyenda: grafico.options.plugins?.legend?.display ?? true,
-      tooltip: grafico.options.plugins?.tooltip?.enabled ?? true,
-    };
+    tarjeta.classList.add('kpi-panel-grafico--pequeno');
+    tarjeta.setAttribute('title', 'Hacer clic para ver el gráfico en grande');
 
-    // Botón indicador para desplegar o reducir
+    const cabecera = tarjeta.querySelector('.kpi-panel-grafico__cabecera');
     const boton = document.createElement('button');
     boton.type = 'button';
-    boton.className = 'kpi-mini-toggle';
-    boton.setAttribute('aria-controls', idCanvas);
+    boton.className = 'kpi-btn-ampliar';
+    boton.innerHTML = '🔍 Ver en grande';
+    boton.title = 'Abrir gráfico en ventana grande';
+
     if (cabecera) {
       cabecera.appendChild(boton);
     } else {
       tarjeta.insertBefore(boton, tarjeta.firstChild);
     }
 
-    function aplicar(desplegado) {
-      tarjeta.classList.toggle('kpi-panel--mini', !desplegado);
-      tarjeta.classList.toggle('kpi-panel--desplegado', desplegado);
-      boton.innerHTML = desplegado ? '▴ Reducir gráfico' : '🔍 Desplegar gráfico ▾';
-      boton.setAttribute('aria-expanded', String(desplegado));
-      boton.title = desplegado ? 'Hacer clic para reducir a miniatura' : 'Hacer clic para desplegar gráfico completo';
-
-      // En modo diminuto ocultamos leyenda y tooltips para que la miniatura se vea limpia y nítida
-      if (grafico.options.plugins) {
-        if (grafico.options.plugins.legend) {
-          grafico.options.plugins.legend.display = desplegado ? opcionesOriginales.leyenda : false;
-        }
-        if (grafico.options.plugins.tooltip) {
-          grafico.options.plugins.tooltip.enabled = desplegado ? opcionesOriginales.tooltip : false;
-        }
-      }
-
-      // Si se reduce, cerramos el panel de detalle si estuviera abierto
-      if (!desplegado) {
-        const detalle = tarjeta.querySelector('.kpi-detalle');
-        if (detalle) detalle.hidden = true;
-      }
-
-      grafico.update();
-      requestAnimationFrame(() => {
-        grafico.resize();
-      });
-    }
-
-    // Al hacer clic en el botón toggle
     boton.addEventListener('click', (e) => {
       e.stopPropagation();
-      const estaMini = tarjeta.classList.contains('kpi-panel--mini');
-      aplicar(estaMini);
+      abrirEnModal(idCanvas);
     });
 
-    // Al apretar la tarjeta en modo diminuto, se despliega
     tarjeta.addEventListener('click', (e) => {
-      if (!tarjeta.classList.contains('kpi-panel--mini')) return;
-      // No interferir con botones internos si los hubiera
+      // Si el clic fue en un toggle interno del Top 5, no abrir modal directamente
       if (e.target.closest('.kpi-toggle-metricas')) return;
-      aplicar(true);
+      abrirEnModal(idCanvas);
     });
-
-    // Inicia en modo diminuto
-    aplicar(false);
   }
 
-  // Aplicar a los gráficos solicitados (Canal, Top 5 Productos, Categorías y Entrega Web)
-  ['graficoCanales', 'graficoTop5', 'graficoCategorias', 'graficoEntregaWeb'].forEach(hacerDiminutoPlegable);
+  // Activamos el diseño de gráfico pequeño + modal grande en los gráficos de la página
+  ['graficoCanales', 'graficoTop5', 'graficoCategorias', 'graficoEntregaWeb', 'graficoEvolucionVentas', 'graficoMargenes', 'graficoProduccion', 'graficoMolineras'].forEach(habilitarGraficoModal);
 });
 
 // Función para enviar el formulario con rango de fechas personalizado

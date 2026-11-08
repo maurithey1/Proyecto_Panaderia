@@ -5788,61 +5788,168 @@ a.historial-paginacion__enlace--actual:hover {
   display: none;
 }
 
-/* Diseño compacto de los gráficos plegables: miniatura que se despliega al pulsarla */
-.kpi-panel--mini {
+/* ==========================================================================
+   Diseño de gráficos pequeños en tarjeta + Ventana emergente (Modal / Lightbox)
+   ========================================================================== */
+
+/* Tarjetas de gráficos en formato pequeño */
+.kpi-panel-grafico--pequeno {
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   position: relative;
 }
 
-.kpi-panel--mini:hover {
+.kpi-panel-grafico--pequeno:hover {
   border-color: var(--terracota, #b4532a);
-  box-shadow: 0 6px 20px rgba(180, 83, 42, 0.12);
+  box-shadow: 0 8px 24px rgba(180, 83, 42, 0.14);
   transform: translateY(-2px);
 }
 
-.kpi-panel--mini .kpi-canvas-wrapper {
-  height: 90px !important;
-  transition: height 0.3s ease;
-  overflow: hidden;
+.kpi-panel-grafico--pequeno .kpi-canvas-wrapper {
+  height: 150px;
+  transition: height 0.25s ease;
 }
 
-.kpi-panel--mini .kpi-canvas-wrapper canvas {
-  pointer-events: none;
-}
-
-.kpi-panel--mini .kpi-resumen-canales,
-.kpi-panel--mini .kpi-detalle,
-.kpi-panel--mini .kpi-toggle-metricas {
-  display: none !important;
-}
-
-.kpi-panel--mini .kpi-panel-grafico__cabecera {
-  margin-bottom: 0.5rem;
-}
-
-.kpi-panel--desplegado .kpi-canvas-wrapper {
-  height: 260px;
-  transition: height 0.3s ease;
-}
-
-.kpi-mini-toggle {
-  align-self: flex-start;
-  white-space: nowrap;
+/* Botón "Ver en grande" en la cabecera de la tarjeta */
+.kpi-btn-ampliar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   background: var(--crema-2, #f5ead6);
   color: var(--cafe-oscuro, #3e2a1d);
   border: 1px solid var(--borde, #e6d5bc);
   border-radius: 999px;
-  padding: 0.25rem 0.85rem;
+  padding: 0.28rem 0.85rem;
   font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+  white-space: nowrap;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
 }
 
-.kpi-mini-toggle:hover,
-.kpi-mini-toggle:focus-visible {
-  background: var(--trigo, #e3b25b);
+.kpi-btn-ampliar:hover,
+.kpi-panel-grafico--pequeno:hover .kpi-btn-ampliar {
+  background: var(--terracota, #b4532a);
   color: #ffffff;
-  transform: scale(1.04);
+  border-color: var(--terracota, #b4532a);
+  transform: scale(1.03);
+}
+
+/* Modal Lightbox emergente para ver el gráfico en grande */
+.kpi-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(35, 20, 10, 0.75);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.kpi-modal-backdrop[hidden] {
+  display: none !important;
+}
+
+.kpi-modal-contenedor {
+  background: #ffffff;
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 960px;
+  max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.38);
+  padding: 1.75rem;
+  animation: kpiModalEntrada 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes kpiModalEntrada {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.kpi-modal-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--crema-2, #f5ead6);
+}
+
+.kpi-modal-badge {
+  display: inline-block;
+  background: var(--trigo-claro, #f1d596);
+  color: var(--cafe-oscuro, #3e2a1d);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  margin-bottom: 0.35rem;
+}
+
+.kpi-modal-titulo {
+  font-size: 1.35rem;
+  color: var(--cafe-oscuro, #3e2a1d);
+  margin: 0;
+  font-family: 'Young Serif', serif;
+}
+
+.kpi-modal-subtitulo {
+  font-size: 0.88rem;
+  color: var(--texto-suave, #6e5848);
+  margin: 0.25rem 0 0;
+}
+
+.kpi-modal-cerrar {
+  background: var(--crema-2, #f5ead6);
+  border: 1.5px solid var(--borde, #e6d5bc);
+  border-radius: 999px;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--cafe-oscuro, #3e2a1d);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.kpi-modal-cerrar:hover {
+  background: var(--terracota, #b4532a);
+  color: #ffffff;
+  border-color: var(--terracota, #b4532a);
+}
+
+.kpi-modal-cuerpo {
+  display: flex;
+  flex-direction: column;
+}
+
+.kpi-modal-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  height: 440px;
+  margin-bottom: 1rem;
+}
+
+.kpi-modal-controles {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }

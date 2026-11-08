@@ -39,3 +39,4 @@ services:
 
 volumes:
   mysql_data:
+    name: aplicacin_mysql_data
