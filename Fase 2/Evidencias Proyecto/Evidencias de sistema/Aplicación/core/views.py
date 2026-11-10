@@ -1080,9 +1080,8 @@ def detalle_kpi(request):
 @require_GET
 def exportar_kpis_csv(request):
     """
-    Exporta las ventas y transacciones a un archivo CSV estructurado,
-    ordenado por ID y fecha como en la base de datos relacional.
-    Usa codificación UTF-8 con BOM y separador ';' para compatibilidad nativa con Excel en Windows.
+    Exporta las ventas y transacciones a un archivo CSV perfectamente ordenado y formateado para Excel.
+    Compatible con Microsoft Excel en Windows mediante UTF-8 con BOM, directiva 'sep=;' y columnas legibles.
     """
     periodo = request.GET.get('periodo', 'todo')
     desde = request.GET.get('desde') or None
@@ -1098,39 +1097,41 @@ def exportar_kpis_csv(request):
     if inicio and fin:
         pedidos_qs = pedidos_qs.filter(fecha__gte=inicio, fecha__lte=fin)
 
-    # Ordenar tal como están en la base de datos (por clave primaria ID)
+    # Ordenar como en la base de datos (por clave primaria ID ascendente)
     pedidos_qs = pedidos_qs.order_by('id')
 
-    nombre_archivo = f"ventas_panaderia_{periodo}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    nombre_archivo = f"reporte_ventas_{periodo}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
     response = HttpResponse(content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
 
-    # Escribir BOM de UTF-8 para visualización directa y correcta en Excel (evita problemas de tildes o caracteres especiales)
+    # Escribir BOM de UTF-8 para garantizar apertura con tildes y caracteres en español en Excel
     response.write('\ufeff')
+    # Directiva para que Excel reconozca y separe automáticamente las columnas en celdas individuales
+    response.write('sep=;\r\n')
 
     writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
 
     if formato == 'detallado':
-        # Formato de detalle ítem por ítem (equivalente a SELECT * FROM DetallePedido)
+        # Encabezados de tabla relacional por ítem vendido
         writer.writerow([
-            'ID_DETALLE',
-            'ID_PEDIDO',
-            'FECHA_HORA',
-            'CANAL',
-            'ESTADO_PEDIDO',
-            'ID_PRODUCTO',
-            'PRODUCTO',
-            'CATEGORIA',
-            'CANTIDAD_UNIDADES',
-            'PRECIO_UNITARIO_CLP',
-            'SUBTOTAL_CLP',
-            'TOTAL_PEDIDO_CLP',
-            'TIPO_ENTREGA',
-            'CLIENTE',
-            'RUT_CLIENTE',
-            'CAJERO',
-            'METODO_PAGO',
-            'CODIGO_AUTORIZACION',
+            'N° Detalle',
+            'N° Pedido',
+            'Fecha y Hora',
+            'Canal de Venta',
+            'Estado Pedido',
+            'Código Producto',
+            'Nombre del Producto',
+            'Categoría',
+            'Cantidad Unidades',
+            'Precio Unitario ($ CLP)',
+            'Subtotal Ítem ($ CLP)',
+            'Total del Pedido ($ CLP)',
+            'Modalidad Entrega',
+            'Cliente',
+            'RUT Cliente',
+            'Cajero Responsable',
+            'Medio de Pago',
+            'Código Comprobante',
         ])
 
         detalles_qs = (
@@ -1142,6 +1143,9 @@ def exportar_kpis_csv(request):
             )
             .order_by('pedido__id', 'id')
         )
+
+        suma_unidades = 0
+        suma_subtotales = 0
 
         for d in detalles_qs:
             ped = d.pedido
@@ -1159,6 +1163,9 @@ def exportar_kpis_csv(request):
 
             categoria_nombre = d.producto.categoria.nombre if d.producto.categoria else 'Sin Categoría'
             fecha_str = ped.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
+
+            suma_unidades += d.cantidad
+            suma_subtotales += int(d.subtotal)
 
             writer.writerow([
                 d.id,
@@ -1181,26 +1188,48 @@ def exportar_kpis_csv(request):
                 (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A'),
             ])
 
-    else:
-        # Formato Transaccional (1 registro por Pedido con todas sus columnas de base de datos)
+        # Fila final de totalización para Excel
         writer.writerow([
-            'ID_PEDIDO',
-            'FECHA_HORA',
-            'CANAL_VENTA',
-            'ESTADO_PEDIDO',
-            'TIPO_ENTREGA',
-            'DIRECCION_O_NOTAS_ENTREGA',
-            'CLIENTE_NOMBRE',
-            'CLIENTE_RUT',
-            'CLIENTE_EMAIL',
-            'CLIENTE_TELEFONO',
-            'CAJERO_RESPONSABLE',
-            'METODO_PAGO',
-            'ESTADO_PAGO',
-            'CODIGO_AUTORIZACION',
-            'TOTAL_UNIDADES',
-            'DESGLOSE_PRODUCTOS',
-            'TOTAL_VENTA_CLP',
+            'TOTALES',
+            f'{detalles_qs.count()} registros',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            suma_unidades,
+            '-',
+            suma_subtotales,
+            suma_subtotales,
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+        ])
+
+    else:
+        # Encabezados de tabla transaccional (1 registro ordenado por Pedido de la base de datos)
+        writer.writerow([
+            'N° Pedido',
+            'Fecha y Hora',
+            'Canal de Venta',
+            'Estado Pedido',
+            'Modalidad de Entrega',
+            'Dirección / Franja de Entrega',
+            'Cliente',
+            'RUT Cliente',
+            'Correo Electrónico',
+            'Teléfono Contacto',
+            'Cajero Responsable',
+            'Medio de Pago',
+            'Estado del Pago',
+            'Código Comprobante',
+            'Cantidad Total Unidades',
+            'Detalle de Productos Comprados',
+            'Monto Total Venta ($ CLP)',
         ])
 
         pedidos_con_relaciones = (
@@ -1208,6 +1237,10 @@ def exportar_kpis_csv(request):
             .select_related('cliente', 'cliente__user', 'cajero', 'cajero__user', 'pago')
             .prefetch_related('detalles', 'detalles__producto')
         )
+
+        total_pedidos = 0
+        total_unidades_general = 0
+        total_monto_general = 0
 
         for p in pedidos_con_relaciones:
             pago = getattr(p, 'pago', None)
@@ -1232,12 +1265,17 @@ def exportar_kpis_csv(request):
             codigo_auth = (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A')
 
             detalles_list = list(p.detalles.all())
-            total_unidades = sum(d.cantidad for d in detalles_list)
+            unidades_pedido = sum(d.cantidad for d in detalles_list)
             desglose_items = ' | '.join(
-                [f"{d.producto.nombre} (x{d.cantidad} - ${int(d.subtotal):,})" for d in detalles_list]
+                [f"{d.producto.nombre} ({d.cantidad} un. - ${int(d.subtotal):,} CLP)".replace(',', '.') for d in detalles_list]
             ) if detalles_list else 'Sin ítems'
 
             fecha_local = p.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
+
+            monto_int = int(p.total)
+            total_pedidos += 1
+            total_unidades_general += unidades_pedido
+            total_monto_general += monto_int
 
             writer.writerow([
                 p.id,
@@ -1254,10 +1292,31 @@ def exportar_kpis_csv(request):
                 metodo_pago,
                 estado_pago,
                 codigo_auth,
-                total_unidades,
+                unidades_pedido,
                 desglose_items,
-                int(p.total),
+                monto_int,
             ])
+
+        # Fila final de totalización para visualización y cuadratura rápida en Excel
+        writer.writerow([
+            'TOTALES',
+            f'{total_pedidos} transacciones',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            total_unidades_general,
+            f'{total_pedidos} pedidos analizados',
+            total_monto_general,
+        ])
 
     return response
 
