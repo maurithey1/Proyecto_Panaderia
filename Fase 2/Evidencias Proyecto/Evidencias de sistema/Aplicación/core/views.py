@@ -1044,7 +1044,7 @@ def inicio_admin(request):
 
 @admin_required
 def dashboard_kpis(request):
-    periodo = request.GET.get('periodo', 'mes')
+    periodo = request.GET.get('periodo', 'todo')
     desde = request.GET.get('desde', None)
     hasta = request.GET.get('hasta', None)
 
