@@ -56,8 +56,27 @@
           </button>
         </div>
       </form>
-      <div class="kpi-periodo-activo-badge">
-        Período evaluado: <strong>{{ kpi.rango.nombre_periodo }}</strong>
+      <div class="kpi-barra-inferior-filtros">
+        <div class="kpi-periodo-activo-badge">
+          Período evaluado: <strong>{{ kpi.rango.nombre_periodo }}</strong>
+        </div>
+        <div class="kpi-exportar-acciones">
+          <a href="{% url 'exportar_kpis_csv' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}"
+             class="kpi-boton-exportar"
+             title="Descargar registros de ventas ordenados cronológicamente y por ID como en la base de datos (CSV compatible con Excel)">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Exportar a CSV</span>
+          </a>
+          <a href="{% url 'exportar_kpis_csv' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}&formato=detallado"
+             class="kpi-boton-exportar kpi-boton-exportar--secundario"
+             title="Descargar desglose ítem por ítem como en la tabla relacional de la base de datos">
+            <span>Detalle por Producto</span>
+          </a>
+        </div>
       </div>
     </div>
   </header>
