@@ -5329,6 +5329,26 @@ a.historial-paginacion__enlace--actual:hover {
   text-transform: uppercase;
 }
 
+/* Botón alternativo CSV */
+.kpi-boton-exportar--csv {
+  background: linear-gradient(135deg, #2b6140 0%, #1f472f 100%);
+  color: #ffffff !important;
+  border: 1px solid #1a3c27;
+  box-shadow: 0 3px 8px rgba(31, 71, 47, 0.2);
+}
+
+.kpi-boton-exportar--csv:hover {
+  background: linear-gradient(135deg, #35764f 0%, #255539 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(31, 71, 47, 0.28);
+  color: #ffffff !important;
+}
+
+.kpi-boton-exportar__badge--csv {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
 /* Botón secundario para detalle producto por producto */
 .kpi-boton-exportar--secundario {
   background: #ffffff;

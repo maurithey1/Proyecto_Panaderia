@@ -30,6 +30,7 @@ urlpatterns = [
     path('panel-admin/', views.inicio_admin, name='inicio_admin'),
     path('panel-admin/kpis/', views.dashboard_kpis, name='dashboard_kpis'),
     path('panel-admin/kpis/detalle/', views.detalle_kpi, name='detalle_kpi'),
+    path('panel-admin/kpis/exportar-excel/', views.exportar_kpis_excel, name='exportar_kpis_excel'),
     path('panel-admin/kpis/exportar-csv/', views.exportar_kpis_csv, name='exportar_kpis_csv'),
     path('panel-admin/usuarios/', views.gestion_usuarios, name='gestion_usuarios'),
     path('panel-admin/inventario/historial-precios/', views.historial_precios_insumos, name='historial_precios_insumos'),

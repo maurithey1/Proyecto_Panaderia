@@ -73,9 +73,9 @@
             Exportar reporte:
           </span>
 
-          <a href="{% url 'exportar_kpis_csv' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}"
+          <a href="{% url 'exportar_kpis_excel' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}"
              class="kpi-boton-exportar kpi-boton-exportar--excel"
-             title="Descargar tabla oficial de ventas ordenada por base de datos (Compatible 100% con Microsoft Excel)">
+             title="Descargar libro oficial Microsoft Excel (.xlsx) con 3 hojas, diseño ejecutivo, fórmulas contables y colores">
             <span class="kpi-boton-exportar__icono">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -83,14 +83,21 @@
                 <line x1="12" y1="15" x2="12" y2="3"></line>
               </svg>
             </span>
-            <span class="kpi-boton-exportar__texto">Exportar a CSV</span>
-            <span class="kpi-boton-exportar__badge">EXCEL</span>
+            <span class="kpi-boton-exportar__texto">Exportar a Excel</span>
+            <span class="kpi-boton-exportar__badge">.XLSX</span>
+          </a>
+
+          <a href="{% url 'exportar_kpis_csv' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}"
+             class="kpi-boton-exportar kpi-boton-exportar--csv"
+             title="Descargar archivo CSV ordenado compatible de inmediato con Excel">
+            <span class="kpi-boton-exportar__texto">Exportar CSV</span>
+            <span class="kpi-boton-exportar__badge kpi-boton-exportar__badge--csv">.CSV</span>
           </a>
 
           <a href="{% url 'exportar_kpis_csv' %}?periodo={{ periodo_seleccionado }}&desde={{ desde_seleccionado }}&hasta={{ hasta_seleccionado }}&formato=detallado"
              class="kpi-boton-exportar kpi-boton-exportar--secundario"
-             title="Descargar detalle producto por producto con precios y subtotales">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+             title="Descargar desglose de productos y subtotales en formato plano">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="8" y1="6" x2="21" y2="6"></line>
               <line x1="8" y1="12" x2="21" y2="12"></line>
               <line x1="8" y1="18" x2="21" y2="18"></line>
@@ -98,7 +105,7 @@
               <line x1="3" y1="12" x2="3.01" y2="12"></line>
               <line x1="3" y1="18" x2="3.01" y2="18"></line>
             </svg>
-            <span>Detalle por Ítem</span>
+            <span>Detalle Ítems</span>
           </a>
         </div>
       </div>

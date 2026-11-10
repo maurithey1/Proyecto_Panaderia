@@ -1078,6 +1078,32 @@ def detalle_kpi(request):
 
 @admin_required
 @require_GET
+def exportar_kpis_excel(request):
+    """
+    Genera y descarga un libro oficial en formato Microsoft Excel (.xlsx)
+    con estilos visuales de alta calidad, banner institucional de Panadería Los Tres SpA,
+    múltiples hojas (Ventas, Detalle por Ítem y KPIs), formato cebra,
+    bordes contables y fórmulas nativas de suma y cálculo en pesos chilenos ($ CLP).
+    """
+    periodo = request.GET.get('periodo', 'todo')
+    desde = request.GET.get('desde') or None
+    hasta = request.GET.get('hasta') or None
+
+    from .reporte_excel import generar_libro_excel_kpis
+
+    bytes_excel = generar_libro_excel_kpis(periodo=periodo, desde=desde, hasta=hasta)
+
+    nombre_archivo = f"reporte_excel_panaderia_{periodo}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    response = HttpResponse(
+        bytes_excel,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+    return response
+
+
+@admin_required
+@require_GET
 def exportar_kpis_csv(request):
     """
     Exporta las ventas y transacciones a un archivo CSV perfectamente ordenado y formateado para Excel.
