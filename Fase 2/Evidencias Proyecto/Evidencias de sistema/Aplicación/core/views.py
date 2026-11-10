@@ -2,6 +2,7 @@ import re
 import time
 import unicodedata
 import json
+import csv
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
@@ -1044,7 +1045,7 @@ def inicio_admin(request):
 
 @admin_required
 def dashboard_kpis(request):
-    periodo = request.GET.get('periodo', 'mes')
+    periodo = request.GET.get('periodo', 'todo')
     desde = request.GET.get('desde', None)
     hasta = request.GET.get('hasta', None)
 
@@ -1073,6 +1074,277 @@ def detalle_kpi(request):
     if datos is None:
         return JsonResponse({'error': 'Elemento no válido.'}, status=400)
     return JsonResponse(datos)
+
+
+@admin_required
+@require_GET
+def exportar_kpis_excel(request):
+    """
+    Genera y descarga un libro oficial en formato Microsoft Excel (.xlsx)
+    con estilos visuales de alta calidad, banner institucional de Panadería Los Tres SpA,
+    múltiples hojas (Ventas, Detalle por Ítem y KPIs), formato cebra,
+    bordes contables y fórmulas nativas de suma y cálculo en pesos chilenos ($ CLP).
+    """
+    periodo = request.GET.get('periodo', 'todo')
+    desde = request.GET.get('desde') or None
+    hasta = request.GET.get('hasta') or None
+
+    from .reporte_excel import generar_libro_excel_kpis
+
+    bytes_excel = generar_libro_excel_kpis(periodo=periodo, desde=desde, hasta=hasta)
+
+    nombre_archivo = f"reporte_excel_panaderia_{periodo}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    response = HttpResponse(
+        bytes_excel,
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+    return response
+
+
+@admin_required
+@require_GET
+def exportar_kpis_csv(request):
+    """
+    Exporta las ventas y transacciones a un archivo CSV perfectamente ordenado y formateado para Excel.
+    Compatible con Microsoft Excel en Windows mediante UTF-8 con BOM, directiva 'sep=;' y columnas legibles.
+    """
+    periodo = request.GET.get('periodo', 'todo')
+    desde = request.GET.get('desde') or None
+    hasta = request.GET.get('hasta') or None
+    formato = request.GET.get('formato', 'transaccional')
+
+    # Filtrar según el período seleccionado
+    rango = metricas_kpi._obtener_rango_fechas(periodo, desde, hasta)
+    inicio = rango.get('inicio_actual')
+    fin = rango.get('fin_actual')
+
+    pedidos_qs = Pedido.objects.all()
+    if inicio and fin:
+        pedidos_qs = pedidos_qs.filter(fecha__gte=inicio, fecha__lte=fin)
+
+    # Ordenar como en la base de datos (por clave primaria ID ascendente)
+    pedidos_qs = pedidos_qs.order_by('id')
+
+    nombre_archivo = f"reporte_ventas_{periodo}_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{nombre_archivo}"'
+
+    # Escribir BOM de UTF-8 para garantizar apertura con tildes y caracteres en español en Excel
+    response.write('\ufeff')
+    # Directiva para que Excel reconozca y separe automáticamente las columnas en celdas individuales
+    response.write('sep=;\r\n')
+
+    writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+
+    if formato == 'detallado':
+        # Encabezados de tabla relacional por ítem vendido
+        writer.writerow([
+            'N° Detalle',
+            'N° Pedido',
+            'Fecha y Hora',
+            'Canal de Venta',
+            'Estado Pedido',
+            'Código Producto',
+            'Nombre del Producto',
+            'Categoría',
+            'Cantidad Unidades',
+            'Precio Unitario ($ CLP)',
+            'Subtotal Ítem ($ CLP)',
+            'Total del Pedido ($ CLP)',
+            'Modalidad Entrega',
+            'Cliente',
+            'RUT Cliente',
+            'Cajero Responsable',
+            'Medio de Pago',
+            'Código Comprobante',
+        ])
+
+        detalles_qs = (
+            DetallePedido.objects.filter(pedido__in=pedidos_qs)
+            .select_related(
+                'pedido', 'pedido__cliente', 'pedido__cliente__user',
+                'pedido__cajero', 'pedido__cajero__user', 'pedido__pago',
+                'producto', 'producto__categoria'
+            )
+            .order_by('pedido__id', 'id')
+        )
+
+        suma_unidades = 0
+        suma_subtotales = 0
+
+        for d in detalles_qs:
+            ped = d.pedido
+            pago = getattr(ped, 'pago', None)
+
+            cliente_nombre = 'Venta Mostrador'
+            cliente_rut = 'Sin RUT'
+            if ped.cliente and ped.cliente.user:
+                cliente_nombre = ped.cliente.user.get_full_name() or ped.cliente.user.username
+                cliente_rut = getattr(ped.cliente.user, 'rut', None) or getattr(ped.cliente, 'rut', 'Sin RUT')
+
+            cajero_nombre = 'Sistema Web'
+            if ped.cajero and ped.cajero.user:
+                cajero_nombre = ped.cajero.user.get_full_name() or ped.cajero.user.username
+
+            categoria_nombre = d.producto.categoria.nombre if d.producto.categoria else 'Sin Categoría'
+            fecha_str = ped.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
+
+            suma_unidades += d.cantidad
+            suma_subtotales += int(d.subtotal)
+
+            writer.writerow([
+                d.id,
+                ped.id,
+                fecha_str,
+                ped.get_canal_display(),
+                ped.get_estado_display(),
+                d.producto.id,
+                d.producto.nombre,
+                categoria_nombre,
+                d.cantidad,
+                int(d.precio_unitario),
+                int(d.subtotal),
+                int(ped.total),
+                ped.get_tipo_entrega_display(),
+                cliente_nombre,
+                cliente_rut,
+                cajero_nombre,
+                pago.metodo if pago else 'Sin registro',
+                (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A'),
+            ])
+
+        # Fila final de totalización para Excel
+        writer.writerow([
+            'TOTALES',
+            f'{detalles_qs.count()} registros',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            suma_unidades,
+            '-',
+            suma_subtotales,
+            suma_subtotales,
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+        ])
+
+    else:
+        # Encabezados de tabla transaccional (1 registro ordenado por Pedido de la base de datos)
+        writer.writerow([
+            'N° Pedido',
+            'Fecha y Hora',
+            'Canal de Venta',
+            'Estado Pedido',
+            'Modalidad de Entrega',
+            'Dirección / Franja de Entrega',
+            'Cliente',
+            'RUT Cliente',
+            'Correo Electrónico',
+            'Teléfono Contacto',
+            'Cajero Responsable',
+            'Medio de Pago',
+            'Estado del Pago',
+            'Código Comprobante',
+            'Cantidad Total Unidades',
+            'Detalle de Productos Comprados',
+            'Monto Total Venta ($ CLP)',
+        ])
+
+        pedidos_con_relaciones = (
+            pedidos_qs
+            .select_related('cliente', 'cliente__user', 'cajero', 'cajero__user', 'pago')
+            .prefetch_related('detalles', 'detalles__producto')
+        )
+
+        total_pedidos = 0
+        total_unidades_general = 0
+        total_monto_general = 0
+
+        for p in pedidos_con_relaciones:
+            pago = getattr(p, 'pago', None)
+
+            cliente_nombre = 'Venta Mostrador (Público General)'
+            cliente_rut = 'Sin RUT'
+            cliente_email = 'N/A'
+            cliente_telefono = 'N/A'
+            if p.cliente:
+                if p.cliente.user:
+                    cliente_nombre = p.cliente.user.get_full_name() or p.cliente.user.username
+                    cliente_email = p.cliente.user.email or 'N/A'
+                    cliente_rut = getattr(p.cliente.user, 'rut', None) or getattr(p.cliente, 'rut', 'Sin RUT')
+                cliente_telefono = getattr(p.cliente, 'telefono', None) or 'N/A'
+
+            cajero_nombre = 'Sistema Web'
+            if p.cajero and p.cajero.user:
+                cajero_nombre = p.cajero.user.get_full_name() or p.cajero.user.username
+
+            metodo_pago = pago.metodo if pago else 'Sin registro'
+            estado_pago = pago.estado if pago else 'N/A'
+            codigo_auth = (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A')
+
+            detalles_list = list(p.detalles.all())
+            unidades_pedido = sum(d.cantidad for d in detalles_list)
+            desglose_items = ' | '.join(
+                [f"{d.producto.nombre} ({d.cantidad} un. - ${int(d.subtotal):,} CLP)".replace(',', '.') for d in detalles_list]
+            ) if detalles_list else 'Sin ítems'
+
+            fecha_local = p.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
+
+            monto_int = int(p.total)
+            total_pedidos += 1
+            total_unidades_general += unidades_pedido
+            total_monto_general += monto_int
+
+            writer.writerow([
+                p.id,
+                fecha_local,
+                p.get_canal_display(),
+                p.get_estado_display(),
+                p.get_tipo_entrega_display(),
+                p.direccion_despacho or 'N/A',
+                cliente_nombre,
+                cliente_rut,
+                cliente_email,
+                cliente_telefono,
+                cajero_nombre,
+                metodo_pago,
+                estado_pago,
+                codigo_auth,
+                unidades_pedido,
+                desglose_items,
+                monto_int,
+            ])
+
+        # Fila final de totalización para visualización y cuadratura rápida en Excel
+        writer.writerow([
+            'TOTALES',
+            f'{total_pedidos} transacciones',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            '-',
+            total_unidades_general,
+            f'{total_pedidos} pedidos analizados',
+            total_monto_general,
+        ])
+
+    return response
 
 @admin_required
 def gestion_usuarios(request):
@@ -2899,6 +3171,7 @@ def detalle_adquisicion(request):
     if datos is None:
         return JsonResponse({'error': 'Elemento no válido.'}, status=400)
     return JsonResponse(datos)
+
 
 @admin_required
 def crear_orden_compra(request):

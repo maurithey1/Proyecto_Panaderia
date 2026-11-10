@@ -5213,12 +5213,50 @@ a.historial-paginacion__enlace--actual:hover {
   background: #963f1c;
 }
 
+.kpi-barra-inferior-filtros {
+  margin-top: 0.85rem;
+  border-top: 1px dashed var(--borde, #e6d5bc);
+  padding-top: 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .kpi-periodo-activo-badge {
-  margin-top: 0.75rem;
   font-size: 0.85rem;
-  color: var(--texto-suave);
-  border-top: 1px dashed var(--borde);
-  padding-top: 0.6rem;
+  color: var(--texto-suave, #6e5848);
+}
+
+.kpi-exportar-contenedor {
+  display: inline-flex;
+  align-items: center;
+}
+
+.kpi-boton-simple {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background-color: #2d7a4f;
+  color: #ffffff !important;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.45rem 0.95rem;
+  border-radius: 6px;
+  text-decoration: none !important;
+  border: 1px solid #236340;
+  transition: background-color 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.kpi-boton-simple:hover {
+  background-color: #236340;
+  color: #ffffff !important;
+}
+
+.kpi-boton-simple svg {
+  display: block;
 }
 
 /* Grilla de Tarjetas Resumen (KPI Cards) */
