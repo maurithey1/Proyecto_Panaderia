@@ -102,6 +102,8 @@ document.addEventListener('DOMContentLoaded', function () {
             filtrarProductos();
         });
     });
+    // Ejecutar filtro inicial al cargar la página
+    filtrarProductos();
 });
 
 // Estado global de la orden en POS
@@ -111,6 +113,21 @@ let metodoPagoSeleccionado = 'efectivo';
 // Formateador CLP
 function formatoCLP(monto) {
     return '$' + Math.round(monto).toLocaleString('es-CL');
+}
+
+// Formateo de precios en CLP en tiempo real (Ej: 15000 -> $ 15.000)
+function formatearPrecio(val) {
+    const limpio = String(val || '').replace(/\D/g, '');
+    if (!limpio) return '';
+
+    const formatoMiles = parseInt(limpio, 10).toLocaleString('es-CL');
+    return `$ ${formatoMiles}`;
+}
+
+// Normaliza una cadena formateada ("$ 15.000") a número entero (15000)
+function normalizarPrecioPos(val) {
+    const limpio = String(val || '').replace(/\D/g, '');
+    return limpio ? parseInt(limpio, 10) : 0;
 }
 
 // Obtener token CSRF de Django (soporta tanto input hidden como cookie)
@@ -276,7 +293,7 @@ function calcularTotalesPos() {
         return;
     }
 
-    const pagaCon = parseFloat(inputPagaCon ? inputPagaCon.value : 0) || 0;
+    const pagaCon = normalizarPrecioPos(inputPagaCon ? inputPagaCon.value : '');
     const vuelto = pagaCon - totalGral;
 
     if (elVuelto) {
@@ -299,6 +316,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const btnTarjeta = document.getElementById('btnPagoTarjeta');
     const inputPagaCon = document.getElementById('inputPagaCon');
     const seccionPagaCon = document.getElementById('seccionPagaCon');
+    const seccionVuelto = document.getElementById('seccionVuelto');
     const btnFinalizar = document.getElementById('btnFinalizarVenta');
     const btnCancelar = document.getElementById('btnCancelarVenta');
 
@@ -308,6 +326,7 @@ document.addEventListener('DOMContentLoaded', function () {
             btnEfectivo.classList.add('activo');
             if (btnTarjeta) btnTarjeta.classList.remove('activo');
             if (seccionPagaCon) seccionPagaCon.style.display = 'flex';
+            if (seccionVuelto) seccionVuelto.style.display = '';
             calcularTotalesPos();
         });
     }
@@ -318,12 +337,17 @@ document.addEventListener('DOMContentLoaded', function () {
             btnTarjeta.classList.add('activo');
             if (btnEfectivo) btnEfectivo.classList.remove('activo');
             if (seccionPagaCon) seccionPagaCon.style.display = 'none';
+            if (seccionVuelto) seccionVuelto.style.display = 'none';
+            if (inputPagaCon) inputPagaCon.value = '';
             calcularTotalesPos();
         });
     }
 
     if (inputPagaCon) {
-        inputPagaCon.addEventListener('input', calcularTotalesPos);
+        inputPagaCon.addEventListener('input', function (e) {
+            e.target.value = formatearPrecio(e.target.value);
+            calcularTotalesPos();
+        });
     }
 
     // Cancelar Venta
@@ -340,7 +364,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Finalizar Venta y Redireccionar a Webpay en Tarjeta
+    // Finalizar Venta (Efectivo o Tarjeta POS sin redirección)
     if (btnFinalizar) {
         btnFinalizar.addEventListener('click', async function () {
             if (carritoPos.length === 0) {
@@ -349,7 +373,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             const totalGral = carritoPos.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
-            const pagaCon = parseFloat(inputPagaCon ? inputPagaCon.value : 0) || 0;
+            const pagaCon = normalizarPrecioPos(inputPagaCon ? inputPagaCon.value : '');
 
             if (metodoPagoSeleccionado === 'efectivo' && pagaCon < totalGral) {
                 mostrarToast(`El efectivo ingresado (${formatoCLP(pagaCon)}) es menor al total (${formatoCLP(totalGral)}).`, 'error');
@@ -391,19 +415,37 @@ document.addEventListener('DOMContentLoaded', function () {
                     return;
                 }
 
-                // Redirección a Webpay o Confirmación en Efectivo
-                if (data.metodo === 'tarjeta' && data.url_webpay) {
-                    mostrarToast('Redirigiendo a pasarela Webpay Plus...', 'info');
-                    setTimeout(() => {
-                        window.location.href = data.url_webpay;
-                    }, 800);
-                } else {
-                    mostrarToast(data.mensaje, 'success');
-                    carritoPos = [];
-                    if (inputPagaCon) inputPagaCon.value = '';
-                    renderizarSincronizado();
-                    btnFinalizar.disabled = false;
-                }
+                // Confirmación directa para Efectivo y Tarjeta (sin salir de la pantalla del POS)
+                mostrarToast(data.mensaje, 'success');
+
+                // Descontar visualmente el stock en las tarjetas del catálogo
+                carritoPos.forEach(item => {
+                    const card = document.querySelector(`.cajero-prod-card[data-id="${item.id}"]`);
+                    if (card) {
+                        const nuevoStock = Math.max(0, parseInt(card.getAttribute('data-stock')) - item.cantidad);
+                        card.setAttribute('data-stock', nuevoStock);
+                        const badge = card.querySelector('.cajero-badge-stock');
+                        if (badge) {
+                            if (nuevoStock > 0) {
+                                badge.textContent = `Stock: ${nuevoStock}`;
+                            } else {
+                                badge.textContent = 'Agotado';
+                                badge.className = 'cajero-badge-stock sin-stock';
+                                card.classList.add('agotado');
+                                const acciones = card.querySelector('.cajero-prod-acciones');
+                                if (acciones) {
+                                    acciones.innerHTML = '<button type="button" class="cajero-btn-agregar agotado" disabled>Sin Stock</button>';
+                                }
+                            }
+                        }
+                    }
+                });
+
+                // Limpiar carrito y reiniciar formulario para el siguiente cliente
+                carritoPos = [];
+                if (inputPagaCon) inputPagaCon.value = '';
+                renderizarSincronizado();
+                btnFinalizar.disabled = false;
 
             } catch (err) {
                 console.error('Error finalizando venta:', err);

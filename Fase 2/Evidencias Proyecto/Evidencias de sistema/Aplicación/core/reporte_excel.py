@@ -90,14 +90,14 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     fecha_emision = timezone.now().astimezone(timezone.get_current_timezone()).strftime('%d/%m/%Y %H:%M')
 
     # ==========================================================================
-    # HOJA 1: RESUMEN DE VENTAS Y TRANSACCIONES
+    # HOJA 1: RESUMEN DE VENTAS Y TRANSACCIONES (18 COLUMNAS: A -> R)
     # ==========================================================================
     ws1 = wb.active
     ws1.title = "Ventas y Pedidos"
     ws1.views.sheetView[0].showGridLines = True
 
     # 1. Banner Institucional
-    ws1.merge_cells('A1:Q1')
+    ws1.merge_cells('A1:R1')
     celda_titulo = ws1['A1']
     celda_titulo.value = "PANADERÍA LOS TRES SPA — REPORTE DE VENTAS Y TRANSACCIONES"
     celda_titulo.font = Font(name='Segoe UI', size=13, bold=True, color=COLORES['texto_blanco'])
@@ -105,7 +105,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     celda_titulo.alignment = Alignment(horizontal='center', vertical='center')
     ws1.row_dimensions[1].height = 34
 
-    ws1.merge_cells('A2:Q2')
+    ws1.merge_cells('A2:R2')
     celda_sub = ws1['A2']
     celda_sub.value = f"Período evaluado: {rango.get('nombre_periodo', 'Histórico completo')}   |   Fecha de emisión: {fecha_emision}   |   Sistema de Control Gerencial"
     celda_sub.font = Font(name='Segoe UI', size=9.5, italic=True, color=COLORES['texto_suave'])
@@ -115,7 +115,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
 
     ws1.row_dimensions[3].height = 8
 
-    # 2. Encabezados de Tabla
+    # 2. Encabezados de Tabla (18 columnas)
     encabezados_ws1 = [
         ('N° Pedido', 11, 'center'),
         ('Fecha y Hora', 19, 'center'),
@@ -123,11 +123,12 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         ('Estado Pedido', 16, 'center'),
         ('Modalidad Entrega', 18, 'center'),
         ('Dirección / Franja', 28, 'left'),
-        ('Cliente', 24, 'left'),
+        ('Tipo de Cliente', 20, 'center'),
+        ('Cliente', 28, 'left'),
         ('RUT Cliente', 14, 'center'),
         ('Correo Electrónico', 24, 'left'),
         ('Teléfono', 14, 'center'),
-        ('Cajero Responsable', 20, 'left'),
+        ('Cajero Responsable', 24, 'left'),
         ('Medio de Pago', 18, 'center'),
         ('Estado Pago', 14, 'center'),
         ('Código Comprobante', 24, 'center'),
@@ -153,20 +154,16 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     for p in pedidos_lista:
         pago = getattr(p, 'pago', None)
 
-        cliente_nombre = 'Venta Mostrador (Público General)'
         cliente_rut = 'Sin RUT'
         cliente_email = 'N/A'
         cliente_telefono = 'N/A'
-        if p.cliente:
-            if p.cliente.user:
-                cliente_nombre = p.cliente.user.get_full_name() or p.cliente.user.username
-                cliente_email = p.cliente.user.email or 'N/A'
-                cliente_rut = getattr(p.cliente.user, 'rut', None) or getattr(p.cliente, 'rut', 'Sin RUT')
+        if p.cliente and p.cliente.user:
+            cliente_nombre = p.cliente.user.get_full_name() or p.cliente.user.username
+            cliente_email = p.cliente.user.email or 'N/A'
+            cliente_rut = getattr(p.cliente.user, 'rut', None) or getattr(p.cliente, 'rut', 'Sin RUT')
             cliente_telefono = getattr(p.cliente, 'telefono', None) or 'N/A'
-
-        cajero_nombre = 'Sistema Web'
-        if p.cajero and p.cajero.user:
-            cajero_nombre = p.cajero.user.get_full_name() or p.cajero.user.username
+        else:
+            cliente_nombre = p.nombre_cliente_display
 
         metodo_pago = pago.metodo if pago else 'Sin registro'
         estado_pago = pago.estado if pago else 'N/A'
@@ -187,15 +184,16 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         valores_fila = [
             (p.id, 'center', None),
             (fecha_str, 'center', None),
-            (p.get_canal_display(), 'center', None),
+            (p.nombre_canal_display, 'center', None),
             (p.get_estado_display(), 'center', None),
             (p.get_tipo_entrega_display(), 'center', None),
-            (p.direccion_despacho or 'Retiro en local', 'left', None),
+            (p.direccion_entrega_display, 'left', None),
+            (p.tipo_cliente_display, 'center', None),
             (cliente_nombre, 'left', None),
             (cliente_rut, 'center', None),
             (cliente_email, 'left', None),
             (cliente_telefono, 'center', None),
-            (cajero_nombre, 'left', None),
+            (p.nombre_cajero_display, 'left', None),
             (metodo_pago, 'center', None),
             (estado_pago, 'center', None),
             (codigo_auth, 'center', None),
@@ -215,7 +213,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
             if fmt:
                 celda.number_format = fmt
 
-        # Estilo de badge condicional en la celda de estado
+        # Estilo de badge condicional en la celda de estado (columna 4)
         celda_estado = ws1.cell(row=fila_actual, column=4)
         if p.estado in ['PAGADO', 'LISTO', 'ENTREGADO']:
             celda_estado.fill = PatternFill(start_color=COLORES['estado_pagado_bg'], end_color=COLORES['estado_pagado_bg'], fill_type='solid')
@@ -240,7 +238,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     )
     fill_totales = PatternFill(start_color=COLORES['totales_bg'], end_color=COLORES['totales_bg'], fill_type='solid')
 
-    for c_idx in range(1, 18):
+    for c_idx in range(1, 19):
         cel = ws1.cell(row=fila_totales, column=c_idx)
         cel.fill = fill_totales
         cel.border = borde_totales
@@ -252,33 +250,32 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     ws1.cell(row=fila_totales, column=2, value=f"{len(pedidos_lista)} transacciones")
     ws1.cell(row=fila_totales, column=2).alignment = Alignment(horizontal='center', vertical='center')
 
-    # Suma de Unidades
+    # Suma de Unidades (Columna 16 = P) y Suma de Facturación (Columna 18 = R)
     if pedidos_lista:
-        cel_uds = ws1.cell(row=fila_totales, column=15)
-        cel_uds.value = f"=SUM(O5:O{fila_totales - 1})"
+        cel_uds = ws1.cell(row=fila_totales, column=16)
+        cel_uds.value = f"=SUM(P5:P{fila_totales - 1})"
         cel_uds.alignment = Alignment(horizontal='center', vertical='center')
         cel_uds.number_format = '#,##0'
 
-        # Suma de Facturación
-        cel_tot = ws1.cell(row=fila_totales, column=17)
-        cel_tot.value = f"=SUM(Q5:Q{fila_totales - 1})"
+        cel_tot = ws1.cell(row=fila_totales, column=18)
+        cel_tot.value = f"=SUM(R5:R{fila_totales - 1})"
         cel_tot.alignment = Alignment(horizontal='right', vertical='center')
         cel_tot.number_format = '"$"#,##0'
 
     # Activar Autofiltro de Excel en toda la tabla
-    ws1.auto_filter.ref = f"A4:Q{fila_totales - 1}"
+    ws1.auto_filter.ref = f"A4:R{fila_totales - 1}"
 
     # Aplicar anchos óptimos
     _ajustar_anchos(ws1)
 
 
     # ==========================================================================
-    # HOJA 2: DETALLE ÍTEM POR ÍTEM (TABLA RELACIONAL)
+    # HOJA 2: DETALLE ÍTEM POR ÍTEM (15 COLUMNAS: A -> O)
     # ==========================================================================
     ws2 = wb.create_sheet(title="Detalle por Ítem")
     ws2.views.sheetView[0].showGridLines = True
 
-    ws2.merge_cells('A1:N1')
+    ws2.merge_cells('A1:O1')
     celda_tit2 = ws2['A1']
     celda_tit2.value = "PANADERÍA LOS TRES SPA — DETALLE NORMALIZADO POR PRODUCTO"
     celda_tit2.font = Font(name='Segoe UI', size=13, bold=True, color=COLORES['texto_blanco'])
@@ -286,7 +283,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     celda_tit2.alignment = Alignment(horizontal='center', vertical='center')
     ws2.row_dimensions[1].height = 34
 
-    ws2.merge_cells('A2:N2')
+    ws2.merge_cells('A2:O2')
     celda_sub2 = ws2['A2']
     celda_sub2.value = f"Desglose ítem por ítem   |   Período: {rango.get('nombre_periodo', 'Histórico completo')}   |   Emisión: {fecha_emision}"
     celda_sub2.font = Font(name='Segoe UI', size=9.5, italic=True, color=COLORES['texto_suave'])
@@ -310,6 +307,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         ('Subtotal Ítem ($ CLP)', 'right'),
         ('Total Pedido ($ CLP)', 'right'),
         ('Modalidad Entrega', 'center'),
+        ('Tipo de Cliente', 'center'),
         ('Cliente', 'left'),
     ]
 
@@ -333,9 +331,10 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     fila_d = 5
     for det in detalles_qs:
         ped = det.pedido
-        cliente_nom = 'Venta Mostrador'
         if ped.cliente and ped.cliente.user:
             cliente_nom = ped.cliente.user.get_full_name() or ped.cliente.user.username
+        else:
+            cliente_nom = ped.nombre_cliente_display
 
         cat_nom = det.producto.categoria.nombre if det.producto.categoria else 'Sin Categoría'
         f_str = ped.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
@@ -349,7 +348,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
             (det.id, 'center', None),
             (ped.id, 'center', None),
             (f_str, 'center', None),
-            (ped.get_canal_display(), 'center', None),
+            (ped.nombre_canal_display, 'center', None),
             (ped.get_estado_display(), 'center', None),
             (det.producto.id, 'center', None),
             (det.producto.nombre, 'left', None),
@@ -359,6 +358,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
             (int(det.subtotal), 'right', '"$"#,##0'),
             (int(ped.total), 'right', '"$"#,##0'),
             (ped.get_tipo_entrega_display(), 'center', None),
+            (ped.tipo_cliente_display, 'center', None),
             (cliente_nom, 'left', None),
         ]
 
@@ -375,7 +375,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
 
     # Totales hoja 2
     ws2.row_dimensions[fila_d].height = 24
-    for c_idx in range(1, 15):
+    for c_idx in range(1, 16):
         c_tot2 = ws2.cell(row=fila_d, column=c_idx)
         c_tot2.fill = fill_totales
         c_tot2.border = borde_totales
@@ -397,7 +397,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         c_sub2.alignment = Alignment(horizontal='right', vertical='center')
         c_sub2.number_format = '"$"#,##0'
 
-    ws2.auto_filter.ref = f"A4:N{fila_d - 1}"
+    ws2.auto_filter.ref = f"A4:O{fila_d - 1}"
     _ajustar_anchos(ws2)
 
 
@@ -436,7 +436,9 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
     metricas_globales = [
         ("Ingresos Totales por Ventas", int(datos_kpi.get('total_ingresos', 0)), '"$"#,##0'),
         ("Volumen de Transacciones", datos_kpi.get('volumen_transacciones', 0), '#,##0'),
-        ("Ticket Promedio por Pedido", int(datos_kpi.get('ticket_promedio', 0)), '"$"#,##0'),
+        ("Ticket Promedio General", int(datos_kpi.get('ticket_promedio', 0)), '"$"#,##0'),
+        ("Ticket Promedio POS (Presencial)", int(datos_kpi.get('ticket_promedio_pos', 0)), '"$"#,##0'),
+        ("Ticket Promedio Web (E-commerce)", int(datos_kpi.get('ticket_promedio_web', 0)), '"$"#,##0'),
         ("Ventas Canal POS (Presencial)", int(datos_kpi.get('monto_pos', 0)), '"$"#,##0'),
         ("Participación POS (%)", f"{datos_kpi.get('pct_pos', 0)}%", None),
         ("Ventas Canal Web (E-commerce)", int(datos_kpi.get('monto_web', 0)), '"$"#,##0'),
@@ -481,6 +483,62 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
             ws3.cell(row=r_top, column=c_t).border = borde_datos
             ws3.cell(row=r_top, column=c_t).font = Font(name='Segoe UI', size=9.5)
         r_top += 1
+
+    # Tabla 3: Segmentación de Compradores (Registrados vs Invitados Web vs Mostrador POS)
+    fila_seg_titulo = max(r_top + 1, 12)
+    ws3.cell(row=fila_seg_titulo, column=4, value="3. Segmentación de Compradores").font = Font(name='Segoe UI', size=11, bold=True, color='107C41')
+
+    fila_seg_header = fila_seg_titulo + 1
+    encab_seg = [
+        ('Perfil de Comprador', 'left'),
+        ('Pedidos', 'center'),
+        ('Participación', 'center'),
+        ('Monto ($ CLP)', 'right'),
+    ]
+    for idx_s, (s_nom, s_al) in enumerate(encab_seg, start=4):
+        c_sh = ws3.cell(row=fila_seg_header, column=idx_s, value=s_nom)
+        c_sh.font = Font(name='Segoe UI', size=9.5, bold=True, color='FFFFFF')
+        c_sh.fill = PatternFill(start_color='107C41', end_color='107C41', fill_type='solid')
+        c_sh.alignment = Alignment(horizontal=s_al, vertical='center')
+
+    segmentos = [
+        (
+            "Clientes Registrados (con cuenta)",
+            datos_kpi.get('cant_registrados', 0),
+            f"{datos_kpi.get('pct_registrados', 0)}%",
+            int(datos_kpi.get('monto_registrados', 0)),
+        ),
+        (
+            "Invitados Web (sin cuenta)",
+            datos_kpi.get('cant_invitados_web', 0),
+            f"{datos_kpi.get('pct_invitados_web', 0)}%",
+            int(datos_kpi.get('monto_invitados_web', 0)),
+        ),
+        (
+            "Mostrador POS (presencial)",
+            datos_kpi.get('cant_mostrador_pos', 0),
+            f"{datos_kpi.get('pct_mostrador_pos', 0)}%",
+            int(datos_kpi.get('monto_mostrador_pos', 0)),
+        ),
+    ]
+
+    r_seg = fila_seg_header + 1
+    for perfil_nom, cant_ped, pct_seg, monto_seg in segmentos:
+        ws3.cell(row=r_seg, column=4, value=perfil_nom).alignment = Alignment(horizontal='left')
+        c_cant = ws3.cell(row=r_seg, column=5, value=cant_ped)
+        c_cant.number_format = '#,##0'
+        c_cant.alignment = Alignment(horizontal='center')
+
+        ws3.cell(row=r_seg, column=6, value=pct_seg).alignment = Alignment(horizontal='center')
+
+        c_mto = ws3.cell(row=r_seg, column=7, value=monto_seg)
+        c_mto.number_format = '"$"#,##0'
+        c_mto.alignment = Alignment(horizontal='right')
+
+        for c_s in range(4, 8):
+            ws3.cell(row=r_seg, column=c_s).border = borde_datos
+            ws3.cell(row=r_seg, column=c_s).font = Font(name='Segoe UI', size=9.5)
+        r_seg += 1
 
     _ajustar_anchos(ws3)
 

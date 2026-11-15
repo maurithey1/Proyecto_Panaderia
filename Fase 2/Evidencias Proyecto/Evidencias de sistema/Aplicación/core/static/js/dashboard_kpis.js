@@ -736,9 +736,13 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     };
 
-    // Ajustes específicos según el gráfico
+   // Ajustes específicos según el gráfico
     if (configClon.type === 'doughnut') {
       opcionesModal.cutout = '62%';
+    }
+    if (configClon.type === 'pie') {
+      configClon.type = 'doughnut';
+      opcionesModal.cutout = '0%';
     }
     if (chartOriginal.config.options.indexAxis === 'y') {
       opcionesModal.indexAxis = 'y';

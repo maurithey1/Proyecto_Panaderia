@@ -71,8 +71,11 @@
         <p class="cajero-vacio">No hay productos registrados disponibles para venta.</p>
       {% endfor %}
 
-      <p class="cajero-vacio d-none" id="msgSinResultados">No se encontraron productos para esta búsqueda.</p>
     </div>
+
+    <p class="cajero-vacio" id="msgSinResultados" style="display: none; text-align: center; width: 100%; padding: 2rem 0;">
+      No se encontraron productos para esta búsqueda.
+    </p>
 
   </section>
 
@@ -126,19 +129,25 @@
     <!-- Bloque de Ingreso Efectivo (Paga con) -->
     <div class="cajero-pago-seccion" id="seccionPagaCon">
       <label for="inputPagaCon" class="cajero-pago-label">Paga con (Efectivo recibido):</label>
-      <input type="number" id="inputPagaCon" class="cajero-buscar-input" placeholder="$0" min="0" step="100">
+      <input type="text" id="inputPagaCon" class="crud-input input-precio" inputmode="numeric" autocomplete="off" placeholder="$ 0">
     </div>
 
     <!-- Bloque Destacado de VUELTO -->
-    <div class="cajero-box-vuelto">
+    <div class="cajero-box-vuelto" id="seccionVuelto">
       <span>Vuelto</span>
       <strong id="posMontoVuelto">$0</strong>
     </div>
 
     <!-- Botones de Acción Finales -->
     <div class="cajero-cart-acciones">
-      <button type="button" class="cajero-btn-finalizar" id="btnFinalizarVenta">Finalizar Venta</button>
-      <button type="button" class="cajero-btn-cancelar" id="btnCancelarVenta">Cancelar Venta</button>
+        {% if es_vista_previa %}
+            <button type="button" class="cajero-btn-finalizar" disabled style="opacity: 0.6; cursor: not-allowed;">
+                Solo lectura (Vista Previa)
+            </button>
+        {% else %}
+            <button type="button" class="cajero-btn-finalizar" id="btnFinalizarVenta">Finalizar Venta</button>
+        {% endif %}
+        <button type="button" class="cajero-btn-cancelar" id="btnCancelarVenta">Cancelar Venta</button>
     </div>
   </aside>
 

@@ -10,7 +10,6 @@
   
   <div class="crud-cabecera-fila">
     <div class="crud-enlace-superior">
-      <a href="{% url 'dashboard_kpis' %}" class="crud-link-admin" style="font-weight: 700; color: var(--terracota); margin-right: 14px;">📊 Métricas y KPIs</a>
       <a href="{% url 'deficit_insumos' %}" class="crud-link-admin insumo-enlace-deficit">Déficit de insumos</a>
       <a href="{% url 'inicio_admin' %}" class="crud-link-admin">administrar catálogo</a>
     </div>
@@ -48,6 +47,7 @@
       🚚 Proveedores ({{ proveedores|length }})
     </button>
   </div>
+  <script src="{% static 'js/inventario_tab_init.js' %}"></script>
 
   <!-- PANEL 1: INSUMOS -->
   <div id="panelInsumos" class="crud-panel-seccion">
@@ -133,7 +133,11 @@
               <td class="crud-col-id">#{{ prod.pk }}</td>
               <td class="crud-col-nombre">
                 <strong>{{ prod.nombre }}</strong>
-                {% if not prod.ingredientes_receta %}<span class="crud-badge receta-sin">Sin receta</span>{% endif %}
+                {% with cat_nombre=prod.categoria.nombre|lower %}
+                  {% if not prod.ingredientes_receta and cat_nombre in "salados,pastelería,pasteleria,panadería,panaderia,empanadas,dulces" %}
+                    <span class="crud-badge receta-sin">Sin receta</span>
+                  {% endif %}
+                {% endwith %}
                 {% if prod.descripcion %}
                   <small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">{{ prod.descripcion|truncatewords:6 }}</small>
                 {% endif %}
@@ -156,31 +160,47 @@
                 {% endif %}
               </td>
               <td class="crud-col-acciones">
-                <button type="button" class="crud-btn-accion" style="background-color: #7b4b2a;"
-                        onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
-                  + Hornada
-                </button>
-                <a href="{% url 'receta_producto' prod.pk %}" class="crud-btn-accion crud-btn-receta">Receta</a>
-                <a href="{% url 'gestion_mermas' %}?item=producto-{{ prod.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
-                <button type="button" class="crud-btn-accion crud-btn-editar"
-                        data-pk="{{ prod.pk }}"
-                        data-nombre="{{ prod.nombre }}"
-                        data-categoria="{{ prod.categoria.pk }}"
-                        data-precio="{{ prod.precio|floatformat:0 }}"
-                        data-stock="{{ prod.stock }}"
-                        data-stock-critico="{{ prod.stock_critico }}"
-                        data-unidad="{{ prod.unidad_medida }}"
-                        data-descripcion="{{ prod.descripcion|default:'' }}"
-                        data-activo="{{ prod.activo|yesno:'true,false' }}"
-                        data-imagen="{{ prod.imagen_url|default:'' }}"
-                        data-disponibilidad='{{ prod.disponibilidad_formulario }}'
-                        onclick="abrirModalEditarProductoBtn(this)">
-                  Editar
-                </button>
-                <button type="button" class="crud-btn-accion crud-btn-eliminar"
-                        onclick="abrirModalEliminarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
-                  Eliminar
-                </button>
+                {% with cat_nombre=prod.categoria.nombre|lower %}
+                  {% if cat_nombre in "salados,pastelería,pasteleria,panadería,panaderia,empanadas,dulces" %}
+                    <button type="button" class="crud-btn-accion" style="background-color: #7b4b2a;"
+                            onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}', true)">
+                      + Horneada
+                    </button>
+                    <a href="{% url 'receta_producto' prod.pk %}" class="crud-btn-accion crud-btn-receta">Receta</a>
+                  {% else %}
+                    <button type="button" class="crud-btn-accion" style="background-color: #7b4b2a;"
+                            onclick="abrirModalRegistrarProduccion('{{ prod.pk }}', '{{ prod.nombre|escapejs }}', false)">
+                      + Stock
+                    </button>
+                  {% endif %}
+                  <a href="{% url 'gestion_mermas' %}?item=producto-{{ prod.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
+                  <button type="button" class="crud-btn-accion crud-btn-editar"
+                          data-pk="{{ prod.pk }}"
+                          data-nombre="{{ prod.nombre }}"
+                          data-categoria="{{ prod.categoria.pk }}"
+                          data-es-horno="{% if cat_nombre in 'salados,pastelería,pasteleria,panadería,panaderia,empanadas,dulces' %}true{% else %}false{% endif %}"
+                          data-precio="{{ prod.precio|floatformat:0 }}"
+                          data-stock="{{ prod.stock }}"
+                          data-stock-critico="{{ prod.stock_critico }}"
+                          data-unidad="{{ prod.unidad_medida }}"
+                          data-descripcion="{{ prod.descripcion|default:'' }}"
+                          data-imagen="{{ prod.imagen_url|default:'' }}"
+                          data-disponibilidad='{{ prod.disponibilidad_formulario }}'
+                          onclick="abrirModalEditarProductoBtn(this)">
+                    Editar
+                  </button>
+                {% endwith %}
+                {% if prod.activo %}
+                  <button type="button" class="crud-btn-accion crud-btn-eliminar"
+                          onclick="abrirModalInactivarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
+                    Inactivar
+                  </button>
+                {% else %}
+                  <button type="button" class="crud-btn-accion" style="background-color: #2e7d32;"
+                          onclick="abrirModalActivarProducto('{{ prod.pk }}', '{{ prod.nombre|escapejs }}')">
+                    Activar
+                  </button>
+                {% endif %}
               </td>
             </tr>
           {% empty %}
@@ -224,11 +244,20 @@
               <td class="crud-col-precio">{{ prov.costo_flete|clp }}</td>
               <td class="crud-col-acciones">
                 <button type="button" class="crud-btn-accion crud-btn-editar"
-                        onclick="abrirModalEditarProveedor('{{ prov.pk }}', '{{ prov.rut|escapejs }}', '{{ prov.nombre_proveedor|escapejs }}', '{{ prov.email|escapejs }}', '{{ prov.telefono|escapejs }}', '{{ prov.direccion|default:''|escapejs }}', '{{ prov.costo_flete|floatformat:0 }}')">
+                        data-pk="{{ prov.pk }}"
+                        data-rut="{{ prov.rut|default:'' }}"
+                        data-nombre="{{ prov.nombre_proveedor }}"
+                        data-email="{{ prov.email|default:'' }}"
+                        data-telefono="{{ prov.telefono|default:'' }}"
+                        data-direccion="{{ prov.direccion|default:'' }}"
+                        data-flete="{{ prov.costo_flete|floatformat:0 }}"
+                        onclick="abrirModalEditarProveedorBtn(this)">
                   Editar
                 </button>
                 <button type="button" class="crud-btn-accion crud-btn-eliminar"
-                        onclick="abrirModalEliminarProveedor('{{ prov.pk }}', '{{ prov.nombre_proveedor|escapejs }}')">
+                        data-pk="{{ prov.pk }}"
+                        data-nombre="{{ prov.nombre_proveedor }}"
+                        onclick="abrirModalEliminarProveedorBtn(this)">
                   Eliminar
                 </button>
               </td>
@@ -259,10 +288,10 @@
 </datalist>
 
 <!-- MODAL 1: Agregar Insumo (el material con su primer envase; el stock parte con lo que trae) -->
-<div class="crud-modal-backdrop" id="modalAgregarInsumo" style="display: none;">
+<div class="crud-modal-backdrop" id="modalAgregarInsumo" role="dialog" aria-modal="true" aria-labelledby="tituloModalAgregarInsumo" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
-      <h3>Agregar Nuevo Insumo</h3>
+      <h3 id="tituloModalAgregarInsumo">Agregar Nuevo Insumo</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarInsumo()">&times;</button>
     </div>
     <form method="post" action="{% url 'crear_insumo' %}" class="insumo-form" id="formAgregarInsumo" data-insumo-modo="agregar">
@@ -284,9 +313,15 @@
         </div>
         <div class="crud-form-fila-doble insumo-fila-campos">
           <div class="crud-form-grupo">
-            <label for="insumo_tipo_envase">Tipo de envase:</label>
-            <input type="text" id="insumo_tipo_envase" name="tipo_envase" required maxlength="60" class="crud-input"
-                   list="tiposEnvase" placeholder="Ej: caja, bandeja de 12, bidón" data-insumo-tipo>
+            <label for="insumoTipoEnvase">Tipo de envase:</label>
+            <select id="insumoTipoEnvase" name="tipo_envase" class="crud-input" required>
+              <option value="" disabled selected>Selecciona un envase</option>
+              <option value="display">display</option>
+              <option value="bidón">bidón</option>
+              <option value="bolsa">bolsa</option>
+              <option value="caja">caja</option>
+              <option value="saco">saco</option>
+            </select>
           </div>
           <div class="crud-form-grupo">
             <label for="insumo_unidad">Unidad de medida:</label>
@@ -343,10 +378,10 @@
 </div>
 
 <!-- MODAL 2: Editar Insumo (el material; el stock está en sus envases) -->
-<div class="crud-modal-backdrop" id="modalEditarInsumo" style="display: none;">
+<div class="crud-modal-backdrop" id="modalEditarInsumo" role="dialog" aria-modal="true" aria-labelledby="tituloModalEditarInsumo" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
-      <h3>Editar Insumo</h3>
+      <h3 id="tituloModalEditarInsumo">Editar Insumo</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarInsumo()">&times;</button>
     </div>
     <form id="formEditarInsumo" method="post" action="" class="insumo-form" data-insumo-modo="editar">
@@ -385,12 +420,15 @@
           </div>
           <div class="crud-form-grupo">
             <label for="edit_insumo_proveedor">Proveedor:</label>
-            <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input">
-              <option value="">Selecciona un proveedor</option>
-              {% for prov in proveedores %}
-                <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
-              {% endfor %}
-            </select>
+            <div class="insumo-proveedor">
+              <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input">
+                <option value="">Selecciona un proveedor</option>
+                {% for prov in proveedores %}
+                  <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
+                {% endfor %}
+              </select>
+              <button type="button" class="crud-btn-accion insumo-proveedor__nuevo" onclick="abrirModalAgregarProveedor()">+ Nuevo</button>
+            </div>
           </div>
         </div>
         <p class="insumo-resumen">
@@ -407,7 +445,7 @@
 
 <!-- MODAL: + Envase (llegaron más envases de un insumo: solo se indica cuántos; el tipo, lo que trae,
      el precio y el proveedor son los del insumo. Otra presentación se agrega como otro insumo) -->
-<div class="crud-modal-backdrop" id="modalAgregarEnvase" style="display: none;">
+<div class="crud-modal-backdrop" id="modalAgregarEnvase" role="dialog" aria-modal="true" aria-labelledby="envase_titulo" style="display: none;">
   <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
       <h3 id="envase_titulo">Agregar envases</h3>
@@ -441,10 +479,10 @@
 </div>
 
 <!-- MODAL 3: Eliminar Insumo -->
-<div class="crud-modal-backdrop" id="modalEliminarInsumo" style="display: none;">
+<div class="crud-modal-backdrop" id="modalEliminarInsumo" role="dialog" aria-modal="true" aria-labelledby="tituloModalEliminarInsumo" style="display: none;">
   <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
-      <h3>Eliminar Insumo</h3>
+      <h3 id="tituloModalEliminarInsumo">Eliminar Insumo</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarInsumo()">&times;</button>
     </div>
     <form id="formEliminarInsumo" method="post" action="">
@@ -471,13 +509,13 @@
 <!-- ========================================== -->
 
 <!-- MODAL 4: Agregar Producto -->
-<div class="crud-modal-backdrop" id="modalAgregarProducto" style="display: none;">
+<div class="crud-modal-backdrop" id="modalAgregarProducto" role="dialog" aria-modal="true" aria-labelledby="tituloModalAgregarProducto" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
-      <h3>Registrar Nuevo Producto de Venta</h3>
+      <h3 id="tituloModalAgregarProducto">Registrar Nuevo Producto de Venta</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarProducto()">&times;</button>
     </div>
-    <form method="post" action="{% url 'crear_producto' %}">
+    <form method="post" action="{% url 'crear_producto' %}" enctype="multipart/form-data">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=productos">
       <div class="crud-modal-cuerpo">
@@ -488,15 +526,23 @@
         <div class="crud-form-fila-doble">
           <div class="crud-form-grupo">
             <label for="prod_categoria">Categoría:</label>
-            <div style="display: flex; gap: 8px;">
-              <select id="prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
+            <div style="display: flex; gap: 6px;">
+              <select id="prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;"
+                      onchange="actualizarEstadoBtnEliminarCat('prod_categoria', 'btnEliminarCatProd')">
                 <option value="">Selecciona categoría</option>
                 {% for cat in categorias_productos %}
                   <option value="{{ cat.pk }}">{{ cat.nombre }}</option>
                 {% endfor %}
               </select>
-              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarCategoria()">
+              <button type="button" class="crud-btn-accion"
+                      style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 10px; white-space: nowrap;"
+                      onclick="abrirModalAgregarCategoria()">
                 + Nueva
+              </button>
+              <button type="button" id="btnEliminarCatProd" class="crud-btn-accion crud-btn-eliminar"
+                      style="padding: 0 10px;" title="Eliminar categoría seleccionada" disabled
+                      onclick="eliminarCategoriaSeleccionada('prod_categoria')">
+                🗑️
               </button>
             </div>
           </div>
@@ -523,7 +569,11 @@
           <input type="number" id="prod_stock_critico" name="stock_critico" min="0" value="10" class="crud-input">
         </div>
         <div class="crud-form-grupo">
-          <label for="prod_imagen">Imagen del Producto (Ruta /media/... o URL):</label>
+          <label for="prod_imagen_archivo">Imagen del Producto (Subir archivo):</label>
+          <input type="file" id="prod_imagen_archivo" name="imagen_archivo" class="crud-input" accept="image/png, image/jpeg, image/webp">
+        </div>
+        <div class="crud-form-grupo">
+          <label for="prod_imagen">O ruta/URL manual (opcional):</label>
           <input type="text" id="prod_imagen" name="imagen_url" class="crud-input" placeholder="Ej: /media/productos/marraqueta.jpg">
         </div>
         {% include "core/_disponibilidad_producto.html" with prefijo="prod" %}
@@ -541,13 +591,13 @@
 </div>
 
 <!-- MODAL 5: Editar Producto -->
-<div class="crud-modal-backdrop" id="modalEditarProducto" style="display: none;">
+<div class="crud-modal-backdrop" id="modalEditarProducto" role="dialog" aria-modal="true" aria-labelledby="tituloModalEditarProducto" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
-      <h3>Editar Producto de Venta</h3>
+      <h3 id="tituloModalEditarProducto">Editar Producto de Venta</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarProducto()">&times;</button>
     </div>
-    <form id="formEditarProducto" method="post" action="">
+    <form id="formEditarProducto" method="post" action="" enctype="multipart/form-data">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=productos">
       <div class="crud-modal-cuerpo">
@@ -558,15 +608,23 @@
         <div class="crud-form-fila-doble">
           <div class="crud-form-grupo">
             <label for="edit_prod_categoria">Categoría:</label>
-            <div style="display: flex; gap: 8px;">
-              <select id="edit_prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;">
+            <div style="display: flex; gap: 6px;">
+              <select id="edit_prod_categoria" name="categoria_id" required class="crud-input" style="flex: 1;"
+                      onchange="actualizarEstadoBtnEliminarCat('edit_prod_categoria', 'btnEliminarCatEditProd')">
                 <option value="">Selecciona categoría</option>
                 {% for cat in categorias_productos %}
                   <option value="{{ cat.pk }}">{{ cat.nombre }}</option>
                 {% endfor %}
               </select>
-              <button type="button" class="crud-btn-accion" style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 12px; white-space: nowrap;" onclick="abrirModalAgregarCategoria()">
+              <button type="button" class="crud-btn-accion"
+                      style="background-color: var(--cafe-intermedio, #8b5a2b); padding: 0 10px; white-space: nowrap;"
+                      onclick="abrirModalAgregarCategoria()">
                 + Nueva
+              </button>
+              <button type="button" id="btnEliminarCatEditProd" class="crud-btn-accion crud-btn-eliminar"
+                      style="padding: 0 10px;" title="Eliminar categoría seleccionada" disabled
+                      onclick="eliminarCategoriaSeleccionada('edit_prod_categoria')">
+                🗑️
               </button>
             </div>
           </div>
@@ -591,8 +649,8 @@
                    readonly 
                    class="crud-input"
                    style="background-color: #f2f2f2; color: #666; cursor: not-allowed; font-weight: bold;">
-            <small style="display: block; margin-top: 4px; color: var(--texto-suave, #666); font-size: 0.78rem;">
-              🔒 El stock solo se incrementa desde <strong>+ Hornada</strong> o por ventas en caja.
+            <small style="display: block; margin-top: 4px; color: var(--texto-suave, #666); font-size: 0.74rem; line-height: 1.35;">
+              🔒 El stock solo se incrementa desde <strong id="edit_prod_stock_accion" style="white-space: nowrap;">+ Horneada</strong> o por ventas en caja.
             </small>
           </div>
         </div>
@@ -601,16 +659,30 @@
             <label for="edit_prod_stock_critico">Stock Crítico:</label>
             <input type="number" id="edit_prod_stock_critico" name="stock_critico" min="0" class="crud-input">
           </div>
-          <div class="crud-form-grupo" style="display: flex; flex-direction: column; justify-content: flex-end;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.95rem;">
-              <input type="checkbox" id="edit_prod_activo" name="activo" value="true" style="width: 18px; height: 18px;">
-              <span>Producto Activo en Tienda</span>
-            </label>
-          </div>
         </div>
         <div class="crud-form-grupo">
-          <label for="edit_prod_imagen">Imagen del Producto (Ruta /media/... o URL):</label>
-          <input type="text" id="edit_prod_imagen" name="imagen_url" class="crud-input">
+          <label>Imagen actual / Vista previa:</label>
+          <div id="edit_prod_imagen_preview_wrap" style="display: none; align-items: center; gap: 12px; padding: 10px; background: #faf6f0; border: 1px solid #e6d5bc; border-radius: 8px; margin-bottom: 8px;">
+            <img id="edit_prod_imagen_preview" src="" alt="Vista previa del producto" style="width: 64px; height: 64px; object-fit: cover; border-radius: 6px; border: 1px solid #d4c2b2; background: #fff;">
+            <div style="flex: 1; min-width: 0;">
+              <small id="edit_prod_imagen_nombre" style="display: block; color: var(--cafe-oscuro); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></small>
+              <small style="display: block; color: var(--texto-suave); font-size: 0.75rem;">Se mostrará en la tienda y en el POS.</small>
+            </div>
+            <button type="button" id="btnQuitarImagenProd" class="crud-btn-accion crud-btn-eliminar" style="white-space: nowrap;" onclick="quitarImagenEditarProducto()">
+              Quitar imagen
+            </button>
+          </div>
+          <small id="edit_prod_imagen_sin_foto" style="display: block; color: var(--texto-suave); font-size: 0.8rem; margin-bottom: 6px;">
+            Este producto no tiene imagen asignada actualmente.
+          </small>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="edit_prod_imagen_archivo">Subir nueva imagen (PNG, JPG, WEBP · máx. 5 MB):</label>
+          <input type="file" id="edit_prod_imagen_archivo" name="imagen_archivo" class="crud-input" accept="image/png, image/jpeg, image/webp">
+        </div>
+        <div class="crud-form-grupo">
+          <label for="edit_prod_imagen">O ruta/URL manual (opcional):</label>
+          <input type="text" id="edit_prod_imagen" name="imagen_url" class="crud-input" placeholder="Ej: /media/productos/marraqueta.jpg">
         </div>
         {% include "core/_disponibilidad_producto.html" with prefijo="edit_prod" %}
         <div class="crud-form-grupo">
@@ -626,11 +698,11 @@
   </div>
 </div>
 
-<!-- MODAL 6: Registrar Producción Diaria (Hornada) -->
-<div class="crud-modal-backdrop" id="modalRegistrarProduccion" style="display: none;">
+<!-- MODAL 6: Registrar Producción Diaria (Hornada) / Ingreso de Stock -->
+<div class="crud-modal-backdrop" id="modalRegistrarProduccion" role="dialog" aria-modal="true" aria-labelledby="produccion_modal_titulo" style="display: none;">
   <div class="crud-modal-caja">
     <div class="crud-modal-header">
-      <h3>Registrar Producción Diaria (Hornada)</h3>
+      <h3 id="produccion_modal_titulo">Registrar Producción Diaria (Hornada)</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalRegistrarProduccion()">&times;</button>
     </div>
     <form id="formRegistrarProduccion" method="post" action="">
@@ -641,53 +713,85 @@
           Producto: -
         </p>
         <div class="crud-form-grupo">
-          <label for="prod_cant_horneada">Cantidad Horneada / Producida hoy:</label>
+          <label for="prod_cant_horneada" id="produccion_label_cantidad">Cantidad Horneada / Producida hoy:</label>
           <input type="number" id="prod_cant_horneada" name="cantidad" min="1" value="20" required class="crud-input" placeholder="Ej: 50">
         </div>
-        <p style="font-size: 0.85rem; color: var(--texto-suave); margin: 0;">
+        <p style="font-size: 0.85rem; color: var(--texto-suave); margin: 0;" id="produccion_ayuda_texto">
           Esta cantidad se sumará al stock del producto y quedará guardada en el registro diario con la fecha y tu usuario.
           Si el producto tiene receta, se descuentan sus insumos (primero del envase en uso).
         </p>
       </div>
       <div class="crud-modal-footer">
         <button type="button" class="crud-btn-cancelar" onclick="cerrarModalRegistrarProduccion()">Cancelar</button>
-        <button type="submit" class="crud-btn-guardar" style="background-color: #7b4b2a;">+ Registrar Hornada</button>
+        <button type="submit" class="crud-btn-guardar" id="produccion_btn_submit" style="background-color: #7b4b2a;">+ Registrar Hornada</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- MODAL 7: Eliminar Producto -->
-<div class="crud-modal-backdrop" id="modalEliminarProducto" style="display: none;">
+<!-- MODAL 7: Inactivar Producto -->
+<div class="crud-modal-backdrop" id="modalInactivarProducto" role="dialog" aria-modal="true" aria-labelledby="tituloModalInactivarProducto" style="display: none;">
   <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
-      <h3>Eliminar Producto</h3>
-      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarProducto()">&times;</button>
+      <h3 id="tituloModalInactivarProducto">Inactivar Producto</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalInactivarProducto()">&times;</button>
     </div>
-    <form id="formEliminarProducto" method="post" action="">
+    <form id="formInactivarProducto" method="post" action="">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=productos">
       <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
         <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
-          ¿Estás seguro de que deseas eliminar este producto del catálogo?
+          ¿Estás seguro de que deseas inactivar este producto del catálogo?
         </p>
-        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="eliminar_prod_texto">
+        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="inactivar_prod_texto">
           -
         </p>
+        <small style="display: block; color: var(--texto-suave); font-size: 0.85rem;">
+          Pasará a estado <strong>Inactivo</strong> y dejará de mostrarse en la tienda y en el POS.
+        </small>
       </div>
       <div class="crud-modal-footer" style="justify-content: center;">
-        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEliminarProducto()">Cancelar</button>
-        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Eliminación</button>
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalInactivarProducto()">Cancelar</button>
+        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Inactivación</button>
       </div>
     </form>
   </div>
 </div>
 
-<!-- MODAL 8: Crear Categoría Rápida -->
-<div class="crud-modal-backdrop" id="modalAgregarCategoria" style="display: none; z-index: 9999 !important;">
-  <div class="crud-modal-caja" style="max-width: 450px; z-index: 10000 !important;">
+<!-- MODAL 8: Activar Producto -->
+<div class="crud-modal-backdrop" id="modalActivarProducto" role="dialog" aria-modal="true" aria-labelledby="tituloModalActivarProducto" style="display: none;">
+  <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
-      <h3>Nueva Categoría de Producto</h3>
+      <h3 id="tituloModalActivarProducto">Activar Producto</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalActivarProducto()">&times;</button>
+    </div>
+    <form id="formActivarProducto" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}?tab=productos">
+      <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
+        <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
+          ¿Deseas activar nuevamente este producto?
+        </p>
+        <p style="font-size: 1.2rem; font-weight: 700; color: #2e7d32; margin-bottom: 8px;" id="activar_prod_texto">
+          -
+        </p>
+        <small style="display: block; color: var(--texto-suave); font-size: 0.85rem;">
+          Volverá a mostrarse en el catálogo de clientes y en la caja POS.
+        </small>
+      </div>
+      <div class="crud-modal-footer" style="justify-content: center;">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalActivarProducto()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar" style="background-color: #2e7d32;">Confirmar Activación</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 9: Crear Categoría Rápida -->
+<div class="crud-modal-backdrop" id="modalAgregarCategoria" role="dialog" aria-modal="true" aria-labelledby="tituloModalCategoria" style="display: none; z-index: 10050 !important;">
+  <div class="crud-modal-caja" style="max-width: 450px; z-index: 10051 !important;">
+    <div class="crud-modal-header">
+      <h3 id="tituloModalCategoria">Nueva Categoría de Producto</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarCategoria()">&times;</button>
     </div>
     <form method="post" action="{% url 'crear_categoria' %}">
@@ -715,11 +819,11 @@
 <!-- MODALES DE PROVEEDORES                      -->
 <!-- ========================================== -->
 
-<!-- MODAL 9: Agregar Proveedor -->
-<div class="crud-modal-backdrop" id="modalAgregarProveedor" style="display: none; z-index: 9999 !important;">
-  <div class="crud-modal-caja" style="max-width: 520px; z-index: 10000 !important;">
+<!-- MODAL 10: Agregar Proveedor -->
+<div class="crud-modal-backdrop" id="modalAgregarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalProveedor" style="display: none; z-index: 10050 !important;">
+  <div class="crud-modal-caja" style="max-width: 520px; z-index: 10051 !important;">
     <div class="crud-modal-header">
-      <h3>Registrar Nuevo Proveedor</h3>
+      <h3 id="tituloModalProveedor">Registrar Nuevo Proveedor</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalAgregarProveedor()">&times;</button>
     </div>
     <form method="post" action="{% url 'crear_proveedor' %}">
@@ -753,7 +857,7 @@
           </div>
           <div class="crud-form-grupo">
             <label for="prov_flete">Costo Flete ($CLP):</label>
-            <input type="text" id="prov_flete" name="costo_flete"class="crud-input input-precio" placeholder="$ 0">
+            <input type="text" id="prov_flete" name="costo_flete" class="crud-input input-precio" placeholder="$ 0">
           </div>
         </div>
       </div>
@@ -765,11 +869,11 @@
   </div>
 </div>
 
-<!-- MODAL 10: Editar Proveedor -->
-<div class="crud-modal-backdrop" id="modalEditarProveedor" style="display: none;">
+<!-- MODAL 11: Editar Proveedor -->
+<div class="crud-modal-backdrop" id="modalEditarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalEditarProveedor" style="display: none;">
   <div class="crud-modal-caja" style="max-width: 520px;">
     <div class="crud-modal-header">
-      <h3>Editar Proveedor</h3>
+      <h3 id="tituloModalEditarProveedor">Editar Proveedor</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEditarProveedor()">&times;</button>
     </div>
     <form id="formEditarProveedor" method="post" action="">
@@ -815,11 +919,11 @@
   </div>
 </div>
 
-<!-- MODAL 11: Eliminar Proveedor -->
-<div class="crud-modal-backdrop" id="modalEliminarProveedor" style="display: none;">
+<!-- MODAL 12: Eliminar Proveedor -->
+<div class="crud-modal-backdrop" id="modalEliminarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalEliminarProveedor" style="display: none;">
   <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
-      <h3>Eliminar Proveedor</h3>
+      <h3 id="tituloModalEliminarProveedor">Eliminar Proveedor</h3>
       <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarProveedor()">&times;</button>
     </div>
     <form id="formEliminarProveedor" method="post" action="">
@@ -840,6 +944,23 @@
     </form>
   </div>
 </div>
+
+<!-- MODAL DE CONFIRMACIÓN PERSONALIZADO -->
+<dialog id="modalConfirmacionCrud" class="confirmacion-modal" aria-labelledby="confirmCrudTitulo">
+  <div class="confirmacion-modal__caja">
+    <div class="confirmacion-modal__cabecera">
+      <h3 id="confirmCrudTitulo" class="confirmacion-modal__titulo" tabindex="-1">Confirmar acción</h3>
+    </div>
+    <div class="confirmacion-modal__cuerpo">
+      <p id="confirmCrudMensaje"></p>
+      <p id="confirmCrudNota" class="confirmacion-modal__nota"></p>
+    </div>
+    <div class="confirmacion-modal__pie">
+      <button type="button" id="confirmCrudCancelar" class="confirmacion-modal__boton confirmacion-modal__boton--secundario">Cancelar</button>
+      <button type="button" id="confirmCrudAceptar" class="confirmacion-modal__boton" style="background-color: var(--terracota); border-color: var(--terracota);">Eliminar</button>
+    </div>
+  </div>
+</dialog>
 
 {% endblock %}
 

@@ -3,11 +3,13 @@ import time
 import unicodedata
 import json
 import csv
+import os
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -21,8 +23,10 @@ from django.utils.http import urlencode
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.password_validation import validate_password
 from django.core.validators import validate_email
 from django.conf import settings
+from django.core.files.storage import FileSystemStorage
 from urllib.parse import quote
 from django.core.mail import EmailMessage
 from django.core.cache import cache
@@ -74,7 +78,8 @@ def inicio(request):
     """Los 4 productos más vendidos. Redirige a paneles de gestión si es personal del sistema."""
     if request.user.is_authenticated:
         if getattr(request.user, 'es_administrador', False):
-            return redirect('inicio_admin')
+            if not _activar_o_leer_vista_previa(request):
+                return redirect('inicio_admin')
         elif getattr(request.user, 'es_cajero', False):
             return redirect('inicio_cajero')
         
@@ -219,6 +224,154 @@ def mis_pedidos(request):
         )
 
     return render(request, 'core/mis_pedidos.html', {'pedidos': pedidos})
+
+
+@login_required
+def configuracion_cuenta(request):
+    """Módulo de configuración personal, domicilio, puntos y eliminación de cuenta del cliente."""
+    usuario = request.user
+    es_personal = (
+        getattr(usuario, 'es_administrador', False)
+        or getattr(usuario, 'es_cajero', False)
+        or usuario.is_staff
+        or usuario.is_superuser
+    )
+
+    if es_personal:
+        cliente = getattr(usuario, 'perfil_cliente', None)
+    else:
+        cliente, _ = Cliente.objects.get_or_create(
+            user=usuario,
+            defaults={'direccion': '', 'telefono': '+56 9'},
+        )
+
+    puntos_obj = PuntosFidelizacion.objects.filter(cliente=cliente).first() if cliente else None
+    puntos_actuales = puntos_obj.puntos_acumulados if puntos_obj else 0
+    total_pedidos = Pedido.objects.filter(cliente=cliente).count() if cliente else 0
+
+    seccion_activa = request.GET.get('seccion', 'perfil')
+    if seccion_activa not in {'perfil', 'domicilio', 'fidelizacion', 'seguridad'}:
+        seccion_activa = 'perfil'
+
+    if request.method == 'POST':
+        if es_personal:
+            messages.warning(
+                request,
+                'Modo Vista Previa: la edición o eliminación de cuenta de cliente está deshabilitada para personal del sistema.'
+            )
+            return redirect('configuracion_cuenta')
+
+        accion = request.POST.get('accion', '')
+
+        if accion == 'actualizar_perfil':
+            username = request.POST.get('username', '').strip()
+            first_name = request.POST.get('first_name', '').strip()
+            last_name = request.POST.get('last_name', '').strip()
+            email = request.POST.get('email', '').strip().lower()
+            telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
+
+            if not username or not first_name or not last_name or not email:
+                messages.error(request, 'El nombre de usuario, nombre, apellidos y correo electrónico son obligatorios.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+            try:
+                UnicodeUsernameValidator()(username)
+            except ValidationError:
+                messages.error(request, 'El nombre de usuario solo puede contener letras, números y los caracteres @/./+/-/_.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+            if Usuario.objects.filter(username__iexact=username).exclude(pk=usuario.pk).exists():
+                messages.error(request, 'Ese nombre de usuario ya está en uso por otra cuenta.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+            try:
+                validate_email(email)
+            except ValidationError:
+                messages.error(request, 'Ingresa un correo electrónico válido.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+            if Usuario.objects.filter(email__iexact=email).exclude(pk=usuario.pk).exists():
+                messages.error(request, 'Ese correo electrónico ya está asociado a otra cuenta.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+            usuario.username = username
+            usuario.first_name = first_name
+            usuario.last_name = last_name
+            usuario.email = email
+            usuario.save(update_fields=['username', 'first_name', 'last_name', 'email'])
+
+            cliente.telefono = telefono
+            cliente.save(update_fields=['telefono'])
+
+            messages.success(request, 'Tus datos personales fueron actualizados.')
+            return redirect(f"{reverse('configuracion_cuenta')}?seccion=perfil")
+
+        elif accion == 'actualizar_domicilio':
+            direccion = request.POST.get('direccion', '').strip()
+            if len(direccion) > 255:
+                messages.error(request, 'La dirección no puede superar los 255 caracteres.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=domicilio")
+
+            cliente.direccion = direccion
+            cliente.save(update_fields=['direccion'])
+
+            messages.success(request, 'Tu dirección de despacho fue guardada.')
+            return redirect(f"{reverse('configuracion_cuenta')}?seccion=domicilio")
+
+        elif accion == 'cambiar_contrasena':
+            actual = request.POST.get('password_actual', '')
+            nueva = request.POST.get('password_nueva', '')
+            confirmar = request.POST.get('password_confirmar', '')
+
+            if not usuario.check_password(actual):
+                messages.error(request, 'La contraseña actual ingresada no es correcta.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=seguridad")
+
+            if nueva != confirmar:
+                messages.error(request, 'La nueva contraseña y su confirmación no coinciden.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=seguridad")
+
+            try:
+                validate_password(nueva, user=usuario)
+            except ValidationError as e:
+                for err in e.messages:
+                    messages.error(request, err)
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=seguridad")
+
+            usuario.set_password(nueva)
+            usuario.save()
+            update_session_auth_hash(request, usuario)
+            messages.success(request, 'Contraseña actualizada correctamente.')
+            return redirect(f"{reverse('configuracion_cuenta')}?seccion=seguridad")
+
+        elif accion == 'eliminar_cuenta':
+            confirmacion_pass = request.POST.get('confirmar_password_eliminar', '')
+            if not usuario.check_password(confirmacion_pass):
+                messages.error(request, 'Contraseña incorrecta. No se eliminó la cuenta.')
+                return redirect(f"{reverse('configuracion_cuenta')}?seccion=seguridad")
+
+            nombre_respaldo = usuario.get_full_name().strip() or usuario.username
+
+            with transaction.atomic():
+                Pedido.objects.filter(cliente=cliente, cliente_nombre_respaldo='').update(
+                    cliente_nombre_respaldo=nombre_respaldo
+                )
+                logout(request)
+                usuario.delete()
+
+            messages.success(
+                request,
+                'Tu cuenta ha sido eliminada. Los registros históricos de tus compras se conservan como respaldo interno de ventas.'
+            )
+            return redirect('inicio')
+
+    return render(request, 'core/configuracion_cuenta.html', {
+        'cliente': cliente,
+        'puntos_actuales': puntos_actuales,
+        'total_pedidos': total_pedidos,
+        'seccion_activa': seccion_activa,
+        'es_personal': es_personal,
+    })
 
 
 def _resumen_carrito_json(request, producto_id, mensaje="", tipo_mensaje="success"):
@@ -411,6 +564,10 @@ def quitar_del_carrito(request, producto_id):
 @require_POST
 def finalizar_compra(request):
     """Compra de demostración: crea pedido, detalle y pago simulado, y descuenta el stock."""
+    if request.user.is_authenticated and getattr(request.user, 'es_administrador', False):
+        messages.warning(request, 'Modo Vista Previa: las compras reales están deshabilitadas para cuentas de administrador.')
+        return redirect('carrito')
+    
     _expirar_pedidos_webpay_vencidos()
     carrito_sesion = request.session.get('carrito', {})
     if not isinstance(carrito_sesion, dict) or not carrito_sesion:
@@ -782,7 +939,7 @@ def webpay_confirmar(request):
                 messages.warning(request, mensaje)
 
         es_pos = False
-        if pedido_obj and getattr(pedido_obj, 'canal', None) == 'POS':
+        if pedido_obj and getattr(pedido_obj, 'canal', None) in ('POS', 'PRESENCIAL'):
             es_pos = True
         elif request.user.is_authenticated and (getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False)):
             es_pos = True
@@ -891,7 +1048,7 @@ def webpay_confirmar(request):
             messages.success(request, f'¡Pago aprobado con éxito en Webpay! Venta N° {pedido.pk} realizada. Autorización: {cod_autorizacion}')
             
             # Si la venta se hizo desde la Terminal POS, vuelve a la Terminal del Cajero
-            if pedido.canal == 'POS' or getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False):
+            if pedido.canal in ('POS', 'PRESENCIAL') or getattr(request.user, 'es_cajero', False) or getattr(request.user, 'es_administrador', False):
                 return redirect('inicio_cajero')
 
             return redirect('comprobante_pedido', pedido_id=pedido.pk)
@@ -1031,7 +1188,9 @@ def admin_required(view_func):
 
 @admin_required
 def inicio_admin(request):
-    productos_stock = Producto.objects.filter(activo=True).order_by('nombre')
+    request.session.pop('admin_preview', None)
+
+    productos_stock = Producto.objects.filter(activo=True).order_by('stock', 'nombre')
     tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
     datos_graficos = metricas_kpi.obtener_graficos_inicio_admin()
 
@@ -1138,7 +1297,7 @@ def exportar_kpis_csv(request):
     writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
 
     if formato == 'detallado':
-        # Encabezados de tabla relacional por ítem vendido
+        # Encabezados de tabla relacional por ítem vendido (19 columnas)
         writer.writerow([
             'N° Detalle',
             'N° Pedido',
@@ -1153,6 +1312,7 @@ def exportar_kpis_csv(request):
             'Subtotal Ítem ($ CLP)',
             'Total del Pedido ($ CLP)',
             'Modalidad Entrega',
+            'Tipo de Cliente',
             'Cliente',
             'RUT Cliente',
             'Cajero Responsable',
@@ -1177,15 +1337,12 @@ def exportar_kpis_csv(request):
             ped = d.pedido
             pago = getattr(ped, 'pago', None)
 
-            cliente_nombre = 'Venta Mostrador'
             cliente_rut = 'Sin RUT'
             if ped.cliente and ped.cliente.user:
                 cliente_nombre = ped.cliente.user.get_full_name() or ped.cliente.user.username
                 cliente_rut = getattr(ped.cliente.user, 'rut', None) or getattr(ped.cliente, 'rut', 'Sin RUT')
-
-            cajero_nombre = 'Sistema Web'
-            if ped.cajero and ped.cajero.user:
-                cajero_nombre = ped.cajero.user.get_full_name() or ped.cajero.user.username
+            else:
+                cliente_nombre = ped.nombre_cliente_display
 
             categoria_nombre = d.producto.categoria.nombre if d.producto.categoria else 'Sin Categoría'
             fecha_str = ped.fecha.astimezone(timezone.get_current_timezone()).strftime('%Y-%m-%d %H:%M:%S')
@@ -1197,7 +1354,7 @@ def exportar_kpis_csv(request):
                 d.id,
                 ped.id,
                 fecha_str,
-                ped.get_canal_display(),
+                ped.nombre_canal_display,
                 ped.get_estado_display(),
                 d.producto.id,
                 d.producto.nombre,
@@ -1207,14 +1364,15 @@ def exportar_kpis_csv(request):
                 int(d.subtotal),
                 int(ped.total),
                 ped.get_tipo_entrega_display(),
+                ped.tipo_cliente_display,
                 cliente_nombre,
                 cliente_rut,
-                cajero_nombre,
+                ped.nombre_cajero_display,
                 pago.metodo if pago else 'Sin registro',
                 (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A'),
             ])
 
-        # Fila final de totalización para Excel
+        # Fila final de totalización para Excel (19 columnas exactas)
         writer.writerow([
             'TOTALES',
             f'{detalles_qs.count()} registros',
@@ -1234,10 +1392,11 @@ def exportar_kpis_csv(request):
             '-',
             '-',
             '-',
+            '-',
         ])
 
     else:
-        # Encabezados de tabla transaccional (1 registro ordenado por Pedido de la base de datos)
+        # Encabezados de tabla transaccional (18 columnas)
         writer.writerow([
             'N° Pedido',
             'Fecha y Hora',
@@ -1245,6 +1404,7 @@ def exportar_kpis_csv(request):
             'Estado Pedido',
             'Modalidad de Entrega',
             'Dirección / Franja de Entrega',
+            'Tipo de Cliente',
             'Cliente',
             'RUT Cliente',
             'Correo Electrónico',
@@ -1271,20 +1431,16 @@ def exportar_kpis_csv(request):
         for p in pedidos_con_relaciones:
             pago = getattr(p, 'pago', None)
 
-            cliente_nombre = 'Venta Mostrador (Público General)'
             cliente_rut = 'Sin RUT'
             cliente_email = 'N/A'
             cliente_telefono = 'N/A'
-            if p.cliente:
-                if p.cliente.user:
-                    cliente_nombre = p.cliente.user.get_full_name() or p.cliente.user.username
-                    cliente_email = p.cliente.user.email or 'N/A'
-                    cliente_rut = getattr(p.cliente.user, 'rut', None) or getattr(p.cliente, 'rut', 'Sin RUT')
+            if p.cliente and p.cliente.user:
+                cliente_nombre = p.cliente.user.get_full_name() or p.cliente.user.username
+                cliente_email = p.cliente.user.email or 'N/A'
+                cliente_rut = getattr(p.cliente.user, 'rut', None) or getattr(p.cliente, 'rut', 'Sin RUT')
                 cliente_telefono = getattr(p.cliente, 'telefono', None) or 'N/A'
-
-            cajero_nombre = 'Sistema Web'
-            if p.cajero and p.cajero.user:
-                cajero_nombre = p.cajero.user.get_full_name() or p.cajero.user.username
+            else:
+                cliente_nombre = p.nombre_cliente_display
 
             metodo_pago = pago.metodo if pago else 'Sin registro'
             estado_pago = pago.estado if pago else 'N/A'
@@ -1306,15 +1462,16 @@ def exportar_kpis_csv(request):
             writer.writerow([
                 p.id,
                 fecha_local,
-                p.get_canal_display(),
+                p.nombre_canal_display,
                 p.get_estado_display(),
                 p.get_tipo_entrega_display(),
-                p.direccion_despacho or 'N/A',
+                p.direccion_entrega_display,
+                p.tipo_cliente_display,
                 cliente_nombre,
                 cliente_rut,
                 cliente_email,
                 cliente_telefono,
-                cajero_nombre,
+                p.nombre_cajero_display,
                 metodo_pago,
                 estado_pago,
                 codigo_auth,
@@ -1323,10 +1480,11 @@ def exportar_kpis_csv(request):
                 monto_int,
             ])
 
-        # Fila final de totalización para visualización y cuadratura rápida en Excel
+        # Fila final de totalización para visualización y cuadratura rápida en Excel (18 columnas exactas)
         writer.writerow([
             'TOTALES',
             f'{total_pedidos} transacciones',
+            '-',
             '-',
             '-',
             '-',
@@ -1507,6 +1665,14 @@ def gestion_inventario(request):
         ),
     }
     return render(request, 'core/tabla_crud_insumos.html', contexto)
+
+def _activar_o_leer_vista_previa(request):
+    """Permite solo al administrador activar o mantener el modo vista previa en sesión."""
+    if not (request.user.is_authenticated and getattr(request.user, 'es_administrador', False)):
+        return False
+    if request.GET.get('preview') == '1':
+        request.session['admin_preview'] = True
+    return bool(request.session.get('admin_preview', False))
 
 
 # --- Insumos y sus envases (agregar insumo, "+ Envase" y editar) ---
@@ -1838,6 +2004,34 @@ def _aplicar_disponibilidad(producto, plan):
     producto.turnos.set([turno])
 
 
+EXTENSIONES_IMAGEN_PRODUCTO = {'.png', '.jpg', '.jpeg', '.webp'}
+MIMES_IMAGEN_PRODUCTO = {'image/png', 'image/jpeg', 'image/webp'}
+MAX_TAMANO_IMAGEN_PRODUCTO = 5 * 1024 * 1024  # 5 MB
+
+class ImagenProductoInvalida(ValueError):
+    pass
+
+def _guardar_imagen_producto(imagen_archivo):
+    """Valida extensión, MIME y tamaño (máx. 5 MB), guarda en media/productos/ y retorna la URL pública."""
+    nombre_original = getattr(imagen_archivo, 'name', '') or ''
+    extension = os.path.splitext(nombre_original)[1].lower()
+    content_type = (getattr(imagen_archivo, 'content_type', '') or '').lower()
+    tamano = getattr(imagen_archivo, 'size', 0) or 0
+
+    if extension not in EXTENSIONES_IMAGEN_PRODUCTO or (content_type and content_type not in MIMES_IMAGEN_PRODUCTO):
+        raise ImagenProductoInvalida('Formato de imagen no permitido. Usa archivos PNG, JPG, JPEG o WEBP.')
+    if tamano > MAX_TAMANO_IMAGEN_PRODUCTO:
+        raise ImagenProductoInvalida('La imagen supera el tamaño máximo permitido de 5 MB.')
+
+    ruta_productos = os.path.join(settings.MEDIA_ROOT, 'productos')
+    os.makedirs(ruta_productos, exist_ok=True)
+    fs = FileSystemStorage(
+        location=ruta_productos,
+        base_url=f"{settings.MEDIA_URL}productos/"
+    )
+    nombre_guardado = fs.save(imagen_archivo.name, imagen_archivo)
+    return fs.url(nombre_guardado)
+
 @admin_required
 @require_POST
 def crear_producto(request):
@@ -1849,6 +2043,7 @@ def crear_producto(request):
     stock_critico = request.POST.get('stock_critico', 10)
     unidad_medida = request.POST.get('unidad_medida', 'unid')
     descripcion = request.POST.get('descripcion', '').strip()
+    imagen_archivo = request.FILES.get('imagen_archivo')
     imagen_url = request.POST.get('imagen_url', '').strip()
 
     if not nombre or not categoria_id:
@@ -1869,6 +2064,9 @@ def crear_producto(request):
 
     try:
         disponibilidad = _disponibilidad_del_formulario(request)
+        if imagen_archivo:
+            imagen_url = _guardar_imagen_producto(imagen_archivo)
+
         with transaction.atomic():
             producto = Producto.objects.create(
                 nombre=nombre,
@@ -1882,9 +2080,13 @@ def crear_producto(request):
                 activo=True
             )
             _aplicar_disponibilidad(producto, disponibilidad)
+    except ImagenProductoInvalida as error:
+        messages.error(request, str(error))
+        return redirect(next_url)
     except DisponibilidadInvalida as error:
         messages.error(request, f'Disponibilidad: {error} No se creó el producto.')
         return redirect(next_url)
+
     messages.success(request, f'Producto "{nombre}" agregado exitosamente al catálogo.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
@@ -1893,7 +2095,7 @@ def crear_producto(request):
 @admin_required
 @require_POST
 def editar_producto(request, pk):
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     producto = get_object_or_404(Producto, pk=pk)
 
     nombre = request.POST.get('nombre', '').strip()
@@ -1901,13 +2103,14 @@ def editar_producto(request, pk):
     precio = normalizar_precio(
         request.POST.get('precio'),
         valor_defecto=producto.precio
-        )
-    stock = request.POST.get('stock', producto.stock)
+    )
+    # Stock protegido: no se lee ni se modifica request.POST.get('stock') aquí.
+    # Solo cambia mediante registrar_produccion (+ Hornada / + Stock), ventas o mermas.
     stock_critico = request.POST.get('stock_critico', producto.stock_critico)
     unidad_medida = request.POST.get('unidad_medida', producto.unidad_medida)
     descripcion = request.POST.get('descripcion', '').strip()
+    imagen_archivo = request.FILES.get('imagen_archivo')
     imagen_url = request.POST.get('imagen_url', '').strip()
-    activo = request.POST.get('activo') in ['1', 'true', 'on', True]
 
     if not nombre:
         messages.error(request, 'El nombre del producto no puede quedar vacío.')
@@ -1923,21 +2126,23 @@ def editar_producto(request, pk):
         producto.categoria = get_object_or_404(Categoria, pk=categoria_id)
 
     try:
-        producto.stock = int(stock)
-    except (ValueError, TypeError):
-        pass
-
-    try:
         producto.stock_critico = int(stock_critico)
     except (ValueError, TypeError):
         pass
+
+    if imagen_archivo:
+        try:
+            imagen_url = _guardar_imagen_producto(imagen_archivo)
+        except ImagenProductoInvalida as error:
+            messages.error(request, str(error))
+            return redirect(next_url)
 
     producto.nombre = nombre
     producto.precio = precio
     producto.unidad_medida = unidad_medida
     producto.descripcion = descripcion
     producto.imagen_url = imagen_url
-    producto.activo = activo
+
     try:
         with transaction.atomic():
             producto.save()
@@ -1947,7 +2152,6 @@ def editar_producto(request, pk):
         return redirect(next_url)
 
     messages.success(request, f'Producto "{producto.nombre}" actualizado correctamente.')
-    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
 
@@ -2108,18 +2312,21 @@ def gestion_mermas(request):
 
 @admin_required
 @require_POST
-def eliminar_producto(request, pk):
-    next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'inicio_admin'
+def inactivar_producto(request, pk):
     producto = get_object_or_404(Producto, pk=pk)
-    nombre = producto.nombre
+    producto.activo = False
+    producto.save(update_fields=['activo'])
+    messages.warning(request, f'El producto "{producto.nombre}" quedó en estado inactivo y se ocultó del catálogo y caja.')
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
+    return redirect(next_url)
 
-    if producto.detallepedido_set.exists():
-        producto.activo = False
-        producto.save()
-        messages.warning(request, f'El producto "{nombre}" tiene ventas asociadas y ha sido marcado como inactivo.')
-    else:
-        producto.delete()
-        messages.warning(request, f'El producto "{nombre}" ha sido eliminado del catálogo.')
+@admin_required
+@require_POST
+def activar_producto(request, pk):
+    producto = get_object_or_404(Producto, pk=pk)
+    producto.activo = True
+    producto.save(update_fields=['activo'])
+    messages.success(request, f'El producto "{producto.nombre}" fue activado nuevamente y vuelve a estar disponible en el catálogo y caja.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=productos'
     return redirect(next_url)
 
@@ -2127,11 +2334,14 @@ def eliminar_producto(request, pk):
 @admin_required
 @require_POST
 def crear_categoria(request):
+    es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     next_url = request.POST.get('next') or request.META.get('HTTP_REFERER') or 'gestion_inventario'
     nombre = request.POST.get('nombre', '').strip()
     descripcion = request.POST.get('descripcion', '').strip()
 
     if not nombre:
+        if es_ajax:
+            return JsonResponse({'ok': False, 'error': 'El nombre de la categoría es obligatorio.'}, status=400)
         messages.error(request, 'El nombre de la categoría es obligatorio.')
         return redirect(next_url)
 
@@ -2139,6 +2349,14 @@ def crear_categoria(request):
         nombre__iexact=nombre,
         defaults={'nombre': nombre, 'descripcion': descripcion}
     )
+
+    if es_ajax:
+        return JsonResponse({
+            'ok': True,
+            'id': categoria.pk,
+            'nombre': categoria.nombre,
+            'creada': creada,
+        })
 
     if creada:
         messages.success(request, f'Categoría "{categoria.nombre}" creada exitosamente.')
@@ -2213,7 +2431,31 @@ def normalizar_precio(precio_raw, valor_defecto='0.00'):
 
 @admin_required
 @require_POST
+def eliminar_categoria(request, pk):
+    categoria = get_object_or_404(Categoria, pk=pk)
+
+    # Regla de negocio: no eliminar categorías que tengan productos asociados
+    # (Si tu ForeignKey en Producto usa related_name='productos', usa categoria.productos.count();
+    #  si no tiene related_name, usa categoria.producto_set.count())
+    total_productos = Producto.objects.filter(categoria=categoria).count()
+    if total_productos > 0:
+        return JsonResponse({
+            'ok': False,
+            'error': f'No se puede eliminar "{categoria.nombre}" porque tiene {total_productos} producto(s) asociado(s).'
+        }, status=400)
+
+    nombre = categoria.nombre
+    categoria.delete()
+    return JsonResponse({
+        'ok': True,
+        'id': pk,
+        'nombre': nombre
+    })
+
+@admin_required
+@require_POST
 def crear_proveedor(request):
+    es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     next_url = request.POST.get('next') or 'gestion_inventario'
     
     # Normalización de entradas del formulario
@@ -2225,14 +2467,18 @@ def crear_proveedor(request):
     costo_flete = normalizar_precio(request.POST.get('costo_flete', 0))
 
     if not rut or not nombre:
+        if es_ajax:
+            return JsonResponse({'ok': False, 'error': 'El RUT y la Razón Social son obligatorios.'}, status=400)
         messages.error(request, 'El RUT y la Razón Social son obligatorios.')
         return redirect(next_url)
 
     if Proveedor.objects.filter(rut=rut).exists():
+        if es_ajax:
+            return JsonResponse({'ok': False, 'error': f'Ya existe un proveedor registrado con el RUT {rut}.'}, status=400)
         messages.error(request, f'Ya existe un proveedor registrado con el RUT {rut}.')
         return redirect(next_url)
 
-    Proveedor.objects.create(
+    proveedor = Proveedor.objects.create(
         rut=rut,
         nombre_proveedor=nombre,
         email=email,
@@ -2240,6 +2486,20 @@ def crear_proveedor(request):
         direccion=direccion,
         costo_flete=costo_flete
     )
+
+    if es_ajax:
+        return JsonResponse({
+            'ok': True,
+            'id': proveedor.pk,
+            'nombre': proveedor.nombre_proveedor,
+            'rut': proveedor.rut,
+            'email': proveedor.email or '—',
+            'telefono': proveedor.telefono or '—',
+            'direccion': proveedor.direccion or '',
+            'costo_flete': f'${int(proveedor.costo_flete):,}'.replace(',', '.'),
+            'costo_flete_raw': int(proveedor.costo_flete),
+        })
+
     messages.success(request, f'Proveedor "{nombre}" registrado correctamente con RUT {rut}.')
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
@@ -2530,6 +2790,14 @@ def caja_abierta_required(view_func):
     y una venta (POST) se rechaza. Va debajo de @cajero_required.
     """
     def _wrapped_view(request, *args, **kwargs):
+        # Permitir solo visualización (GET) en Modo Vista Previa del Administrador
+        if (
+            request.method == 'GET'
+            and getattr(request.user, 'es_administrador', False)
+            and _activar_o_leer_vista_previa(request)
+        ):
+            return view_func(request, *args, **kwargs)
+        
         cajero = getattr(request.user, 'perfil_cajero', None)
         if cajero is None:
             caja, bloqueo = None, 'El punto de venta es solo para cajeros con una caja asignada.'
@@ -2657,9 +2925,15 @@ def inicio_cajero(request):
     # 2. Obtener productos activos e incluir la relación con su categoría
     productos = Producto.objects.filter(activo=True).select_related('categoria').order_by('nombre')
 
+    es_admin = getattr(request.user, 'es_administrador', False)
+    es_vista_previa = es_admin and (
+        _activar_o_leer_vista_previa(request) or getattr(request.user, 'perfil_cajero', None) is None
+    )
+
     contexto = {
         'categorias': categorias,
         'productos': productos,
+        'es_vista_previa': es_vista_previa,
     }
     return render(request, 'core/inicio_cajero.html', contexto)
 
@@ -2669,7 +2943,7 @@ def inicio_cajero(request):
 def finalizar_venta_pos(request):
     """
     Procesa la venta presencial desde la Terminal POS.
-    Soporta Pago en Efectivo y Pago con Tarjeta (Webpay Plus).
+    Soporta Pago en Efectivo y Pago con Tarjeta (terminal físico externo sin redirección Webpay).
     """
     try:
         data = json.loads(request.body)
@@ -2678,10 +2952,7 @@ def finalizar_venta_pos(request):
 
     carrito_items = data.get('items', [])
     metodo_pago = data.get('metodo_pago', 'EFECTIVO').upper()
-    try:
-        monto_efectivo = Decimal(str(data.get('monto_efectivo', 0)))
-    except Exception:
-        monto_efectivo = Decimal('0.00')
+    monto_efectivo = normalizar_precio(data.get('monto_efectivo', 0))
 
     if not carrito_items:
         return JsonResponse({'ok': False, 'error': 'El ticket de venta está vacío.'}, status=400)
@@ -2712,7 +2983,7 @@ def finalizar_venta_pos(request):
         faltantes = [p.nombre for p in productos if p.stock < cantidades[p.pk]]
         if faltantes:
             return JsonResponse({
-                'ok': False, 
+                'ok': False,
                 'error': f'Stock insuficiente para: {", ".join(faltantes)}.'
             }, status=400)
 
@@ -2724,12 +2995,12 @@ def finalizar_venta_pos(request):
                 'error': f'El efectivo ingresado ({clp(monto_efectivo)}) es menor al total ({clp(total)}).'
             }, status=400)
 
-        es_webpay = (metodo_pago in ['TARJETA', 'WEBPAY', 'DEBITO'])
+        es_tarjeta = (metodo_pago in ['TARJETA', 'WEBPAY', 'DEBITO', 'CREDITO'])
 
         pedido = Pedido.objects.create(
             cliente=None,
-            estado='PENDIENTE' if es_webpay else 'PAGADO',
-            canal='POS',
+            estado='PAGADO',
+            canal='PRESENCIAL',
             cajero=getattr(request.user, 'perfil_cajero', None),
             tipo_entrega='RETIRO',
             direccion_despacho='Venta presencial en Caja',
@@ -2749,61 +3020,38 @@ def finalizar_venta_pos(request):
             producto.stock -= cant
             producto.save(update_fields=['stock'])
 
-        # --- CASO 1: PAGO EN EFECTIVO ---
-        if not es_webpay:
-            vuelto = monto_efectivo - total if monto_efectivo > total else Decimal('0.00')
+        if es_tarjeta:
             Pago.objects.create(
                 pedido=pedido,
                 monto=total,
-                metodo='Efectivo',
+                metodo='Tarjeta (POS)',
                 estado='PAGADO',
-                codigo_autorizacion=f'POS-{pedido.pk:08d}',
+                codigo_autorizacion=f'POS-TARJ-{pedido.pk:08d}',
             )
             return JsonResponse({
                 'ok': True,
-                'metodo': 'efectivo',
+                'metodo': 'tarjeta',
                 'pedido_id': pedido.pk,
                 'total_clp': clp(total),
-                'vuelto_clp': clp(vuelto),
-                'mensaje': f'¡Venta N° {pedido.pk} registrada! Total: {clp(total)} | Vuelto: {clp(vuelto)}'
+                'vuelto_clp': '$0',
+                'mensaje': f'¡Venta N° {pedido.pk} con tarjeta registrada! Total: {clp(total)}'
             })
 
-        # --- CASO 2: PAGO CON TARJETA (WEBPAY PLUS) ---
-        pago = Pago.objects.create(
+        vuelto = monto_efectivo - total if monto_efectivo > total else Decimal('0.00')
+        Pago.objects.create(
             pedido=pedido,
             monto=total,
-            metodo='Webpay Plus',
-            estado='PENDIENTE',
-            codigo_autorizacion='',
+            metodo='Efectivo',
+            estado='PAGADO',
+            codigo_autorizacion=f'POS-{pedido.pk:08d}',
         )
-
-        buy_order = f"ORD-{pedido.pk}"
-        if not request.session.session_key:
-            request.session.save()
-        session_id = request.session.session_key
-        amount = int(round(float(total)))
-        return_url = request.build_absolute_uri('/carrito/webpay-confirmar/')
-
-        tx = obtener_transaccion_webpay()
-        try:
-            response = tx.create(buy_order, session_id, amount, return_url)
-        except Exception:
-            pedidos.cancelar_pendiente(pedido.pk, 'FALLIDO')
-            return JsonResponse({'ok': False, 'error': 'No se pudo conectar con Transbank Webpay.'}, status=500)
-
-        token_ws = response.get('token')
-        pago.codigo_autorizacion = token_ws
-        pago.save(update_fields=['codigo_autorizacion'])
-
-        request.session['webpay_pedido_id'] = pedido.pk
-        request.session['webpay_token'] = token_ws
-
         return JsonResponse({
             'ok': True,
-            'metodo': 'tarjeta',
+            'metodo': 'efectivo',
             'pedido_id': pedido.pk,
-            'url_webpay': f"{response['url']}?token_ws={token_ws}",
-            'mensaje': 'Conectando con Transbank Webpay...'
+            'total_clp': clp(total),
+            'vuelto_clp': clp(vuelto),
+            'mensaje': f'¡Venta N° {pedido.pk} registrada! Total: {clp(total)} | Vuelto: {clp(vuelto)}'
         })
 
 
@@ -2926,7 +3174,7 @@ def detalle_venta_pos(request, pedido_id):
 # ==========================================
 
 # ==========================================
-# FUNCIONES DE INICIO Y REGISTRO DE USUARIOS
+# FUNCIONES DE INICIO, REGISTRO DE USUARIOS
 # ==========================================
 
 def login_view(request):

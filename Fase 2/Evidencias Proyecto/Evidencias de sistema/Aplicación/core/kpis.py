@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from django.db.models import Sum, Count, Avg, F, Q
 from django.utils import timezone
+from django.db.models.functions import TruncDate
 
 from .models import (
     Pedido, DetallePedido, Producto, Categoria, Insumo,
@@ -152,7 +153,7 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
         ticket_promedio = 0.0
 
     # D) Participación de ventas por canal (%): POS vs Web
-    ventas_pos = pedidos_periodo.filter(canal='PRESENCIAL').aggregate(
+    ventas_pos = pedidos_periodo.filter(canal__in=['PRESENCIAL', 'POS']).aggregate(
         monto=Sum('total'), cantidad=Count('id')
     )
     monto_pos = float(ventas_pos['monto'] or 0)
@@ -164,9 +165,36 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
     monto_web = float(ventas_web['monto'] or 0)
     cant_web = ventas_web['cantidad'] or 0
 
+    ticket_promedio_pos = round(monto_pos / cant_pos, 0) if cant_pos > 0 else 0.0
+    ticket_promedio_web = round(monto_web / cant_web, 0) if cant_web > 0 else 0.0
+
     monto_total_canales = monto_pos + monto_web
     pct_pos = round((monto_pos / monto_total_canales * 100), 1) if monto_total_canales > 0 else 0.0
     pct_web = round((monto_web / monto_total_canales * 100), 1) if monto_total_canales > 0 else 0.0
+
+    # D.2) Distribución por Perfil de Comprador (Registrado vs Invitado Web vs Mostrador POS)
+    ventas_registrados = pedidos_periodo.filter(cliente__isnull=False).aggregate(
+        monto=Sum('total'), cantidad=Count('id')
+    )
+    cant_registrados = ventas_registrados['cantidad'] or 0
+    monto_registrados = float(ventas_registrados['monto'] or 0)
+
+    ventas_invitados_web = pedidos_periodo.filter(cliente__isnull=True, canal='WEB').aggregate(
+        monto=Sum('total'), cantidad=Count('id')
+    )
+    cant_invitados_web = ventas_invitados_web['cantidad'] or 0
+    monto_invitados_web = float(ventas_invitados_web['monto'] or 0)
+
+    ventas_mostrador_pos = pedidos_periodo.filter(cliente__isnull=True, canal__in=['PRESENCIAL', 'POS']).aggregate(
+        monto=Sum('total'), cantidad=Count('id')
+    )
+    cant_mostrador_pos = ventas_mostrador_pos['cantidad'] or 0
+    monto_mostrador_pos = float(ventas_mostrador_pos['monto'] or 0)
+
+    pct_registrados = round((cant_registrados / volumen_transacciones * 100), 1) if volumen_transacciones > 0 else 0.0
+    pct_invitados_web = round((cant_invitados_web / volumen_transacciones * 100), 1) if volumen_transacciones > 0 else 0.0
+    pct_mostrador_pos = round((cant_mostrador_pos / volumen_transacciones * 100), 1) if volumen_transacciones > 0 else 0.0
+    pct_web_como_invitado = round((cant_invitados_web / cant_web * 100), 1) if cant_web > 0 else 0.0
 
     # E) Top 5 productos más vendidos ($ y cantidad)
     detalles_periodo = DetallePedido.objects.filter(pedido__in=pedidos_periodo)
@@ -243,29 +271,29 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
     dias_totales = (fecha_tope - fecha_cursor).days + 1
     if dias_totales <= 31:
         cursor = fecha_cursor
-        while cursor <= fecha_tope:
-            label_dia = cursor.strftime('%d/%m')
-            pedidos_dia = pedidos_periodo.filter(fecha__date=cursor)
-            monto_pos_dia = float(pedidos_dia.filter(canal='PRESENCIAL').aggregate(s=Sum('total'))['s'] or 0)
-            monto_web_dia = float(pedidos_dia.filter(canal='WEB').aggregate(s=Sum('total'))['s'] or 0)
-
-            evolucion_dias_labels.append(label_dia)
-            evolucion_dias_pos.append(monto_pos_dia)
-            evolucion_dias_web.append(monto_web_dia)
-            cursor += timedelta(days=1)
     else:
         # Muestra los últimos 15 días activos para mantener el gráfico legible
         cursor = fecha_tope - timedelta(days=14)
-        while cursor <= fecha_tope:
-            label_dia = cursor.strftime('%d/%m')
-            pedidos_dia = pedidos_periodo.filter(fecha__date=cursor)
-            monto_pos_dia = float(pedidos_dia.filter(canal='PRESENCIAL').aggregate(s=Sum('total'))['s'] or 0)
-            monto_web_dia = float(pedidos_dia.filter(canal='WEB').aggregate(s=Sum('total'))['s'] or 0)
 
-            evolucion_dias_labels.append(label_dia)
-            evolucion_dias_pos.append(monto_pos_dia)
-            evolucion_dias_web.append(monto_web_dia)
-            cursor += timedelta(days=1)
+    ventas_por_dia_qs = (
+        pedidos_periodo
+        .filter(fecha__date__gte=cursor, fecha__date__lte=fecha_tope)
+        .annotate(dia=TruncDate('fecha'))
+        .values('dia', 'canal')
+        .annotate(total_dia=Sum('total'))
+    )
+    mapa_ventas_dia = {}
+    for row in ventas_por_dia_qs:
+        canal_norm = 'PRESENCIAL' if row['canal'] in ('PRESENCIAL', 'POS') else row['canal']
+        clave = (row['dia'], canal_norm)
+        mapa_ventas_dia[clave] = mapa_ventas_dia.get(clave, 0.0) + float(row['total_dia'] or 0)
+
+    while cursor <= fecha_tope:
+        label_dia = cursor.strftime('%d/%m')
+        evolucion_dias_labels.append(label_dia)
+        evolucion_dias_pos.append(mapa_ventas_dia.get((cursor, 'PRESENCIAL'), 0.0))
+        evolucion_dias_web.append(mapa_ventas_dia.get((cursor, 'WEB'), 0.0))
+        cursor += timedelta(days=1)
 
     # ==========================================================
     # 2. KPIs DE CAJA Y FIDELIZACIÓN
@@ -390,13 +418,22 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
     produccion_dias_cantidades = []
 
     dias_prod_cursor = fecha_tope - timedelta(days=13)
+
+    prod_por_dia_qs = (
+        produccion_qs
+        .filter(fecha_produccion__date__gte=dias_prod_cursor, fecha_produccion__date__lte=fecha_tope)
+        .annotate(dia=TruncDate('fecha_produccion'))
+        .values('dia')
+        .annotate(total_prod=Sum('cantidad'))
+    )
+    mapa_prod_dia = {
+        row['dia']: int(row['total_prod'] or 0)
+        for row in prod_por_dia_qs
+    }
+
     while dias_prod_cursor <= fecha_tope:
-        label = dias_prod_cursor.strftime('%d/%m')
-        cant = produccion_qs.filter(fecha_produccion__date=dias_prod_cursor).aggregate(
-            t=Sum('cantidad')
-        )['t'] or 0
-        produccion_dias_labels.append(label)
-        produccion_dias_cantidades.append(int(cant))
+        produccion_dias_labels.append(dias_prod_cursor.strftime('%d/%m'))
+        produccion_dias_cantidades.append(mapa_prod_dia.get(dias_prod_cursor, 0))
         dias_prod_cursor += timedelta(days=1)
 
     # ==========================================================
@@ -467,6 +504,18 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
         'cant_despacho': cant_despacho,
         'pct_retiro': pct_retiro,
         'pct_despacho': pct_despacho,
+        'ticket_promedio_pos': ticket_promedio_pos,
+        'ticket_promedio_web': ticket_promedio_web,
+        'cant_registrados': cant_registrados,
+        'monto_registrados': monto_registrados,
+        'pct_registrados': pct_registrados,
+        'cant_invitados_web': cant_invitados_web,
+        'monto_invitados_web': monto_invitados_web,
+        'pct_invitados_web': pct_invitados_web,
+        'cant_mostrador_pos': cant_mostrador_pos,
+        'monto_mostrador_pos': monto_mostrador_pos,
+        'pct_mostrador_pos': pct_mostrador_pos,
+        'pct_web_como_invitado': pct_web_como_invitado,
 
         # Caja y Fidelización
         'total_cierres': total_cierres,
@@ -548,7 +597,7 @@ def obtener_graficos_inicio_admin():
     while cursor <= hoy:
         label = cursor.strftime('%d/%m')
         pedidos_dia = pedidos_qs.filter(fecha__date=cursor)
-        monto_pos = float(pedidos_dia.filter(canal='PRESENCIAL').aggregate(s=Sum('total'))['s'] or 0)
+        monto_pos = float(pedidos_dia.filter(canal__in=['PRESENCIAL', 'POS']).aggregate(s=Sum('total'))['s'] or 0)
         monto_web = float(pedidos_dia.filter(canal='WEB').aggregate(s=Sum('total'))['s'] or 0)
 
         dias_labels.append(label)
@@ -594,7 +643,10 @@ def detalle_kpi(tipo, valor, periodo='mes', desde=None, hasta=None):
     if tipo == 'canal':
         if valor not in ('PRESENCIAL', 'WEB'):
             return None
-        detalles = detalles.filter(pedido__canal=valor)
+        if valor == 'PRESENCIAL':
+            detalles = detalles.filter(pedido__canal__in=['PRESENCIAL', 'POS'])
+        else:
+            detalles = detalles.filter(pedido__canal='WEB')
         titulo = 'POS (Presencial)' if valor == 'PRESENCIAL' else 'E-commerce (Webpay)'
         agrupar, etiqueta = 'producto__nombre', 'Producto'
     elif tipo == 'categoria':

@@ -63,9 +63,6 @@
       <circle cx="12" cy="7" r="4" />
       <path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
     </symbol>
-    <symbol id="i-filtro" viewBox="0 0 24 24">
-      <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-    </symbol>
     <symbol id="i-campana" viewBox="0 0 24 24">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
       <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -90,7 +87,7 @@
         <a href="{% url 'dashboard_kpis' %}"{% if request.resolver_match.url_name == 'dashboard_kpis' %} aria-current="page"{% endif %}>Métricas y KPIs</a>
         <a href="{% url 'comparar_cotizaciones' %}"{% if request.resolver_match.url_name == 'comparar_cotizaciones' %} aria-current="page"{% endif %}>Comparador y estudio de mercado</a>
         <a href="{% url 'lista_ordenes_compra' %}"{% if 'ordenes-compra' in request.path %} aria-current="page"{% endif %}>Órdenes de compra</a>
-        <a href="{% url 'gestion_inventario' %}">Gestión de inventario</a>
+        <a href="{% url 'gestion_inventario' %}"{% if 'inventario' in request.path and 'mermas' not in request.path %} aria-current="page"{% endif %}>Gestión de inventario</a>
         <a href="{% url 'gestion_mermas' %}"{% if request.resolver_match.url_name == 'gestion_mermas' %} aria-current="page"{% endif %}>Mermas</a>
       </nav>
 
@@ -148,22 +145,18 @@
               <small>Administrador</small>
             </div>
             <hr class="admin-dropdown__divider">
-            <a href="{% url 'dashboard_kpis' %}" class="admin-dropdown__item">
-              <svg class="icono" aria-hidden="true"><use href="#i-filtro" /></svg>
-              <span>Métricas y KPIs</span>
-            </a>
             <a href="{% url 'gestion_usuarios' %}" class="admin-dropdown__item">
               <svg class="icono" aria-hidden="true"><use href="#i-usuario" /></svg>
               <span>Gestionar usuarios</span>
             </a>
             <hr class="admin-dropdown__divider">
-            <a href="{% url 'inicio_cajero' %}" class="admin-dropdown__item">
+            <a href="{% url 'inicio_cajero' %}?preview=1" class="admin-dropdown__item">
               <svg class="icono" aria-hidden="true"><use href="#i-pan" /></svg>
-              <span>Ir a Punto de Venta (POS)</span>
+              <span>Punto de Venta (POS)</span>
             </a>
-            <a href="{% url 'inicio' %}" class="admin-dropdown__item">
+            <a href="{% url 'inicio' %}?preview=1" class="admin-dropdown__item">
               <svg class="icono" aria-hidden="true"><use href="#i-espiga" /></svg>
-              <span>Ir a Tienda de Clientes</span>
+              <span>Tienda de Clientes</span>
             </a>
             <hr class="admin-dropdown__divider">
             <a href="{% url 'logout' %}" class="admin-dropdown__item admin-dropdown__item--danger">

@@ -7,6 +7,7 @@ urlpatterns = [
     path('', views.inicio, name='inicio'),
     path('pedir/', views.pedir, name='pedir'),
     path('mis-pedidos/', views.mis_pedidos, name='mis_pedidos'),
+    path('mi-cuenta/', views.configuracion_cuenta, name='configuracion_cuenta'),
     path('producto/<int:pk>/', views.producto_detalle, name='producto_detalle'),
     path('local/', views.local, name='local'),
 
@@ -53,11 +54,13 @@ urlpatterns = [
     path('panel-admin/inventario/mermas/', views.gestion_mermas, name='gestion_mermas'),
     path('panel-admin/productos/crear/', views.crear_producto, name='crear_producto'),
     path('panel-admin/productos/editar/<int:pk>/', views.editar_producto, name='editar_producto'),
-    path('panel-admin/productos/eliminar/<int:pk>/', views.eliminar_producto, name='eliminar_producto'),
+    path('panel-admin/productos/inactivar/<int:pk>/', views.inactivar_producto, name='inactivar_producto'),
+    path('panel-admin/productos/activar/<int:pk>/', views.activar_producto, name='activar_producto'),
     path('panel-admin/productos/produccion/<int:pk>/', views.registrar_produccion, name='registrar_produccion'),
     path('panel-admin/productos/<int:pk>/receta/', views.receta_producto, name='receta_producto'),
     path('panel-admin/inventario/deficit/', views.deficit_insumos, name='deficit_insumos'),
     path('panel-admin/categorias/crear/', views.crear_categoria, name='crear_categoria'),
+    path('panel-admin/categorias/eliminar/<int:pk>/', views.eliminar_categoria, name='eliminar_categoria'),
 
     # Proveedores y Cotizaciones
     path('panel-admin/proveedores/crear/', views.crear_proveedor, name='crear_proveedor'),

@@ -651,6 +651,9 @@ class Pedido(models.Model):
     ]
 
     cliente = models.ForeignKey(Cliente, on_delete=models.SET_NULL, null=True, blank=True, related_name='pedidos')
+    cliente_nombre_respaldo = models.CharField(
+        max_length=150, blank=True, default='', verbose_name='Respaldo nombre cliente'
+    )
     fecha = models.DateTimeField(auto_now_add=True)
     estado = models.CharField(max_length=50, choices=ESTADOS, default='PENDIENTE')
     canal = models.CharField(max_length=50, choices=CANALES, default='WEB')
@@ -666,6 +669,72 @@ class Pedido(models.Model):
 
     def __str__(self):
         return f"Pedido #{self.id} - {self.canal} (${self.total})"
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if update_fields is None and self.cliente and not self.cliente_nombre_respaldo:
+            self.cliente_nombre_respaldo = (
+                self.cliente.user.get_full_name().strip() or self.cliente.user.username
+            )
+        super().save(*args, **kwargs)
+
+    @property
+    def es_invitado_web(self):
+        """Compra realizada por la web sin iniciar sesión / sin cuenta asociada."""
+        return self.canal == 'WEB' and self.cliente_id is None and not self.cliente_nombre_respaldo
+
+    @property
+    def es_mostrador_pos(self):
+        """Venta presencial en caja sin cliente registrado asociado."""
+        return self.canal in ('PRESENCIAL', 'POS') and self.cliente_id is None
+
+    @property
+    def nombre_cliente_display(self):
+        if self.cliente:
+            nombre = self.cliente.user.get_full_name() or self.cliente.user.username
+            return f"{nombre} (Registrado)"
+        if self.cliente_nombre_respaldo:
+            return f"{self.cliente_nombre_respaldo} (Cuenta eliminada)"
+        if self.canal == 'WEB':
+            return "Cliente Invitado (Compra Web sin cuenta)"
+        if self.canal in ('PRESENCIAL', 'POS'):
+            return "Cliente Mostrador (Venta Presencial)"
+        return "Cliente Invitado (Sin cuenta asociada)"
+
+    @property
+    def nombre_canal_display(self):
+        if self.canal in ('PRESENCIAL', 'POS'):
+            return "Presencial / POS"
+        if self.canal == 'WEB':
+            return "Web / E-commerce"
+        return self.get_canal_display() or "Canal no especificado"
+
+    @property
+    def nombre_cajero_display(self):
+        if self.cajero:
+            nombre = self.cajero.user.get_full_name() or self.cajero.user.username
+            return f"Cajero: {nombre} (Caja {self.cajero.num_caja_asignada})"
+        if self.canal == 'WEB':
+            return "Sistema Web (Venta Online)"
+        return "Caja Mostrador (Sin cajero asignado)"
+
+    @property
+    def direccion_entrega_display(self):
+        if self.direccion_despacho and self.direccion_despacho.strip():
+            return self.direccion_despacho
+        if self.tipo_entrega == 'RETIRO':
+            return "Retiro inmediato en tienda"
+        return "Dirección no especificada"
+
+    @property
+    def tipo_cliente_display(self):
+        if self.cliente_id is not None:
+            return "Cliente Registrado"
+        if self.cliente_nombre_respaldo:
+            return "Cliente (Cuenta eliminada)"
+        if self.canal == 'WEB':
+            return "Invitado Web"
+        return "Mostrador POS"
 
 
 class DetallePedido(models.Model):

@@ -63,17 +63,21 @@
           <strong class="cierre-resumen__valor">{{ caja.monto_inicial|clp }}</strong>
         </div>
         <div class="cierre-resumen__item">
-          <span class="cierre-resumen__etiqueta">Ventas en efectivo ({{ ventas.total_pedidos }} venta{{ ventas.total_pedidos|pluralize }}):</span>
+          <span class="cierre-resumen__etiqueta">Total ventas del turno ({{ ventas.total_pedidos }} venta{{ ventas.total_pedidos|pluralize }}):</span>
+          <strong class="cierre-resumen__valor">{{ ventas.total_ventas|clp }}</strong>
+        </div>
+        <div class="cierre-resumen__item">
+          <span class="cierre-resumen__etiqueta">Ventas en efectivo ({{ ventas.pedidos_efectivo }}):</span>
           <strong class="cierre-resumen__valor">{{ ventas.ventas_efectivo|clp }}</strong>
         </div>
         {% if ventas.ventas_tarjeta > 0 %}
         <div class="cierre-resumen__item">
-          <span class="cierre-resumen__etiqueta">Ventas con tarjeta:</span>
+          <span class="cierre-resumen__etiqueta">Ventas con tarjeta ({{ ventas.pedidos_tarjeta }}):</span>
           <strong class="cierre-resumen__valor">{{ ventas.ventas_tarjeta|clp }}</strong>
         </div>
         {% endif %}
         <div class="cierre-resumen__item">
-          <span class="cierre-resumen__etiqueta">Monto esperado en caja:</span>
+          <span class="cierre-resumen__etiqueta">Monto esperado en caja (efectivo):</span>
           <strong class="cierre-resumen__valor" style="color: var(--cafe);">{{ ventas.monto_esperado|clp }}</strong>
         </div>
       </div>

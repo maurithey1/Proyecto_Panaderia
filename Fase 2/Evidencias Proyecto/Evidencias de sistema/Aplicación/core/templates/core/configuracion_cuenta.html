@@ -1,0 +1,227 @@
+{% extends "core/base.html" %}
+{% load static %}
+
+{% block titulo %}Configuración de Cuenta{% endblock %}
+
+{% block contenido %}
+<section class="cuenta-config">
+  <div class="contenedor">
+    <header class="cuenta-config__cabecera">
+      <h1>Configuración de mi cuenta</h1>
+      <p>Administra tu información personal, dirección de despacho y seguridad en Los Tres Spa.</p>
+    </header>
+
+    <div class="cuenta-config__layout">
+      <aside class="cuenta-sidebar" aria-label="Secciones de la cuenta">
+        <div class="cuenta-sidebar__usuario">
+          <div class="cuenta-sidebar__avatar" aria-hidden="true">
+            {{ user.first_name|default:user.username|slice:":1"|upper }}
+          </div>
+          <div class="cuenta-sidebar__datos">
+            <strong>{{ user.get_full_name|default:user.username }}</strong>
+            <small>{{ user.email }}</small>
+          </div>
+        </div>
+
+        <nav class="cuenta-sidebar__nav">
+          <button type="button" class="cuenta-sidebar__item {% if seccion_activa == 'perfil' %}activa{% endif %}" data-tab-target="sec-perfil">
+            <span>Datos personales</span>
+          </button>
+          <button type="button" class="cuenta-sidebar__item {% if seccion_activa == 'domicilio' %}activa{% endif %}" data-tab-target="sec-domicilio">
+            <span>Domicilio de despacho</span>
+          </button>
+          <button type="button" class="cuenta-sidebar__item {% if seccion_activa == 'fidelizacion' %}activa{% endif %}" data-tab-target="sec-fidelizacion">
+            <span>Puntos y actividad</span>
+          </button>
+          <button type="button" class="cuenta-sidebar__item {% if seccion_activa == 'seguridad' %}activa{% endif %}" data-tab-target="sec-seguridad">
+            <span>Seguridad y cuenta</span>
+          </button>
+        </nav>
+
+        <div class="cuenta-sidebar__pie">
+          <a href="{% url 'mis_pedidos' %}" class="cuenta-sidebar__enlace-pedidos">Ver historial de pedidos →</a>
+        </div>
+      </aside>
+
+      <div class="cuenta-panel">
+        <!-- 1. DATOS PERSONALES -->
+        <div class="cuenta-seccion {% if seccion_activa == 'perfil' %}activa{% endif %}" id="sec-perfil">
+          <div class="cuenta-tarjeta">
+            <h2>Datos personales</h2>
+            <p class="cuenta-tarjeta__subtitulo">Esta información se utiliza para identificar tus pedidos en tienda y web.</p>
+
+            <form method="post" action="{% url 'configuracion_cuenta' %}" class="cuenta-form">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="actualizar_perfil">
+
+              <div class="cuenta-form__grupo">
+                <label for="cfg_username">Nombre de usuario</label>
+                <input type="text" id="cfg_username" name="username" value="{{ user.username }}" required maxlength="150" autocomplete="username">
+                <small style="color: var(--texto-suave, #6b5344); font-size: 0.8rem;">Este es el usuario que utilizas para iniciar sesión en la tienda.</small>
+              </div>
+
+              <div class="cuenta-form__fila">
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_nombre">Nombre</label>
+                  <input type="text" id="cfg_nombre" name="first_name" value="{{ user.first_name }}" required maxlength="150">
+                </div>
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_apellido">Apellidos</label>
+                  <input type="text" id="cfg_apellido" name="last_name" value="{{ user.last_name }}" required maxlength="150">
+                </div>
+              </div>
+
+              <div class="cuenta-form__fila">
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_email">Correo electrónico</label>
+                  <input type="email" id="cfg_email" name="email" value="{{ user.email }}" required>
+                </div>
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_telefono">Teléfono de contacto</label>
+                  <input type="tel" id="cfg_telefono" name="telefono" class="input-telefono"
+                         value="{{ cliente.telefono|default:'' }}" placeholder="+56 9 1234 5678" maxlength="15">
+                </div>
+              </div>
+
+              <div class="cuenta-form__acciones">
+                <button type="submit" class="boton boton--contorno">Guardar cambios</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 2. DOMICILIO -->
+        <div class="cuenta-seccion {% if seccion_activa == 'domicilio' %}activa{% endif %}" id="sec-domicilio">
+          <div class="cuenta-tarjeta">
+            <h2>Domicilio de despacho</h2>
+            <p class="cuenta-tarjeta__subtitulo">Guarda tu dirección principal (calle, número, comuna y referencias) para agilizar tus pedidos con envío a domicilio.</p>
+
+            <form method="post" action="{% url 'configuracion_cuenta' %}" class="cuenta-form">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="actualizar_domicilio">
+
+              <div class="cuenta-form__grupo">
+                <label for="cfg_direccion">Dirección completa (Calle, número, depto/villa, comuna, región)</label>
+                <input type="text" id="cfg_direccion" name="direccion" value="{{ cliente.direccion|default:'' }}"
+                       placeholder="Ej: Fuenzalida 1344, Depto 402, La Florida, Región Metropolitana" maxlength="255">
+              </div>
+
+              <div class="cuenta-aviso-info">
+                <strong>Nota:</strong> Tus pedidos anteriores conservan la dirección exacta con la que fueron despachados en su momento.
+              </div>
+
+              <div class="cuenta-form__acciones">
+                <button type="submit" class="boton boton--contorno">Actualizar domicilio</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 3. PUNTOS Y ACTIVIDAD -->
+        <div class="cuenta-seccion {% if seccion_activa == 'fidelizacion' %}activa{% endif %}" id="sec-fidelizacion">
+          <div class="cuenta-tarjeta">
+            <h2>Puntos de fidelización y actividad</h2>
+            <p class="cuenta-tarjeta__subtitulo">Resumen de tu cuenta en Panadería Los Tres Spa.</p>
+
+            <div class="cuenta-metricas">
+              <div class="cuenta-metrica-card">
+                <span class="cuenta-metrica-card__etiqueta">Puntos acumulados</span>
+                <strong class="cuenta-metrica-card__valor">{{ puntos_actuales }} pts</strong>
+              </div>
+              <div class="cuenta-metrica-card">
+                <span class="cuenta-metrica-card__etiqueta">Pedidos realizados</span>
+                <strong class="cuenta-metrica-card__valor">{{ total_pedidos }}</strong>
+              </div>
+              <div class="cuenta-metrica-card">
+                <span class="cuenta-metrica-card__etiqueta">Cliente desde</span>
+                <strong class="cuenta-metrica-card__valor">{{ user.date_joined|date:"d/m/Y" }}</strong>
+              </div>
+            </div>
+
+            <div class="cuenta-form__acciones">
+              <a href="{% url 'mis_pedidos' %}" class="boton boton--contorno">Ir a Mis Pedidos</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. SEGURIDAD Y ELIMINACIÓN DE CUENTA -->
+        <div class="cuenta-seccion {% if seccion_activa == 'seguridad' %}activa{% endif %}" id="sec-seguridad">
+          <div class="cuenta-tarjeta">
+            <h2>Cambiar contraseña</h2>
+            <p class="cuenta-tarjeta__subtitulo">
+              Usa una contraseña segura de al menos 8 caracteres. Si no recuerdas tu clave actual,
+              <a href="{% url 'password_reset' %}" style="color: var(--terracota, #c85a32); font-weight: 600;">recupérala por correo</a>.
+            </p>
+
+            <form method="post" action="{% url 'configuracion_cuenta' %}" class="cuenta-form">
+              {% csrf_token %}
+              <input type="hidden" name="accion" value="cambiar_contrasena">
+
+              <div class="cuenta-form__grupo">
+                <label for="cfg_pass_actual">Contraseña actual</label>
+                <input type="password" id="cfg_pass_actual" name="password_actual" required>
+              </div>
+
+              <div class="cuenta-form__fila">
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_pass_nueva">Nueva contraseña</label>
+                  <input type="password" id="cfg_pass_nueva" name="password_nueva" required minlength="8">
+                </div>
+                <div class="cuenta-form__grupo">
+                  <label for="cfg_pass_conf">Confirmar nueva contraseña</label>
+                  <input type="password" id="cfg_pass_conf" name="password_confirmar" required minlength="8">
+                </div>
+              </div>
+
+              <div class="cuenta-form__acciones">
+                <button type="submit" class="boton boton--contorno">Actualizar contraseña</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="cuenta-tarjeta cuenta-tarjeta--peligro">
+            <h2>Eliminar cuenta</h2>
+            <p class="cuenta-tarjeta__subtitulo">
+              Al eliminar tu cuenta se borrarán permanentemente tus datos personales, dirección guardada y puntos acumulados.
+              Los registros históricos de tus compras se conservarán como respaldo interno de ventas de la panadería.
+            </p>
+            <button type="button" class="boton cuenta-btn-eliminar" onclick="document.getElementById('modalEliminarCuenta').showModal()">
+              Eliminar mi cuenta permanentemente
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog id="modalEliminarCuenta" class="confirmacion-modal" aria-labelledby="tituloEliminarCuenta">
+  <form method="post" action="{% url 'configuracion_cuenta' %}" class="confirmacion-modal__caja">
+    {% csrf_token %}
+    <input type="hidden" name="accion" value="eliminar_cuenta">
+    <div class="confirmacion-modal__cabecera">
+      <h3 id="tituloEliminarCuenta" class="confirmacion-modal__titulo">¿Eliminar tu cuenta?</h3>
+    </div>
+    <div class="confirmacion-modal__cuerpo">
+      <p>Esta acción es irreversible. Perderás acceso a tu perfil y a tus puntos acumulados, aunque el respaldo contable de tus compras permanecerá registrado en la tienda.</p>
+      <div class="cuenta-form__grupo" style="margin-top: 14px;">
+        <label for="confirmar_password_eliminar">Ingresa tu contraseña para confirmar:</label>
+        <input type="password" id="confirmar_password_eliminar" name="confirmar_password_eliminar" required placeholder="Tu contraseña actual">
+      </div>
+    </div>
+    <div class="confirmacion-modal__pie">
+      <button type="button" class="confirmacion-modal__boton confirmacion-modal__boton--secundario"
+              onclick="document.getElementById('modalEliminarCuenta').close()">
+        Cancelar
+      </button>
+      <button type="submit" class="confirmacion-modal__boton" style="background-color: var(--terracota, #c85a32); border-color: var(--terracota, #c85a32);">
+        Sí, eliminar cuenta
+      </button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/configuracion_cuenta.js' %}"></script>
+{% endblock %}

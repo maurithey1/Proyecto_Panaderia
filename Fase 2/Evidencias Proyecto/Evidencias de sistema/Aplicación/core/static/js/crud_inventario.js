@@ -2,6 +2,9 @@
 // 1. CAMBIO DE PESTAÑAS (3 PESTAÑAS)
 // ==========================================
 function cambiarPestanaCrud(pestana) {
+  sessionStorage.setItem('inventario_tab_activa', pestana);
+  document.documentElement.dataset.inventarioTab = pestana;
+
   const panelInsumos = document.getElementById('panelInsumos');
   const panelProductos = document.getElementById('panelProductos');
   const panelProveedores = document.getElementById('panelProveedores');
@@ -50,14 +53,10 @@ function cambiarPestanaCrud(pestana) {
   }
 }
 
-// Activar pestaña según el parámetro ?tab= de la URL
+// Sincronizar estado inicial calculado por inventario_tab_init.js
 document.addEventListener('DOMContentLoaded', function() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const tab = urlParams.get('tab');
-  
-  if (tab && ['insumos', 'productos', 'proveedores'].includes(tab)) {
-    cambiarPestanaCrud(tab);
-  }
+  const tabInicial = document.documentElement.dataset.inventarioTab || 'insumos';
+  cambiarPestanaCrud(tabInicial);
 });
 
 // ==========================================
@@ -222,9 +221,46 @@ function cerrarModalEliminarInsumo() {
 // ==========================================
 // 3. MODALES DE PRODUCTOS
 // ==========================================
+
+function _actualizarVistaPreviaImagenEditar(url, nombreArchivo = '') {
+  const wrap = document.getElementById('edit_prod_imagen_preview_wrap');
+  const img = document.getElementById('edit_prod_imagen_preview');
+  const labelNombre = document.getElementById('edit_prod_imagen_nombre');
+  const sinFoto = document.getElementById('edit_prod_imagen_sin_foto');
+  if (!wrap || !img) return;
+
+  const valor = (url || '').trim();
+  if (valor) {
+    img.src = valor;
+    if (labelNombre) labelNombre.textContent = nombreArchivo || valor;
+    wrap.style.display = 'flex';
+    if (sinFoto) sinFoto.style.display = 'none';
+  } else {
+    img.removeAttribute('src');
+    if (labelNombre) labelNombre.textContent = '';
+    wrap.style.display = 'none';
+    if (sinFoto) sinFoto.style.display = 'block';
+  }
+}
+
+function quitarImagenEditarProducto() {
+  const inputUrl = document.getElementById('edit_prod_imagen');
+  const inputFile = document.getElementById('edit_prod_imagen_archivo');
+  if (inputUrl) inputUrl.value = '';
+  if (inputFile) inputFile.value = '';
+  _actualizarVistaPreviaImagenEditar('');
+}
+
 function abrirModalAgregarProducto() {
   const modal = document.getElementById('modalAgregarProducto');
   if (modal) {
+    // Limpia todo el formulario (incluyendo el archivo seleccionado) antes de abrir
+    const form = modal.querySelector('form');
+    if (form) form.reset();
+
+    // Sincroniza el estado del botón eliminar categoría (deshabilitado porque está vacío)
+    actualizarEstadoBtnEliminarCat('prod_categoria', 'btnEliminarCatProd');
+
     modal.style.display = 'flex';
     if (typeof cargarDisponibilidad === 'function') {
       cargarDisponibilidad(modal, null);
@@ -234,7 +270,11 @@ function abrirModalAgregarProducto() {
 
 function cerrarModalAgregarProducto() {
   const modal = document.getElementById('modalAgregarProducto');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    const inputArchivo = modal.querySelector('input[type="file"]');
+    if (inputArchivo) inputArchivo.value = '';
+    modal.style.display = 'none';
+  }
 }
 
 function abrirModalEditarProductoBtn(btn) {
@@ -246,7 +286,6 @@ function abrirModalEditarProductoBtn(btn) {
   const stockCritico = btn.dataset.stockCritico;
   const unidad = btn.dataset.unidad;
   const desc = btn.dataset.descripcion;
-  const activo = btn.dataset.activo;
   const imagenUrl = btn.dataset.imagen;
   const disponibilidadRaw = btn.dataset.disponibilidad;
 
@@ -254,14 +293,23 @@ function abrirModalEditarProductoBtn(btn) {
   if (form) form.action = `/panel-admin/productos/editar/${pk}/`;
 
   if (document.getElementById('edit_prod_nombre')) document.getElementById('edit_prod_nombre').value = nombre || '';
-  if (document.getElementById('edit_prod_categoria')) document.getElementById('edit_prod_categoria').value = categoriaId || '';
-  if (document.getElementById('edit_prod_precio')) document.getElementById('edit_prod_precio').value = precio || 0;
+  if (document.getElementById('edit_prod_categoria')) {
+    document.getElementById('edit_prod_categoria').value = categoriaId || '';
+    actualizarEstadoBtnEliminarCat('edit_prod_categoria', 'btnEliminarCatEditProd');
+  }
+  if (document.getElementById('edit_prod_precio')) {
+    document.getElementById('edit_prod_precio').value = formatearPrecio(String(precio || '0')) || '$ 0';
+  }
   if (document.getElementById('edit_prod_stock')) document.getElementById('edit_prod_stock').value = stock || 0;
+  const accionStock = document.getElementById('edit_prod_stock_accion');
+  if (accionStock) {
+    const esHorno = btn.dataset.esHorno === 'true';
+    accionStock.textContent = esHorno ? '+ Horneada' : '+ Stock';
+  }
   if (document.getElementById('edit_prod_stock_critico')) document.getElementById('edit_prod_stock_critico').value = stockCritico || 10;
   if (document.getElementById('edit_prod_unidad')) document.getElementById('edit_prod_unidad').value = unidad || 'unid';
   if (document.getElementById('edit_prod_desc')) document.getElementById('edit_prod_desc').value = desc || '';
   if (document.getElementById('edit_prod_imagen')) document.getElementById('edit_prod_imagen').value = imagenUrl || '';
-  if (document.getElementById('edit_prod_activo')) document.getElementById('edit_prod_activo').checked = (activo === 'true' || activo === true);
 
   if (typeof cargarDisponibilidad === 'function') {
     let dispObj = null;
@@ -277,20 +325,83 @@ function abrirModalEditarProductoBtn(btn) {
   }
 
   const modal = document.getElementById('modalEditarProducto');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    // Limpia cualquier archivo residual que haya quedado seleccionado antes
+    const inputArchivo = modal.querySelector('input[type="file"]');
+    if (inputArchivo) inputArchivo.value = '';
+
+    _actualizarVistaPreviaImagenEditar(imagenUrl || '');
+
+    modal.style.display = 'flex';
+  }
 }
 
 function cerrarModalEditarProducto() {
   const modal = document.getElementById('modalEditarProducto');
-  if (modal) modal.style.display = 'none';
+  if (modal) {
+    const inputArchivo = modal.querySelector('input[type="file"]');
+    if (inputArchivo) inputArchivo.value = '';
+    modal.style.display = 'none';
+  }
 }
 
-function abrirModalRegistrarProduccion(pk, nombre) {
+document.addEventListener('DOMContentLoaded', function () {
+  const inputFileEdit = document.getElementById('edit_prod_imagen_archivo');
+  const inputUrlEdit = document.getElementById('edit_prod_imagen');
+
+  if (inputFileEdit) {
+    inputFileEdit.addEventListener('change', function () {
+      const archivo = inputFileEdit.files && inputFileEdit.files[0];
+      if (!archivo) {
+        _actualizarVistaPreviaImagenEditar(inputUrlEdit ? inputUrlEdit.value : '');
+        return;
+      }
+      const lector = new FileReader();
+      lector.onload = function (ev) {
+        _actualizarVistaPreviaImagenEditar(ev.target.result, archivo.name);
+      };
+      lector.readAsDataURL(archivo);
+    });
+  }
+
+  if (inputUrlEdit) {
+    inputUrlEdit.addEventListener('input', function () {
+      if (!inputFileEdit || !inputFileEdit.files || inputFileEdit.files.length === 0) {
+        _actualizarVistaPreviaImagenEditar(inputUrlEdit.value);
+      }
+    });
+  }
+});
+
+function abrirModalRegistrarProduccion(pk, nombre, esHorno = true) {
   const form = document.getElementById('formRegistrarProduccion');
   if (form) form.action = `/panel-admin/productos/produccion/${pk}/`;
 
   const txt = document.getElementById('produccion_producto_nombre');
   if (txt) txt.textContent = `Producto: ${nombre}`;
+
+  const titulo = document.getElementById('produccion_modal_titulo');
+  const label = document.getElementById('produccion_label_cantidad');
+  const ayuda = document.getElementById('produccion_ayuda_texto');
+  const btnSubmit = document.getElementById('produccion_btn_submit');
+
+  if (esHorno) {
+    if (titulo) titulo.textContent = 'Registrar Producción Diaria (Horneada)';
+    if (label) label.textContent = 'Cantidad Horneada / Producida hoy:';
+    if (ayuda) ayuda.textContent = 'Esta cantidad se sumará al stock del producto y quedará guardada en el registro diario con la fecha y tu usuario. Si el producto tiene receta, se descuentan sus insumos (primero del envase en uso).';
+    if (btnSubmit) {
+      btnSubmit.textContent = '+ Registrar Horneada';
+      btnSubmit.style.backgroundColor = '#7b4b2a';
+    }
+  } else {
+    if (titulo) titulo.textContent = 'Registrar Ingreso de Stock';
+    if (label) label.textContent = 'Cantidad a ingresar al stock:';
+    if (ayuda) ayuda.textContent = 'Esta cantidad se sumará al stock disponible del producto y quedará registrada con la fecha y tu usuario.';
+    if (btnSubmit) {
+      btnSubmit.textContent = '+ Agregar Stock';
+      btnSubmit.style.backgroundColor = '#7b4b2a';
+    }
+  }
 
   const modal = document.getElementById('modalRegistrarProduccion');
   if (modal) modal.style.display = 'flex';
@@ -301,60 +412,410 @@ function cerrarModalRegistrarProduccion() {
   if (modal) modal.style.display = 'none';
 }
 
-function abrirModalEliminarProducto(pk, nombre) {
-  const form = document.getElementById('formEliminarProducto');
-  if (form) form.action = `/panel-admin/productos/eliminar/${pk}/`;
+function abrirModalInactivarProducto(pk, nombre) {
+  const form = document.getElementById('formInactivarProducto');
+  if (form) form.action = `/panel-admin/productos/inactivar/${pk}/`;
 
-  const txt = document.getElementById('eliminar_prod_texto');
+  const txt = document.getElementById('inactivar_prod_texto');
   if (txt) txt.textContent = nombre;
 
-  const modal = document.getElementById('modalEliminarProducto');
+  const modal = document.getElementById('modalInactivarProducto');
   if (modal) modal.style.display = 'flex';
 }
 
-function cerrarModalEliminarProducto() {
-  const modal = document.getElementById('modalEliminarProducto');
+function cerrarModalInactivarProducto() {
+  const modal = document.getElementById('modalInactivarProducto');
   if (modal) modal.style.display = 'none';
+}
+
+function abrirModalActivarProducto(pk, nombre) {
+  const form = document.getElementById('formActivarProducto');
+  if (form) form.action = `/panel-admin/productos/activar/${pk}/`;
+
+  const txt = document.getElementById('activar_prod_texto');
+  if (txt) txt.textContent = nombre;
+
+  const modal = document.getElementById('modalActivarProducto');
+  if (modal) modal.style.display = 'flex';
+}
+
+function cerrarModalActivarProducto() {
+  const modal = document.getElementById('modalActivarProducto');
+  if (modal) modal.style.display = 'none';
+}
+
+// Variable para recordar qué modal padre estaba abierto antes de abrir un modal secundario
+let modalPadreTemporal = null;
+
+function _ocultarModalPadreActivo() {
+  const padres = [
+    'modalAgregarProducto',
+    'modalEditarProducto',
+    'modalAgregarInsumo',
+    'modalEditarInsumo'
+  ];
+  for (const id of padres) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === 'flex') {
+      el.style.display = 'none';
+      modalPadreTemporal = el;
+      return;
+    }
+  }
+  modalPadreTemporal = null;
+}
+
+function _restaurarModalPadreActivo() {
+  if (modalPadreTemporal) {
+    modalPadreTemporal.style.display = 'flex';
+    modalPadreTemporal = null;
+  }
 }
 
 // Modales de Categoría Rápida
 function abrirModalAgregarCategoria() {
+  _ocultarModalPadreActivo();
   const modal = document.getElementById('modalAgregarCategoria');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    const form = modal.querySelector('form');
+    if (form) form.reset();
+    modal.style.display = 'flex';
+  }
 }
 
 function cerrarModalAgregarCategoria() {
   const modal = document.getElementById('modalAgregarCategoria');
   if (modal) modal.style.display = 'none';
+  _restaurarModalPadreActivo();
 }
+
+function actualizarEstadoBtnEliminarCat(selectId, btnId) {
+  const select = document.getElementById(selectId);
+  const btn = document.getElementById(btnId);
+  if (select && btn) {
+    btn.disabled = !select.value;
+  }
+}
+
+async function eliminarCategoriaSeleccionada(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select || !select.value) return;
+
+  const categoriaId = select.value;
+  const categoriaNombre = select.options[select.selectedIndex].text.trim();
+
+  const confirmado = await confirmarAccionCrud({
+    titulo: 'Eliminar categoría',
+    mensaje: `¿Estás seguro de eliminar la categoría "${categoriaNombre}"?`,
+    nota: 'Solo se eliminará si no tiene productos asociados en el catálogo.',
+    textoAceptar: 'Sí, eliminar'
+  });
+  if (!confirmado) return;
+
+  const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+  const csrfToken = csrfInput ? csrfInput.value : '';
+
+  try {
+    const resp = await fetch(`/panel-admin/categorias/eliminar/${categoriaId}/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.ok) {
+      ['prod_categoria', 'edit_prod_categoria'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const opt = Array.from(sel.options).find(o => String(o.value) === String(categoriaId));
+        if (opt) opt.remove();
+        if (sel.value === String(categoriaId)) sel.value = '';
+      });
+
+      actualizarEstadoBtnEliminarCat('prod_categoria', 'btnEliminarCatProd');
+      actualizarEstadoBtnEliminarCat('edit_prod_categoria', 'btnEliminarCatEditProd');
+
+      if (typeof mostrarToast === 'function') {
+        mostrarToast(`Categoría "${categoriaNombre}" eliminada correctamente.`, 'success');
+      }
+    } else {
+      const msg = data.error || 'No se pudo eliminar la categoría.';
+      if (typeof mostrarToast === 'function') mostrarToast(msg, 'error');
+    }
+  } catch (err) {
+    console.error('Error al eliminar categoría:', err);
+    if (typeof mostrarToast === 'function') {
+      mostrarToast('Error de conexión al intentar eliminar la categoría.', 'error');
+    }
+  }
+}
+
+// Helper de confirmación artesanal (reemplaza window.confirm)
+function confirmarAccionCrud({ titulo, mensaje, nota = '', textoAceptar = 'Confirmar' }) {
+  const dialog = document.getElementById('modalConfirmacionCrud');
+  if (!dialog || typeof dialog.showModal !== 'function') {
+    return Promise.resolve(window.confirm(`${mensaje}\n${nota}`));
+  }
+
+  document.getElementById('confirmCrudTitulo').textContent = titulo;
+  document.getElementById('confirmCrudMensaje').textContent = mensaje;
+  document.getElementById('confirmCrudNota').textContent = nota;
+  const btnAceptar = document.getElementById('confirmCrudAceptar');
+  const btnCancelar = document.getElementById('confirmCrudCancelar');
+  btnAceptar.textContent = textoAceptar;
+
+  return new Promise((resolve) => {
+    const limpiar = (resultado) => {
+      dialog.close();
+      btnAceptar.removeEventListener('click', onAceptar);
+      btnCancelar.removeEventListener('click', onCancelar);
+      dialog.removeEventListener('cancel', onCancelar);
+      resolve(resultado);
+    };
+    const onAceptar = () => limpiar(true);
+    const onCancelar = () => limpiar(false);
+
+    btnAceptar.addEventListener('click', onAceptar);
+    btnCancelar.addEventListener('click', onCancelar);
+    dialog.addEventListener('cancel', onCancelar);
+    dialog.showModal();
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const selectEditCat = document.getElementById('edit_prod_categoria');
+  const accionStock = document.getElementById('edit_prod_stock_accion');
+  if (!selectEditCat || !accionStock) return;
+
+  const categoriasHorno = ['salados', 'pastelería', 'pasteleria', 'panadería', 'panaderia', 'empanadas', 'dulces'];
+  selectEditCat.addEventListener('change', function () {
+    const textoCat = (selectEditCat.options[selectEditCat.selectedIndex]?.text || '').trim().toLowerCase();
+    accionStock.textContent = categoriasHorno.includes(textoCat) ? '+ Horneada' : '+ Stock';
+  });
+});
+
+// ==========================================
+// GUARDADO RÁPIDO POR AJAX DESDE MODAL PADRE
+// ==========================================
+function _agregarOpcionYSeleccionar(selectIds, valor, texto) {
+  selectIds.forEach(id => {
+    const select = document.getElementById(id);
+    if (!select) return;
+
+    // Evita duplicar si ya existía
+    let opcion = Array.from(select.options).find(o => String(o.value) === String(valor));
+    if (!opcion) {
+      opcion = new Option(texto, valor);
+      select.add(opcion);
+    }
+    // Solo la selecciona en el modal padre que estaba activo
+    if (modalPadreTemporal && modalPadreTemporal.contains(select)) {
+      select.value = valor;
+    }
+  });
+  actualizarEstadoBtnEliminarCat('prod_categoria', 'btnEliminarCatProd');
+  actualizarEstadoBtnEliminarCat('edit_prod_categoria', 'btnEliminarCatEditProd');
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  // 1. Interceptar envío de "Nueva Categoría" cuando viene desde Agregar/Editar Producto
+  const formCategoria = document.querySelector('#modalAgregarCategoria form');
+  if (formCategoria) {
+    formCategoria.addEventListener('submit', async function (e) {
+      if (!modalPadreTemporal) return; // Si no hay modal padre, envío normal
+      e.preventDefault();
+
+      const btnSubmit = formCategoria.querySelector('button[type="submit"]');
+      if (btnSubmit) btnSubmit.disabled = true;
+
+      try {
+        const resp = await fetch(formCategoria.action, {
+          method: 'POST',
+          body: new FormData(formCategoria),
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.ok) {
+          _agregarOpcionYSeleccionar(['prod_categoria', 'edit_prod_categoria'], data.id, data.nombre);
+          cerrarModalAgregarCategoria();
+          if (typeof mostrarToast === 'function') {
+            const msg = data.creada === false
+              ? `Categoría "${data.nombre}" seleccionada.`
+              : `Categoría "${data.nombre}" creada y seleccionada.`;
+            mostrarToast(msg, 'success');
+          }
+        } else {
+          const errorMsg = data.error || 'No se pudo crear la categoría.';
+          if (typeof mostrarToast === 'function') mostrarToast(errorMsg, 'error');
+        }
+      } catch (err) {
+        console.error('Error al crear categoría:', err);
+        if (typeof mostrarToast === 'function') {
+          mostrarToast('Error de conexión al guardar la categoría.', 'error');
+        }
+      } finally {
+        if (btnSubmit) btnSubmit.disabled = false;
+      }
+    });
+  }
+
+  // 2. Interceptar envío de "Nuevo Proveedor" solo cuando viene desde Agregar Insumo
+  const formProveedor = document.querySelector('#modalAgregarProveedor form');
+  if (formProveedor) {
+    formProveedor.addEventListener('submit', async function (e) {
+      if (!modalPadreTemporal) return; // Desde la pestaña Proveedores, recarga normal para ver la tabla
+      e.preventDefault();
+
+      const btnSubmit = formProveedor.querySelector('button[type="submit"]');
+      if (btnSubmit) btnSubmit.disabled = true;
+
+      try {
+        const resp = await fetch(formProveedor.action, {
+          method: 'POST',
+          body: new FormData(formProveedor),
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.ok) {
+          _agregarOpcionYSeleccionar(['insumo_proveedor', 'edit_insumo_proveedor'], data.id, data.nombre);
+          _insertarProveedorEnTabla(data);
+          cerrarModalAgregarProveedor();
+          if (typeof mostrarToast === 'function') {
+            mostrarToast(`Proveedor "${data.nombre}" registrado y seleccionado.`, 'success');
+          }
+        } else {
+          const errorMsg = data.error || 'No se pudo registrar el proveedor.';
+          if (typeof mostrarToast === 'function') mostrarToast(errorMsg, 'error');
+        }
+      } catch (err) {
+        console.error('Error al crear proveedor:', err);
+        if (typeof mostrarToast === 'function') {
+          mostrarToast('Error de conexión al guardar el proveedor.', 'error');
+        }
+      } finally {
+        if (btnSubmit) btnSubmit.disabled = false;
+      }
+    });
+  }
+});
 
 // ==========================================
 // 4. MODALES DE PROVEEDORES
 // ==========================================
+
+function _escapeHtml(valor) {
+  return String(valor ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function _insertarProveedorEnTabla(data) {
+  // 1. Actualizar contador en la pestaña "Proveedores (N)"
+  const tabBtn = document.getElementById('tabBtnProveedores');
+  if (tabBtn) {
+    tabBtn.textContent = tabBtn.textContent.replace(/\((\d+)\)/, (_, n) => `(${parseInt(n, 10) + 1})`);
+  }
+
+  // 2. Insertar la fila en la tabla de proveedores
+  const tbody = document.querySelector('#panelProveedores tbody');
+  if (!tbody) return;
+
+  // Eliminar fila de estado vacío ("No hay proveedores registrados...") si existía
+  const filaVacia = tbody.querySelector('td[colspan]');
+  if (filaVacia) filaVacia.closest('tr').remove();
+
+  // Normalizar valores vacíos ('—' viene del backend cuando el campo es nulo/vacío)
+  const rutLimpio = data.rut && data.rut !== '—' ? data.rut : '';
+  const emailLimpio = data.email && data.email !== '—' ? data.email : '';
+  const telLimpio = data.telefono && data.telefono !== '—' ? data.telefono : '';
+
+  const rutTabla = rutLimpio || data.id;
+  const emailTabla = emailLimpio || '-';
+  const telTabla = telLimpio || '-';
+
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td class="crud-col-id">${_escapeHtml(rutTabla)}</td>
+    <td class="crud-col-nombre">
+      <strong>${_escapeHtml(data.nombre)}</strong>
+      ${data.direccion ? `<small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">${_escapeHtml(data.direccion)}</small>` : ''}
+    </td>
+    <td class="crud-col-centro">${_escapeHtml(emailTabla)}</td>
+    <td class="crud-col-centro">${_escapeHtml(telTabla)}</td>
+    <td class="crud-col-precio">${_escapeHtml(data.costo_flete)}</td>
+    <td class="crud-col-acciones">
+      <button type="button" class="crud-btn-accion crud-btn-editar"
+              data-pk="${_escapeHtml(data.id)}"
+              data-rut="${_escapeHtml(rutLimpio)}"
+              data-nombre="${_escapeHtml(data.nombre)}"
+              data-email="${_escapeHtml(emailLimpio)}"
+              data-telefono="${_escapeHtml(telLimpio)}"
+              data-direccion="${_escapeHtml(data.direccion || '')}"
+              data-flete="${_escapeHtml(data.costo_flete_raw ?? 0)}"
+              onclick="abrirModalEditarProveedorBtn(this)">
+        Editar
+      </button>
+      <button type="button" class="crud-btn-accion crud-btn-eliminar"
+              data-pk="${_escapeHtml(data.id)}"
+              data-nombre="${_escapeHtml(data.nombre)}"
+              onclick="abrirModalEliminarProveedorBtn(this)">
+        Eliminar
+      </button>
+    </td>
+  `;
+  tbody.appendChild(tr);
+}
+
 function abrirModalAgregarProveedor() {
+  _ocultarModalPadreActivo();
   const modal = document.getElementById('modalAgregarProveedor');
-  if (modal) modal.style.display = 'flex';
+  if (modal) {
+    const form = modal.querySelector('form');
+    if (form) form.reset();
+    modal.style.display = 'flex';
+  }
 }
 
 function cerrarModalAgregarProveedor() {
   const modal = document.getElementById('modalAgregarProveedor');
   if (modal) modal.style.display = 'none';
+  _restaurarModalPadreActivo();
+}
+
+function abrirModalEditarProveedorBtn(btn) {
+  const { pk, rut, nombre, email, telefono, direccion, flete } = btn.dataset;
+  abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, flete);
 }
 
 function abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, costoFlete) {
   const modal = document.getElementById('modalEditarProveedor');
   const form = document.getElementById('formEditarProveedor');
+  if (!modal || !form) return;
 
-  if (form) form.action = `/panel-admin/proveedores/editar/${pk}/`;
+  form.action = `/panel-admin/proveedores/editar/${pk}/`;
 
-  if (document.getElementById('edit_prov_rut')) document.getElementById('edit_prov_rut').value = rut || '';
-  if (document.getElementById('edit_prov_nombre')) document.getElementById('edit_prov_nombre').value = nombre || '';
-  if (document.getElementById('edit_prov_email')) document.getElementById('edit_prov_email').value = email || '';
-  if (document.getElementById('edit_prov_telefono')) document.getElementById('edit_prov_telefono').value = telefono || '';
-  if (document.getElementById('edit_prov_dir')) document.getElementById('edit_prov_dir').value = direccion || '';
-  if (document.getElementById('edit_prov_flete')) document.getElementById('edit_prov_flete').value = costoFlete || '0';
+  const inputRut = document.getElementById('edit_prov_rut');
+  const inputNombre = document.getElementById('edit_prov_nombre');
+  const inputEmail = document.getElementById('edit_prov_email');
+  const inputTelefono = document.getElementById('edit_prov_telefono');
+  const inputDir = document.getElementById('edit_prov_dir');
+  const inputFlete = document.getElementById('edit_prov_flete');
 
-  if (modal) modal.style.display = 'flex';
+  if (inputRut) inputRut.value = formatearRut(rut || '');
+  if (inputNombre) inputNombre.value = nombre || '';
+  if (inputEmail) inputEmail.value = email || '';
+  if (inputTelefono) inputTelefono.value = telefono ? formatearTelefono(telefono) : '';
+  if (inputDir) inputDir.value = direccion || '';
+  if (inputFlete) inputFlete.value = formatearPrecio(String(costoFlete || '0')) || '$ 0';
+
+  modal.style.display = 'flex';
 }
 
 function cerrarModalEditarProveedor() {
@@ -362,16 +823,22 @@ function cerrarModalEditarProveedor() {
   if (modal) modal.style.display = 'none';
 }
 
+function abrirModalEliminarProveedorBtn(btn) {
+  const { pk, nombre } = btn.dataset;
+  abrirModalEliminarProveedor(pk, nombre);
+}
+
 function abrirModalEliminarProveedor(pk, nombre) {
   const modal = document.getElementById('modalEliminarProveedor');
   const form = document.getElementById('formEliminarProveedor');
+  if (!modal || !form) return;
 
-  if (form) form.action = `/panel-admin/proveedores/eliminar/${pk}/`;
+  form.action = `/panel-admin/proveedores/eliminar/${pk}/`;
 
   const texto = document.getElementById('eliminar_prov_texto');
-  if (texto) texto.textContent = nombre;
+  if (texto) texto.textContent = nombre || '-';
 
-  if (modal) modal.style.display = 'flex';
+  modal.style.display = 'flex';
 }
 
 function cerrarModalEliminarProveedor() {
@@ -556,3 +1023,52 @@ function cargarDisponibilidad(contenedorElemento, datosDisponibilidad) {
     }
   }
 }
+
+// ==========================================
+// 6. CIERRE ACCESIBLE CON ESCAPE Y CLIC EN FONDO
+// ==========================================
+const CIERRES_MODALES_CRUD = {
+  modalAgregarCategoria: cerrarModalAgregarCategoria,
+  modalAgregarProveedor: cerrarModalAgregarProveedor,
+  modalAgregarInsumo: cerrarModalAgregarInsumo,
+  modalEditarInsumo: cerrarModalEditarInsumo,
+  modalAgregarEnvase: cerrarModalAgregarEnvase,
+  modalEliminarInsumo: cerrarModalEliminarInsumo,
+  modalAgregarProducto: cerrarModalAgregarProducto,
+  modalEditarProducto: cerrarModalEditarProducto,
+  modalRegistrarProduccion: cerrarModalRegistrarProduccion,
+  modalInactivarProducto: cerrarModalInactivarProducto,
+  modalActivarProducto: cerrarModalActivarProducto,
+  modalEditarProveedor: cerrarModalEditarProveedor,
+  modalEliminarProveedor: cerrarModalEliminarProveedor,
+};
+
+function _obtenerModalCrudAbierto() {
+  for (const id of Object.keys(CIERRES_MODALES_CRUD)) {
+    const el = document.getElementById(id);
+    if (el && el.style.display === 'flex') {
+      return { id, cerrar: CIERRES_MODALES_CRUD[id] };
+    }
+  }
+  return null;
+}
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape') return;
+  const dialogConfirm = document.getElementById('modalConfirmacionCrud');
+  if (dialogConfirm && dialogConfirm.open) return;
+
+  const activo = _obtenerModalCrudAbierto();
+  if (activo) {
+    e.preventDefault();
+    activo.cerrar();
+  }
+});
+
+document.addEventListener('click', function (e) {
+  if (!e.target.classList || !e.target.classList.contains('crud-modal-backdrop')) return;
+  const cerrarFn = CIERRES_MODALES_CRUD[e.target.id];
+  if (typeof cerrarFn === 'function') {
+    cerrarFn();
+  }
+});

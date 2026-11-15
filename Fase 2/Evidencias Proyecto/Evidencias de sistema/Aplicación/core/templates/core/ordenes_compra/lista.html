@@ -52,10 +52,10 @@
         </div>
 
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-          <button type="button" id="btnGraficosAdquisicion" class="crud-btn-accion" aria-expanded="false" aria-controls="panelGraficosAdquisicion" style="padding: 10px 16px; font-weight: 700; border-radius: 8px; cursor: pointer;">
+          <button type="button" id="btnGraficosAdquisicion" class="crud-btn-accion crud-btn-adquisicion" aria-expanded="false" aria-controls="panelGraficosAdquisicion">
             📊 KPIs de Adquisición
           </button>
-          <a href="{% url 'crear_orden_compra' %}" class="crud-btn-primario" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; font-weight: 700; border-radius: 8px; box-shadow: 0 4px 10px rgba(74, 46, 24, 0.15);">
+          <a href="{% url 'crear_orden_compra' %}" class="crud-btn-primario">
             <span style="font-size: 1.2rem; line-height: 1;">+</span> Generar Orden de Compra
           </a>
         </div>
@@ -108,7 +108,7 @@
       </div>
 
       <div>
-        <button type="submit" class="crud-btn-secundario" style="padding: 8px 16px; font-weight: 600; cursor: pointer; border-radius: 6px; border: 1px solid #b89882; background: #ffffff; color: var(--cafe-oscuro);">
+        <button type="submit" class="crud-btn-secundario">
           Filtrar
         </button>
         {% if busqueda or proveedor_id or estado_filtro %}
@@ -224,17 +224,29 @@
 
                   <!-- Botón de Despacho por Correo Electrónico -->
                   <div style="display: flex; justify-content: center;">
-                    <a href="{% url 'enviar_orden_compra_email' orden.pk %}" onclick="return confirm('¿Desea enviar la orden de compra por correo electrónico a {{ orden.contacto_email|default:orden.proveedor.email }}?')" class="crud-btn-icono" title="Enviar PDF al correo de la molinera" style="width: 100%; padding: 4px 8px; font-size: 0.78rem; text-decoration: none; background: #e8f0fe; color: #1a73e8; border-radius: 4px; border: 1px solid #c2d7fa; font-weight: 600; text-align: center;">
+                    <a href="{% url 'enviar_orden_compra_email' orden.pk %}"
+                      data-confirm-titulo="Enviar orden por correo"
+                      data-confirm-mensaje="¿Desea enviar la orden de compra {{ orden.codigo }} por correo electrónico a {{ orden.contacto_email|default:orden.proveedor.email }}?"
+                      data-confirm-nota="Se adjuntará automáticamente el documento PDF oficial."
+                      data-confirm-aceptar="Enviar correo"
+                      class="crud-btn-icono js-confirmar-orden" title="Enviar PDF al correo de la molinera"
+                      style="width: 100%; padding: 4px 8px; font-size: 0.78rem; text-decoration: none; background: #e8f0fe; color: #1a73e8; border-radius: 4px; border: 1px solid #c2d7fa; font-weight: 600; text-align: center;">
                       ✉️ Enviar por Correo
                     </a>
                   </div>
 
                   <!-- Cambio de Estado Rápido -->
                   {% if orden.estado != 'RECEPCIONADA' and orden.estado != 'CANCELADA' %}
-                    <form method="post" action="{% url 'cambiar_estado_orden_compra' orden.pk %}" style="margin: 0; margin-top: 2px;">
+                    <form method="post" action="{% url 'cambiar_estado_orden_compra' orden.pk %}"
+                          class="js-form-confirmar-orden"
+                          data-confirm-titulo="Confirmar recepción en bodega"
+                          data-confirm-mensaje="¿Confirmas que las materias primas de la orden {{ orden.codigo }} ya fueron recibidas en bodega?"
+                          data-confirm-nota="El inventario de los insumos incluidos se actualizará automáticamente."
+                          data-confirm-aceptar="Confirmar recepción"
+                          style="margin: 0; margin-top: 2px;">
                       {% csrf_token %}
                       <input type="hidden" name="nuevo_estado" value="RECEPCIONADA">
-                      <button type="submit" onclick="return confirm('¿Confirmas que las materias primas de la orden {{ orden.codigo }} ya fueron recibidas en bodega?')" style="width: 100%; font-size: 0.74rem; background: #f0fdf4; border: 1px solid #86efac; color: #15803d; border-radius: 4px; padding: 3px 6px; cursor: pointer; font-weight: 600;">
+                      <button type="submit" style="width: 100%; font-size: 0.74rem; background: #f0fdf4; border: 1px solid #86efac; color: #15803d; border-radius: 4px; padding: 3px 6px; cursor: pointer; font-weight: 600;">
                         ✓ Marcar Recibida
                       </button>
                     </form>
@@ -261,6 +273,23 @@
   </section>
 
 </div>
+
+<dialog id="modalConfirmacionOrden" class="confirmacion-modal" aria-labelledby="confirmOrdenTitulo">
+  <div class="confirmacion-modal__caja">
+    <div class="confirmacion-modal__cabecera">
+      <h3 id="confirmOrdenTitulo" class="confirmacion-modal__titulo" tabindex="-1">Confirmar acción</h3>
+    </div>
+    <div class="confirmacion-modal__cuerpo">
+      <p id="confirmOrdenMensaje"></p>
+      <p id="confirmOrdenNota" class="confirmacion-modal__nota"></p>
+    </div>
+    <div class="confirmacion-modal__pie">
+      <button type="button" id="confirmOrdenCancelar" class="confirmacion-modal__boton confirmacion-modal__boton--secundario">Cancelar</button>
+      <button type="button" id="confirmOrdenAceptar" class="confirmacion-modal__boton">Confirmar</button>
+    </div>
+  </div>
+</dialog>
+
 {% endblock %}
 
 {% block scripts %}

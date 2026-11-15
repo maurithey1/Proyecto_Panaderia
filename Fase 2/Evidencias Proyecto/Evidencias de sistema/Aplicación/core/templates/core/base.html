@@ -14,6 +14,14 @@
   {% block extra_head %}{% endblock %}
 </head>
 <body>
+  {% if user.is_authenticated and user.es_administrador and request.session.admin_preview %}
+  <div style="background: var(--cafe, #4a2c18); color: #fbf5ea; padding: 8px 16px; font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center; gap: 12px; z-index: 9999; position: relative;">
+      <span><strong>Modo Vista Previa (Administrador):</strong> Estás visualizando esta interfaz en modo consulta.</span>
+      <a href="{% url 'inicio_admin' %}" style="background: #fbf5ea; color: #4a2c18; padding: 4px 12px; border-radius: 6px; font-weight: 700; text-decoration: none;">
+          ← Volver al Panel Admin
+      </a>
+  </div>
+  {% endif %}
   {# Contenedor global de notificaciones flotantes (Toasts) #}
   {% if messages %}
     <div class="notificaciones-flotantes" id="notificaciones-contenedor" aria-live="polite" aria-atomic="true">
@@ -47,6 +55,7 @@
     <symbol id="i-usuario" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></symbol>
     <symbol id="i-salir" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></symbol>
     <symbol id="i-mas" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-ajustes" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.77 1.02 1.42 1.09H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
   </svg>
 
   <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -93,6 +102,10 @@
               <a href="{% url 'mis_pedidos' %}" class="usuario-dropdown__item">
                 <svg class="icono" aria-hidden="true"><use href="#i-pan"/></svg>
                 <span>Mis Pedidos</span>
+              </a>
+              <a href="{% url 'configuracion_cuenta' %}" class="usuario-dropdown__item">
+                <svg class="icono" aria-hidden="true"><use href="#i-ajustes"/></svg>
+                <span>Configuración de cuenta</span>
               </a>
               <a href="{% url 'logout' %}" class="usuario-dropdown__item usuario-dropdown__item--danger">
                 <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>

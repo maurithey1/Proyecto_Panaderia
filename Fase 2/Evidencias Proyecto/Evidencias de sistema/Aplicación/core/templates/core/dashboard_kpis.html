@@ -108,7 +108,11 @@
       <div class="kpi-card__cuerpo">
         <span class="kpi-card__etiqueta">Ticket Promedio por Pedido</span>
         <div class="kpi-card__monto">${{ kpi.ticket_promedio|floatformat:0 }}</div>
-        <p class="kpi-card__detalle">Gasto promedio por transacción confirmada</p>
+        <div class="kpi-card__subdesglose">
+          <span>POS: <strong>${{ kpi.ticket_promedio_pos|floatformat:0 }}</strong></span>
+          <span class="kpi-separador">•</span>
+          <span>Web: <strong>${{ kpi.ticket_promedio_web|floatformat:0 }}</strong></span>
+        </div>
       </div>
     </article>
 
@@ -339,8 +343,8 @@
       <div class="kpi-panel-grafico">
         <div class="kpi-panel-grafico__cabecera">
           <div>
-            <h3>Club de Clientes y Puntos de Fidelización</h3>
-            <span class="kpi-panel-grafico__bajada">Programa de acumulación por compras</span>
+            <h3>Club de Clientes y Segmentación de Compradores</h3>
+            <span class="kpi-panel-grafico__bajada">Fidelización y proporción de compras registradas vs invitados</span>
           </div>
         </div>
         <div class="kpi-fidelizacion-card-interna">
@@ -357,8 +361,28 @@
             <span class="kpi-fidelizacion-stat__etiqueta">Promedio de puntos por cliente</span>
           </div>
         </div>
+
+        <div class="kpi-caja-desglose" style="margin-top: 14px;">
+          <div class="kpi-caja-renglon">
+            <span>Compras de Clientes Registrados:</span>
+            <strong class="texto-exito">{{ kpi.cant_registrados }} pedidos ({{ kpi.pct_registrados }}%) — ${{ kpi.monto_registrados|floatformat:0 }}</strong>
+          </div>
+          <div class="kpi-caja-renglon">
+            <span>Compras como Invitado Web (sin cuenta):</span>
+            <strong class="texto-aviso">{{ kpi.cant_invitados_web }} pedidos ({{ kpi.pct_invitados_web }}%) — ${{ kpi.monto_invitados_web|floatformat:0 }}</strong>
+          </div>
+          <div class="kpi-caja-renglon">
+            <span>Ventas Mostrador POS (presencial):</span>
+            <strong>{{ kpi.cant_mostrador_pos }} pedidos ({{ kpi.pct_mostrador_pos }}%) — ${{ kpi.monto_mostrador_pos|floatformat:0 }}</strong>
+          </div>
+        </div>
+
         <p class="kpi-texto-ayuda">
-          💡 Los clientes acumulan puntos automáticamente tanto en ventas presenciales (POS) identificándose con su RUT como en compras por la tienda online.
+          {% if kpi.pct_web_como_invitado >= 50 %}
+            💡 <strong>Oportunidad de conversión:</strong> El <strong>{{ kpi.pct_web_como_invitado }}%</strong> de tus compras online las realizan clientes invitados sin cuenta. Considera ofrecer puntos de bienvenida al registrarse para aumentar la recompra.
+          {% else %}
+            💡 Los clientes acumulan puntos automáticamente tanto en ventas presenciales (POS) identificándose en caja como en compras por la tienda online.
+          {% endif %}
         </p>
       </div>
 

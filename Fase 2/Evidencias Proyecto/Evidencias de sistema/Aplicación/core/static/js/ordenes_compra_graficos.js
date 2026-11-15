@@ -125,3 +125,57 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!panel.hidden && !cargado) iniciar();
   });
 });
+
+// ==========================================================================
+// Confirmación con <dialog> artesanal para envío por correo y recepción
+// ==========================================================================
+document.addEventListener('DOMContentLoaded', function () {
+  const dialog = document.getElementById('modalConfirmacionOrden');
+  if (!dialog || typeof dialog.showModal !== 'function') return;
+
+  const titulo = document.getElementById('confirmOrdenTitulo');
+  const mensaje = document.getElementById('confirmOrdenMensaje');
+  const nota = document.getElementById('confirmOrdenNota');
+  const btnCancelar = document.getElementById('confirmOrdenCancelar');
+  const btnAceptar = document.getElementById('confirmOrdenAceptar');
+  let accionPendiente = null;
+
+  function abrirConfirmacionOrden(el, ejecutar) {
+    titulo.textContent = el.dataset.confirmTitulo || 'Confirmar acción';
+    mensaje.textContent = el.dataset.confirmMensaje || '';
+    nota.textContent = el.dataset.confirmNota || '';
+    btnAceptar.textContent = el.dataset.confirmAceptar || 'Confirmar';
+    accionPendiente = ejecutar;
+    dialog.showModal();
+  }
+
+  document.querySelectorAll('.js-confirmar-orden').forEach(function (link) {
+    link.addEventListener('click', function (e) {
+      e.preventDefault();
+      abrirConfirmacionOrden(link, function () {
+        window.location.href = link.href;
+      });
+    });
+  });
+
+  document.querySelectorAll('.js-form-confirmar-orden').forEach(function (form) {
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      abrirConfirmacionOrden(form, function () {
+        form.submit();
+      });
+    });
+  });
+
+  btnCancelar.addEventListener('click', function () {
+    accionPendiente = null;
+    dialog.close();
+  });
+
+  btnAceptar.addEventListener('click', function () {
+    const fn = accionPendiente;
+    accionPendiente = null;
+    dialog.close();
+    if (typeof fn === 'function') fn();
+  });
+});

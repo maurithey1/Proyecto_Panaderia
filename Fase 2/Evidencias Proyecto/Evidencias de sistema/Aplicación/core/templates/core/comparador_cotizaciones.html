@@ -1,5 +1,5 @@
 {% extends 'core/base_admin.html' %}
-{% load formato %}
+{% load static formato %}
 
 {% block titulo %}Comparador y estudio de mercado{% endblock %}
 
@@ -8,9 +8,8 @@
   <section class="crud-tarjeta-marco cotiz">
 
     <div class="crud-cabecera-fila">
-      <div class="crud-enlace-superior">
+      <div class="comparador-enlace-superior">
         <a href="{% url 'gestion_inventario' %}?tab=proveedores" class="crud-link-admin">← Volver a gestión de inventario</a>
-        <a href="{% url 'dashboard_kpis' %}" class="crud-link-admin" style="margin-left: 14px; font-weight: 700; color: var(--terracota);">📊 Ver KPI de Adquisición por Molinera</a>
       </div>
       <div class="crud-titulo-accion" style="padding-inline: 0;">
         <h1 class="crud-titulo-principal">Comparador y estudio de mercado</h1>
@@ -211,7 +210,8 @@
                           + Orden
                         </a>
                         <form method="post" action="{% url 'eliminar_cotizacion' o.cotizacion.pk %}"
-                              onsubmit="return confirm('¿Eliminar la cotización de {{ o.proveedor.nombre_proveedor|escapejs }}?');" style="margin: 0;">
+                              class="form-eliminar-cotizacion"
+                              data-proveedor="{{ o.proveedor.nombre_proveedor }}" style="margin: 0;">
                           {% csrf_token %}
                           <input type="hidden" name="sacos" value="{{ sacos }}">
                           <button type="submit" class="crud-btn-accion crud-btn-eliminar">Eliminar</button>
@@ -368,25 +368,24 @@
   </section>
 </div>
 
-<script>
-function cambiarPestanaComparador(nombre) {
-  // Desactivar todos los botones y ocultar paneles
-  const botones = document.querySelectorAll('.crud-pestana-btn');
-  botones.forEach(b => b.classList.remove('activa'));
+<dialog id="modalConfirmacionCotizacion" class="confirmacion-modal" aria-labelledby="confirmCotizTitulo">
+  <div class="confirmacion-modal__caja">
+    <div class="confirmacion-modal__cabecera">
+      <h3 id="confirmCotizTitulo" class="confirmacion-modal__titulo" tabindex="-1">Eliminar cotización</h3>
+    </div>
+    <div class="confirmacion-modal__cuerpo">
+      <p id="confirmCotizMensaje"></p>
+      <p class="confirmacion-modal__nota">Esta acción quitará la tarifa comparativa de esta molinera para el insumo.</p>
+    </div>
+    <div class="confirmacion-modal__pie">
+      <button type="button" id="confirmCotizCancelar" class="confirmacion-modal__boton confirmacion-modal__boton--secundario">Cancelar</button>
+      <button type="button" id="confirmCotizAceptar" class="confirmacion-modal__boton" style="background-color: var(--terracota); border-color: var(--terracota);">Sí, eliminar</button>
+    </div>
+  </div>
+</dialog>
 
-  const paneles = document.querySelectorAll('.comparador-panel-seccion');
-  paneles.forEach(p => p.style.display = 'none');
+{% endblock %}
 
-  // Activar botón y panel correspondiente
-  const btn = document.getElementById('tabBtn_' + nombre);
-  const panel = document.getElementById('panel_' + nombre);
-  if (btn) btn.classList.add('activa');
-  if (panel) panel.style.display = 'block';
-
-  // Actualizar parámetro en la URL sin recargar
-  const url = new URL(window.location);
-  url.searchParams.set('tab', nombre);
-  window.history.replaceState({}, '', url);
-}
-</script>
+{% block scripts %}
+  <script src="{% static 'js/comparador_cotizaciones.js' %}"></script>
 {% endblock %}

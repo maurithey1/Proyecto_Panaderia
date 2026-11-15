@@ -178,13 +178,16 @@ def resumen_ventas_turno(caja):
             'ventas_efectivo': cero,
             'ventas_tarjeta': cero,
             'total_ventas': cero,
+            'pedidos_efectivo': 0,
+            'pedidos_tarjeta': 0,
             'total_pedidos': 0,
             'monto_esperado': cero,
         }
 
     pedidos_turno = Pedido.objects.filter(
         cajero=caja.cajero,
-        canal='POS',
+        canal__in=['POS', 'PRESENCIAL'],
+        estado__in=['PAGADO', 'PREPARACION', 'LISTO', 'ENTREGADO'],
         fecha__gte=caja.fecha_apertura,
     )
     if caja.fecha_cierre:
@@ -192,25 +195,27 @@ def resumen_ventas_turno(caja):
 
     pagos_pagados = Pago.objects.filter(
         pedido__in=pedidos_turno,
-        estado='PAGADO',
+        estado__in=['PAGADO', 'APROBADO'],
     )
 
-    ventas_efectivo = (
-        pagos_pagados.filter(metodo__iexact='Efectivo')
-        .aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
-    )
-    ventas_tarjeta = (
-        pagos_pagados.exclude(metodo__iexact='Efectivo')
-        .aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
-    )
+    pagos_efectivo = pagos_pagados.filter(metodo__iexact='Efectivo')
+    pagos_tarjeta = pagos_pagados.exclude(metodo__iexact='Efectivo')
+
+    ventas_efectivo = pagos_efectivo.aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
+    ventas_tarjeta = pagos_tarjeta.aggregate(total=Sum('monto'))['total'] or Decimal('0.00')
+
+    pedidos_efectivo = pagos_efectivo.count()
+    pedidos_tarjeta = pagos_tarjeta.count()
+    total_pedidos = pedidos_efectivo + pedidos_tarjeta
     total_ventas = ventas_efectivo + ventas_tarjeta
-    total_pedidos = pedidos_turno.filter(estado='PAGADO').count()
     monto_esperado = caja.monto_inicial + ventas_efectivo
 
     return {
         'ventas_efectivo': ventas_efectivo,
         'ventas_tarjeta': ventas_tarjeta,
         'total_ventas': total_ventas,
+        'pedidos_efectivo': pedidos_efectivo,
+        'pedidos_tarjeta': pedidos_tarjeta,
         'total_pedidos': total_pedidos,
         'monto_esperado': monto_esperado,
     }

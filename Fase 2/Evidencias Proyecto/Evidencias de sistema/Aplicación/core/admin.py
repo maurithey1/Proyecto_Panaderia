@@ -1,5 +1,6 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.db.models import Q
 from .models import (
     Usuario, Cliente, Cajero, Administrador, PuntosFidelizacion,
     Categoria, Producto, Turno, Proveedor, Insumo, ProveedorInsumo, EnvaseInsumo,
@@ -129,18 +130,104 @@ class ProduccionDiariaAdmin(admin.ModelAdmin):
 # ==========================================
 # 4. PEDIDOS Y PAGOS
 # ==========================================
+class TipoClienteFilter(admin.SimpleListFilter):
+    title = 'Tipo de cliente'
+    parameter_name = 'tipo_cliente'
+
+    def lookups(self, request, model_admin):
+        return (
+            ('REGISTRADO', 'Cliente Registrado (con cuenta)'),
+            ('INVITADO_WEB', 'Invitado Web (sin cuenta)'),
+            ('MOSTRADOR_POS', 'Mostrador POS (presencial)'),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == 'REGISTRADO':
+            return queryset.filter(cliente__isnull=False)
+        if self.value() == 'INVITADO_WEB':
+            return queryset.filter(cliente__isnull=True, canal='WEB')
+        if self.value() == 'MOSTRADOR_POS':
+            return queryset.filter(cliente__isnull=True, canal__in=['PRESENCIAL', 'POS'])
+        return queryset
+
+
 class DetallePedidoInline(admin.TabularInline):
     model = DetallePedido
     extra = 0
     readonly_fields = ('producto', 'cantidad', 'precio_unitario', 'subtotal')
 
+
 @admin.register(Pedido)
 class PedidoAdmin(admin.ModelAdmin):
-    list_display = ('id', 'cliente', 'canal', 'cajero', 'estado', 'tipo_entrega', 'total', 'fecha')
-    list_filter = ('estado', 'canal', 'cajero', 'tipo_entrega', 'fecha')
-    search_fields = ('id', 'cliente__user__username', 'direccion_despacho')
+    list_display = (
+        'id',
+        'cliente_columna',
+        'canal_columna',
+        'cajero_columna',
+        'estado',
+        'tipo_entrega',
+        'direccion_columna',
+        'total_columna',
+        'fecha',
+    )
+    list_filter = (
+        'estado',
+        'canal',
+        TipoClienteFilter,
+        'cajero',
+        'tipo_entrega',
+        'fecha',
+    )
+    search_fields = (
+        'id',
+        'cliente__user__first_name',
+        'cliente__user__last_name',
+        'cliente__user__username',
+        'cliente__user__email',
+        'cliente_nombre_respaldo',
+        'direccion_despacho',
+    )
     ordering = ('-fecha',)
+    list_select_related = ('cliente__user', 'cajero__user')
     inlines = [DetallePedidoInline]
+    actions = ['normalizar_pedidos_historicos']
+
+    @admin.display(description='Cliente', ordering='cliente__user__first_name')
+    def cliente_columna(self, obj):
+        return obj.nombre_cliente_display
+
+    @admin.display(description='Canal', ordering='canal')
+    def canal_columna(self, obj):
+        return obj.nombre_canal_display
+
+    @admin.display(description='Cajero que registró la venta', ordering='cajero__user__first_name')
+    def cajero_columna(self, obj):
+        return obj.nombre_cajero_display
+
+    @admin.display(description='Detalle / Dirección entrega', ordering='direccion_despacho')
+    def direccion_columna(self, obj):
+        return obj.direccion_entrega_display
+
+    @admin.display(description='Total', ordering='total')
+    def total_columna(self, obj):
+        return f"${int(round(obj.total)):,}".replace(',', '.')
+
+    @admin.action(description='Normalizar canal POS y completar datos vacíos en pedidos seleccionados')
+    def normalizar_pedidos_historicos(self, request, queryset):
+        actualizados_canal = queryset.filter(canal='POS').update(canal='PRESENCIAL')
+        actualizados_dir = queryset.filter(
+            canal='PRESENCIAL',
+        ).filter(
+            Q(direccion_despacho__isnull=True) | Q(direccion_despacho='')
+        ).update(direccion_despacho='Venta presencial en Caja')
+
+        self.message_user(
+            request,
+            f"Normalización completada: {actualizados_canal} pedido(s) migrados de 'POS' a 'PRESENCIAL' "
+            f"y {actualizados_dir} dirección(es) completada(s).",
+            level=messages.SUCCESS
+        )
+
 
 @admin.register(Pago)
 class PagoAdmin(admin.ModelAdmin):
