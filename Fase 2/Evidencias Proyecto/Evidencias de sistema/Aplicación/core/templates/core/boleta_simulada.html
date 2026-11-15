@@ -56,7 +56,26 @@
             {% endfor %}
           </tbody>
           <tfoot>
-            <tr><th scope="row" colspan="3">Total</th><td><strong>{{ pedido.total|clp }}</strong></td></tr>
+            {% if pedido.puntos_canjeados > 0 %}
+              <tr>
+                <th scope="row" colspan="3">Subtotal</th>
+                <td>{{ pedido.subtotal_bruto|clp }}</td>
+              </tr>
+              <tr>
+                <th scope="row" colspan="3">Descuento por puntos ({{ pedido.puntos_canjeados }} pts)</th>
+                <td style="color: #1b6b3a;">-{{ pedido.descuento_puntos|clp }}</td>
+              </tr>
+            {% endif %}
+            <tr>
+              <th scope="row" colspan="3">Total pagado</th>
+              <td><strong>{{ pedido.total|clp }}</strong></td>
+            </tr>
+            {% if pedido.puntos_ganados > 0 %}
+              <tr>
+                <th scope="row" colspan="3" style="font-weight: 500; color: #1b6b3a;">Puntos acumulados en esta compra</th>
+                <td style="color: #1b6b3a;"><strong>+{{ pedido.puntos_ganados }} pts</strong></td>
+              </tr>
+            {% endif %}
           </tfoot>
         </table>
       </div>

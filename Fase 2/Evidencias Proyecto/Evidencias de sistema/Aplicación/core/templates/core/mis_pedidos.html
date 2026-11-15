@@ -75,8 +75,18 @@
 
             <div style="display: flex; justify-content: space-between; align-items: center; pt-12; border-top: 1px dashed var(--borde); padding-top: 14px;">
               <div>
+                {% if pedido.puntos_canjeados > 0 %}
+                  <div style="font-size: 0.82rem; color: var(--texto-suave); margin-bottom: 2px;">
+                    Subtotal: {{ pedido.subtotal_bruto|clp }} · Canje ({{ pedido.puntos_canjeados }} pts): <span style="color: #1b6b3a;">-{{ pedido.descuento_puntos|clp }}</span>
+                  </div>
+                {% endif %}
                 <span style="font-size: 0.9rem; color: var(--texto-suave);">Total: </span>
                 <strong style="font-size: 1.25rem; color: var(--terracota);">{{ pedido.total|clp }}</strong>
+                {% if pedido.puntos_ganados > 0 %}
+                  <span style="display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #e8f5ee; color: #1b6b3a; font-size: 0.78rem; font-weight: 600;">
+                    +{{ pedido.puntos_ganados }} pts ganados
+                  </span>
+                {% endif %}
               </div>
 
               <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">

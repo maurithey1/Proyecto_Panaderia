@@ -84,6 +84,7 @@ urlpatterns = [
 
     # Punto de Venta POS (Cajero)
     path('pos/', views.inicio_cajero, name='inicio_cajero'),
+    path('pos/buscar-cliente/', views.buscar_cliente_pos, name='buscar_cliente_pos'),
     path('pos/finalizar-venta/', views.finalizar_venta_pos, name='finalizar_venta_pos'),
     path('pos/historial/', views.historial_ventas_pos, name='historial_ventas_pos'),
     path('pos/historial/<int:pedido_id>/detalle/', views.detalle_venta_pos, name='detalle_venta_pos'),

@@ -19,6 +19,11 @@ from django.db import transaction
 from django.db.models import F
 
 from .models import Pago, Pedido, Producto
+from .fidelizacion import (
+    acreditar_puntos_pedido,
+    devolver_canje_pedido,
+    reaplicar_canje_si_reactivado,
+)
 
 # Resultados de aprobar_pago
 PAGADO = 'PAGADO'                  # estaba PENDIENTE y quedó pagado
@@ -50,8 +55,9 @@ def _reservar_stock(pedido):
 
 
 def _cancelar_bloqueado(pedido, estado_pago):
-    """Cancela un pedido PENDIENTE ya bloqueado: devuelve el stock y marca el pago."""
+    """Cancela un pedido PENDIENTE ya bloqueado: devuelve el stock, reintegra puntos y marca el pago."""
     _devolver_stock(pedido)
+    devolver_canje_pedido(pedido)
     pedido.estado = 'CANCELADO'
     pedido.save(update_fields=['estado'])
     Pago.objects.filter(pedido=pedido).update(estado=estado_pago)
@@ -94,6 +100,7 @@ def aprobar_pago(pedido_id, monto, metodo, codigo_autorizacion):
         if pedido.estado == 'CANCELADO':
             if not _reservar_stock(pedido):
                 return SIN_STOCK, pedido
+            reaplicar_canje_si_reactivado(pedido)
             resultado = REACTIVADO
         elif pedido.estado == 'PENDIENTE':
             resultado = PAGADO
@@ -111,6 +118,7 @@ def aprobar_pago(pedido_id, monto, metodo, codigo_autorizacion):
                 'codigo_autorizacion': codigo_autorizacion,
             },
         )
+        acreditar_puntos_pedido(pedido)
         return resultado, pedido
 
 

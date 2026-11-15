@@ -60,6 +60,39 @@ class PuntosFidelizacion(models.Model):
     def __str__(self):
         return f"{self.cliente} - {self.puntos_acumulados} pts"
 
+class MovimientoPuntos(models.Model):
+    TIPOS = (
+        ('ACUMULACION', 'Acumulación por compra'),
+        ('CANJE', 'Canje en compra'),
+        ('DEVOLUCION_CANJE', 'Devolución por pedido cancelado'),
+        ('AJUSTE', 'Ajuste administrativo'),
+    )
+
+    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name='movimientos_puntos')
+    pedido = models.ForeignKey(
+        'Pedido', on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos_puntos'
+    )
+    tipo = models.CharField(max_length=25, choices=TIPOS)
+    puntos = models.IntegerField(help_text="Positivo para abonos, negativo para canjes.")
+    saldo_resultante = models.IntegerField(default=0)
+    descripcion = models.CharField(max_length=255)
+    fecha = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Movimiento de Puntos"
+        verbose_name_plural = "Movimientos de Puntos"
+        ordering = ['-fecha', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['pedido', 'tipo'],
+                name='uniq_movimiento_puntos_pedido_tipo',
+            )
+        ]
+
+    def __str__(self):
+        signo = '+' if self.puntos > 0 else ''
+        return f"{self.cliente} | {signo}{self.puntos} pts ({self.get_tipo_display()})"
+
 
 class Administrador(models.Model):
     user = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='perfil_admin')
@@ -660,6 +693,10 @@ class Pedido(models.Model):
     cajero = models.ForeignKey(Cajero, on_delete=models.SET_NULL, null=True, blank=True, related_name='ventas', verbose_name='Cajero que registró la venta')
     tipo_entrega = models.CharField(max_length=50, choices=ENTREGAS, default='RETIRO')
     direccion_despacho = models.CharField(max_length=255, blank=True, null=True)
+    subtotal_bruto = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    puntos_canjeados = models.IntegerField(default=0)
+    descuento_puntos = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    puntos_ganados = models.IntegerField(default=0)
     total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
     class Meta:

@@ -279,18 +279,70 @@ function renderizarSincronizado() {
     calcularTotalesPos();
 }
 
+let clientePosSeleccionado = null; // { id, nombre, puntos_disponibles }
+
+function calcularMaxPuntosPos(subtotal) {
+    if (!clientePosSeleccionado || subtotal <= 100 || clientePosSeleccionado.puntos_disponibles <= 0) {
+        return 0;
+    }
+    const maxPorcentaje = Math.floor(subtotal * 0.80);
+    const maxPiso = Math.max(0, subtotal - 100);
+    return Math.min(clientePosSeleccionado.puntos_disponibles, maxPorcentaje, maxPiso);
+}
+
 function calcularTotalesPos() {
     const elTotal = document.getElementById('posMontoTotal');
     const elVuelto = document.getElementById('posMontoVuelto');
     const inputPagaCon = document.getElementById('inputPagaCon');
 
-    const totalGral = carritoPos.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
+    const subtotal = carritoPos.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
+
+    let puntosCanje = 0;
+    const maxPts = calcularMaxPuntosPos(subtotal);
+    const maxLabel = document.getElementById('posMaxPuntosLabel');
+    const canjeBox = document.getElementById('posCanjeBox');
+    const inputCanje = document.getElementById('posInputPuntosCanje');
+
+    if (clientePosSeleccionado && maxPts > 0 && canjeBox && inputCanje) {
+        canjeBox.style.display = 'block';
+        if (maxLabel) maxLabel.textContent = maxPts;
+        inputCanje.max = maxPts;
+        puntosCanje = Math.max(0, Math.min(maxPts, parseInt(inputCanje.value, 10) || 0));
+        inputCanje.value = puntosCanje;
+    } else {
+        if (canjeBox) canjeBox.style.display = 'none';
+        if (inputCanje) inputCanje.value = 0;
+    }
+
+    const totalGral = Math.max(0, subtotal - puntosCanje);
+
+    const filaDesc = document.getElementById('posFilaDescuento');
+    const txtDesc = document.getElementById('posDescuentoPuntos');
+    if (filaDesc && txtDesc) {
+        if (puntosCanje > 0) {
+            filaDesc.style.display = 'flex';
+            txtDesc.textContent = '-' + formatoCLP(puntosCanje);
+        } else {
+            filaDesc.style.display = 'none';
+        }
+    }
+
+    const infoGanar = document.getElementById('posPuntosGanarInfo');
+    const valGanar = document.getElementById('posPuntosGanarValor');
+    if (infoGanar && valGanar) {
+        if (clientePosSeleccionado && totalGral > 0) {
+            infoGanar.style.display = 'block';
+            valGanar.textContent = '+' + Math.floor(totalGral * 0.10) + ' pts';
+        } else {
+            infoGanar.style.display = 'none';
+        }
+    }
 
     if (elTotal) elTotal.textContent = formatoCLP(totalGral);
 
     if (metodoPagoSeleccionado === 'tarjeta') {
         if (elVuelto) elVuelto.textContent = '$0';
-        return;
+        return totalGral;
     }
 
     const pagaCon = normalizarPrecioPos(inputPagaCon ? inputPagaCon.value : '');
@@ -308,6 +360,7 @@ function calcularTotalesPos() {
             elVuelto.style.color = '#000';
         }
     }
+    return totalGral;
 }
 
 // Eventos del DOM
@@ -319,6 +372,68 @@ document.addEventListener('DOMContentLoaded', function () {
     const seccionVuelto = document.getElementById('seccionVuelto');
     const btnFinalizar = document.getElementById('btnFinalizarVenta');
     const btnCancelar = document.getElementById('btnCancelarVenta');
+    const inputBuscarCliente = document.getElementById('posBuscarCliente');
+    const resultadosClienteBox = document.getElementById('posResultadosCliente');
+    const clienteActivoBox = document.getElementById('posClienteActivoBox');
+    let timerBusquedaCliente = null;
+    let ultimosClientesPos = [];
+
+    if (inputBuscarCliente) {
+        inputBuscarCliente.addEventListener('input', () => {
+            clearTimeout(timerBusquedaCliente);
+            const q = inputBuscarCliente.value.trim();
+            if (q.length < 2) {
+                resultadosClienteBox.style.display = 'none';
+                return;
+            }
+            timerBusquedaCliente = setTimeout(async () => {
+                const resp = await fetch(`/pos/buscar-cliente/?q=${encodeURIComponent(q)}`);
+                const data = await resp.json();
+                if (!data.ok || !data.clientes.length) {
+                    resultadosClienteBox.innerHTML = '<div style="padding: 8px 10px; font-size: 0.84rem; color: var(--texto-suave);">Sin clientes encontrados</div>';
+                    resultadosClienteBox.style.display = 'block';
+                    return;
+                }
+                ultimosClientesPos = data.clientes;
+                resultadosClienteBox.innerHTML = data.clientes.map((c, idx) => `
+                    <button type="button" class="pos-cliente-opcion" data-idx="${idx}"
+                            style="display: block; width: 100%; text-align: left; padding: 8px 10px; border: none; border-bottom: 1px solid #eee; background: #fff; cursor: pointer; font-size: 0.85rem;">
+                        <strong>${c.nombre}</strong> (${c.puntos_disponibles} pts)<br>
+                        <small style="color: #666;">${c.email || c.username}</small>
+                    </button>
+                `).join('');
+                resultadosClienteBox.style.display = 'block';
+
+                resultadosClienteBox.querySelectorAll('.pos-cliente-opcion').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        clientePosSeleccionado = ultimosClientesPos[parseInt(btn.dataset.idx, 10)];
+                        document.getElementById('posClienteNombre').textContent = clientePosSeleccionado.nombre;
+                        document.getElementById('posClienteSaldo').textContent = clientePosSeleccionado.puntos_disponibles;
+                        document.getElementById('posBuscadorClienteBox').style.display = 'none';
+                        clienteActivoBox.style.display = 'block';
+                        resultadosClienteBox.style.display = 'none';
+                        calcularTotalesPos();
+                    });
+                });
+            }, 250);
+        });
+    }
+
+    document.getElementById('btnQuitarClientePos')?.addEventListener('click', () => {
+        clientePosSeleccionado = null;
+        document.getElementById('posBuscadorClienteBox').style.display = 'block';
+        clienteActivoBox.style.display = 'none';
+        if (inputBuscarCliente) inputBuscarCliente.value = '';
+        calcularTotalesPos();
+    });
+
+    document.getElementById('posInputPuntosCanje')?.addEventListener('input', calcularTotalesPos);
+    document.getElementById('btnMaxPuntosPos')?.addEventListener('click', () => {
+        const subtotal = carritoPos.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
+        const inputCanje = document.getElementById('posInputPuntosCanje');
+        if (inputCanje) inputCanje.value = calcularMaxPuntosPos(subtotal);
+        calcularTotalesPos();
+    });
 
     if (btnEfectivo) {
         btnEfectivo.addEventListener('click', function () {
@@ -372,7 +487,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            const totalGral = carritoPos.reduce((acc, item) => acc + (item.precio * item.cantidad), 0);
+            const totalGral = calcularTotalesPos();
             const pagaCon = normalizarPrecioPos(inputPagaCon ? inputPagaCon.value : '');
 
             if (metodoPagoSeleccionado === 'efectivo' && pagaCon < totalGral) {
@@ -393,7 +508,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     body: JSON.stringify({
                         items: carritoPos,
                         metodo_pago: metodoPagoSeleccionado,
-                        monto_efectivo: pagaCon
+                        monto_efectivo: pagaCon,
+                        cliente_id: clientePosSeleccionado ? clientePosSeleccionado.id : null,
+                        puntos_a_canjear: parseInt(document.getElementById('posInputPuntosCanje')?.value, 10) || 0
                     })
                 });
 
@@ -443,6 +560,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 // Limpiar carrito y reiniciar formulario para el siguiente cliente
                 carritoPos = [];
+                clientePosSeleccionado = null;
+                const buscadorClienteBox = document.getElementById('posBuscadorClienteBox');
+                const clienteActivoBoxReset = document.getElementById('posClienteActivoBox');
+                const inputBuscarClienteReset = document.getElementById('posBuscarCliente');
+                const inputCanjeReset = document.getElementById('posInputPuntosCanje');
+                if (buscadorClienteBox) buscadorClienteBox.style.display = 'block';
+                if (clienteActivoBoxReset) clienteActivoBoxReset.style.display = 'none';
+                if (inputBuscarClienteReset) inputBuscarClienteReset.value = '';
+                if (inputCanjeReset) inputCanjeReset.value = 0;
                 if (inputPagaCon) inputPagaCon.value = '';
                 renderizarSincronizado();
                 btnFinalizar.disabled = false;

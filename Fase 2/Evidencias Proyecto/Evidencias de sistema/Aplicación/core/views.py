@@ -32,11 +32,18 @@ from django.core.mail import EmailMessage
 from django.core.cache import cache
 
 from .webpay import obtener_transaccion_webpay, TIPOS_PAGO_WEBPAY
+from .fidelizacion import (
+    acreditar_puntos_pedido,
+    aplicar_canje_en_pedido,
+    calcular_maximo_canje,
+    calcular_puntos_ganados,
+    obtener_cuenta_puntos,
+)
 from .models import (
     Categoria, Cliente, Cajero, DetallePedido, Insumo, Pago, Pedido, Producto,
     ProveedorInsumo, PuntosFidelizacion, Turno, Usuario, Administrador, ProduccionDiaria, Proveedor, Notificacion,
     OrdenCompra, DetalleOrdenCompra, HistorialPrecioInsumo, Merma, EnvaseInsumo, IngredienteReceta,
-    ConsumoProduccion
+    ConsumoProduccion, MovimientoPuntos,
 )
 from .templatetags.tienda import TIENDA
 from .templatetags.formato import clp
@@ -248,6 +255,10 @@ def configuracion_cuenta(request):
     puntos_obj = PuntosFidelizacion.objects.filter(cliente=cliente).first() if cliente else None
     puntos_actuales = puntos_obj.puntos_acumulados if puntos_obj else 0
     total_pedidos = Pedido.objects.filter(cliente=cliente).count() if cliente else 0
+    movimientos_puntos = (
+        MovimientoPuntos.objects.filter(cliente=cliente).select_related('pedido')[:30]
+        if cliente else []
+    )
 
     seccion_activa = request.GET.get('seccion', 'perfil')
     if seccion_activa not in {'perfil', 'domicilio', 'fidelizacion', 'seguridad'}:
@@ -369,6 +380,7 @@ def configuracion_cuenta(request):
         'cliente': cliente,
         'puntos_actuales': puntos_actuales,
         'total_pedidos': total_pedidos,
+        'movimientos_puntos': movimientos_puntos,
         'seccion_activa': seccion_activa,
         'es_personal': es_personal,
     })
@@ -493,12 +505,20 @@ def carrito(request):
             messages.warning(request, 'Se quitaron del carrito productos que ya no están disponibles.')
 
     direccion_guardada = ''
+    puntos_disponibles = 0
+    info_canje = {'max_puntos': 0, 'max_descuento': 0, 'porcentaje_maximo': 80, 'minimo_pago': 100}
+    es_cliente_fidelizacion = False
+
     if request.user.is_authenticated:
-        direccion_guardada = (
-            Cliente.objects.filter(user=request.user)
-            .values_list('direccion', flat=True)
-            .first()
-        ) or ''
+        cliente_perfil = Cliente.objects.filter(user=request.user).first()
+        if cliente_perfil:
+            direccion_guardada = cliente_perfil.direccion or ''
+            es_cliente_fidelizacion = True
+            cuenta_pts = obtener_cuenta_puntos(cliente_perfil)
+            puntos_disponibles = cuenta_pts.puntos_acumulados
+            info_canje = calcular_maximo_canje(total, puntos_disponibles)
+
+    puntos_estimados_compra = calcular_puntos_ganados(total)
 
     turnos_por_producto = []
     restricciones = []
@@ -523,6 +543,10 @@ def carrito(request):
         'carrito_tiene_stock': all(
             item['cantidad'] <= item['producto'].stock for item in items
         ),
+        'es_cliente_fidelizacion': es_cliente_fidelizacion,
+        'puntos_disponibles': puntos_disponibles,
+        'info_canje': info_canje,
+        'puntos_estimados_compra': puntos_estimados_compra,
     })
 
 
@@ -659,6 +683,11 @@ def finalizar_compra(request):
     else:
         direccion_final = texto_agenda
 
+    try:
+        puntos_a_canjear = max(0, int(request.POST.get('puntos_a_canjear') or 0))
+    except (ValueError, TypeError):
+        puntos_a_canjear = 0
+
     with transaction.atomic():
         productos = list(
             Producto.objects.select_for_update()
@@ -698,6 +727,7 @@ def finalizar_compra(request):
             canal='WEB',
             tipo_entrega=tipo_entrega,
             direccion_despacho=direccion_final,
+            subtotal_bruto=total,
             total=total,
         )
         for producto in productos:
@@ -713,26 +743,37 @@ def finalizar_compra(request):
             producto.stock -= cantidad
             producto.save(update_fields=['stock'])
 
+        if puntos_a_canjear > 0 and cliente:
+            aplicar_canje_en_pedido(pedido, puntos_a_canjear)
+
         if not es_webpay:
             Pago.objects.create(
                 pedido=pedido,
-                monto=total,
+                monto=pedido.total,
                 metodo='Simulación (sin cobro real)',
                 estado='SIMULADO',
                 codigo_autorizacion=f'DEMO-{pedido.pk:08d}',
             )
+            pts_ganados = acreditar_puntos_pedido(pedido)
             request.session['carrito'] = {}
             boletas = request.session.get('boletas_simuladas', [])
             if not isinstance(boletas, list):
                 boletas = []
             boletas.append(pedido.pk)
             request.session['boletas_simuladas'] = boletas
-            messages.success(request, f'¡Compra completada con éxito! Comprobante N° {pedido.pk}.')
+
+            detalle_pts = []
+            if pedido.puntos_canjeados > 0:
+                detalle_pts.append(f"canjeaste {pedido.puntos_canjeados} pts (-{clp(pedido.descuento_puntos)})")
+            if pts_ganados > 0:
+                detalle_pts.append(f"acumulaste +{pts_ganados} pts")
+            extra_msg = f" ({', '.join(detalle_pts)})" if detalle_pts else ""
+            messages.success(request, f'¡Compra completada con éxito! Comprobante N° {pedido.pk}.{extra_msg}')
             return redirect('comprobante_pedido', pedido_id=pedido.pk)
 
         pago = Pago.objects.create(
             pedido=pedido,
-            monto=total,
+            monto=pedido.total,
             metodo='Webpay Plus',
             estado='PENDIENTE',
             codigo_autorizacion='',
@@ -742,7 +783,7 @@ def finalizar_compra(request):
     if not request.session.session_key:
         request.session.save()
     session_id = request.session.session_key
-    amount = int(round(float(total)))
+    amount = int(round(float(pedido.total)))
     return_url = request.build_absolute_uri('/carrito/webpay-confirmar/')
 
     tx = obtener_transaccion_webpay()
@@ -2953,6 +2994,20 @@ def finalizar_venta_pos(request):
     carrito_items = data.get('items', [])
     metodo_pago = data.get('metodo_pago', 'EFECTIVO').upper()
     monto_efectivo = normalizar_precio(data.get('monto_efectivo', 0))
+    cliente_id = data.get('cliente_id')
+    try:
+        puntos_a_canjear = max(0, int(data.get('puntos_a_canjear') or 0))
+    except (ValueError, TypeError):
+        puntos_a_canjear = 0
+
+    cliente_pos = None
+    if cliente_id:
+        cliente_pos = Cliente.objects.select_related('user').filter(pk=cliente_id, user__is_active=True).first()
+        if not cliente_pos:
+            return JsonResponse({'ok': False, 'error': 'El cliente seleccionado no existe o está inactivo.'}, status=400)
+
+    if puntos_a_canjear > 0 and not cliente_pos:
+        return JsonResponse({'ok': False, 'error': 'Debes seleccionar un cliente registrado para canjear puntos.'}, status=400)
 
     if not carrito_items:
         return JsonResponse({'ok': False, 'error': 'El ticket de venta está vacío.'}, status=400)
@@ -2971,88 +3026,132 @@ def finalizar_venta_pos(request):
     if not cantidades:
         return JsonResponse({'ok': False, 'error': 'No hay productos válidos en la venta.'}, status=400)
 
-    with transaction.atomic():
-        productos = list(
-            Producto.objects.select_for_update()
-            .filter(pk__in=cantidades.keys(), activo=True)
-            .order_by('pk')
-        )
-        if len(productos) != len(cantidades):
-            return JsonResponse({'ok': False, 'error': 'Uno o más productos seleccionados ya no están disponibles.'}, status=400)
-
-        faltantes = [p.nombre for p in productos if p.stock < cantidades[p.pk]]
-        if faltantes:
-            return JsonResponse({
-                'ok': False,
-                'error': f'Stock insuficiente para: {", ".join(faltantes)}.'
-            }, status=400)
-
-        total = sum(p.precio * cantidades[p.pk] for p in productos)
-
-        if metodo_pago == 'EFECTIVO' and monto_efectivo < total:
-            return JsonResponse({
-                'ok': False,
-                'error': f'El efectivo ingresado ({clp(monto_efectivo)}) es menor al total ({clp(total)}).'
-            }, status=400)
-
-        es_tarjeta = (metodo_pago in ['TARJETA', 'WEBPAY', 'DEBITO', 'CREDITO'])
-
-        pedido = Pedido.objects.create(
-            cliente=None,
-            estado='PAGADO',
-            canal='PRESENCIAL',
-            cajero=getattr(request.user, 'perfil_cajero', None),
-            tipo_entrega='RETIRO',
-            direccion_despacho='Venta presencial en Caja',
-            total=total,
-        )
-
-        for producto in productos:
-            cant = cantidades[producto.pk]
-            subtotal = producto.precio * cant
-            DetallePedido.objects.create(
-                pedido=pedido,
-                producto=producto,
-                cantidad=cant,
-                precio_unitario=producto.precio,
-                subtotal=subtotal,
+    try:
+        with transaction.atomic():
+            productos = list(
+                Producto.objects.select_for_update()
+                .filter(pk__in=cantidades.keys(), activo=True)
+                .order_by('pk')
             )
-            producto.stock -= cant
-            producto.save(update_fields=['stock'])
+            if len(productos) != len(cantidades):
+                raise ValueError('Uno o más productos seleccionados ya no están disponibles.')
 
-        if es_tarjeta:
+            faltantes = [p.nombre for p in productos if p.stock < cantidades[p.pk]]
+            if faltantes:
+                raise ValueError(f'Stock insuficiente para: {", ".join(faltantes)}.')
+
+            total = sum(p.precio * cantidades[p.pk] for p in productos)
+            es_tarjeta = (metodo_pago in ['TARJETA', 'WEBPAY', 'DEBITO', 'CREDITO'])
+
+            pedido = Pedido.objects.create(
+                cliente=cliente_pos,
+                estado='PAGADO',
+                canal='PRESENCIAL',
+                cajero=getattr(request.user, 'perfil_cajero', None),
+                tipo_entrega='RETIRO',
+                direccion_despacho='Venta presencial en Caja',
+                subtotal_bruto=total,
+                total=total,
+            )
+
+            for producto in productos:
+                cant = cantidades[producto.pk]
+                subtotal = producto.precio * cant
+                DetallePedido.objects.create(
+                    pedido=pedido,
+                    producto=producto,
+                    cantidad=cant,
+                    precio_unitario=producto.precio,
+                    subtotal=subtotal,
+                )
+                producto.stock -= cant
+                producto.save(update_fields=['stock'])
+
+            if puntos_a_canjear > 0:
+                aplicar_canje_en_pedido(pedido, puntos_a_canjear)
+
+            total_final_pagar = pedido.total
+            if not es_tarjeta and monto_efectivo < total_final_pagar:
+                raise ValueError(
+                    f'El efectivo ingresado ({clp(monto_efectivo)}) es menor al total ({clp(total_final_pagar)}).'
+                )
+
+            vuelto = (monto_efectivo - total_final_pagar) if (not es_tarjeta and monto_efectivo > total_final_pagar) else Decimal('0.00')
+
             Pago.objects.create(
                 pedido=pedido,
-                monto=total,
-                metodo='Tarjeta (POS)',
+                monto=total_final_pagar,
+                metodo='Tarjeta (POS)' if es_tarjeta else 'Efectivo',
                 estado='PAGADO',
-                codigo_autorizacion=f'POS-TARJ-{pedido.pk:08d}',
+                codigo_autorizacion=f'POS-TARJ-{pedido.pk:08d}' if es_tarjeta else f'POS-{pedido.pk:08d}',
             )
-            return JsonResponse({
-                'ok': True,
-                'metodo': 'tarjeta',
-                'pedido_id': pedido.pk,
-                'total_clp': clp(total),
-                'vuelto_clp': '$0',
-                'mensaje': f'¡Venta N° {pedido.pk} con tarjeta registrada! Total: {clp(total)}'
-            })
 
-        vuelto = monto_efectivo - total if monto_efectivo > total else Decimal('0.00')
-        Pago.objects.create(
-            pedido=pedido,
-            monto=total,
-            metodo='Efectivo',
-            estado='PAGADO',
-            codigo_autorizacion=f'POS-{pedido.pk:08d}',
-        )
-        return JsonResponse({
-            'ok': True,
-            'metodo': 'efectivo',
-            'pedido_id': pedido.pk,
-            'total_clp': clp(total),
-            'vuelto_clp': clp(vuelto),
-            'mensaje': f'¡Venta N° {pedido.pk} registrada! Total: {clp(total)} | Vuelto: {clp(vuelto)}'
+            puntos_ganados = acreditar_puntos_pedido(pedido)
+            saldo_actualizado = obtener_cuenta_puntos(cliente_pos).puntos_acumulados if cliente_pos else 0
+    except ValueError as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+
+    extra_pts = []
+    if pedido.puntos_canjeados > 0:
+        extra_pts.append(f'Canje: -{clp(pedido.descuento_puntos)}')
+    if puntos_ganados > 0:
+        extra_pts.append(f'+{puntos_ganados} pts')
+    sufijo_pts = f" ({' | '.join(extra_pts)})" if extra_pts else ""
+
+    if es_tarjeta:
+        mensaje = f'¡Venta N° {pedido.pk} con tarjeta registrada! Total: {clp(total_final_pagar)}{sufijo_pts}'
+    else:
+        mensaje = f'¡Venta N° {pedido.pk} registrada! Total: {clp(total_final_pagar)} | Vuelto: {clp(vuelto)}{sufijo_pts}'
+
+    return JsonResponse({
+        'ok': True,
+        'metodo': 'tarjeta' if es_tarjeta else 'efectivo',
+        'pedido_id': pedido.pk,
+        'total': int(pedido.total),
+        'subtotal_bruto': int(pedido.subtotal_bruto),
+        'total_clp': clp(pedido.total),
+        'vuelto_clp': clp(vuelto),
+        'puntos_canjeados': pedido.puntos_canjeados,
+        'descuento_puntos': int(pedido.descuento_puntos),
+        'puntos_ganados': puntos_ganados,
+        'puntos_saldo_nuevo': saldo_actualizado,
+        'cliente_nombre': (cliente_pos.user.get_full_name().strip() or cliente_pos.user.username) if cliente_pos else '',
+        'mensaje': mensaje,
+    })
+
+@cajero_required
+@require_GET
+def buscar_cliente_pos(request):
+    """Busca clientes registrados por nombre, usuario, correo o teléfono para la Terminal POS."""
+    termino = (request.GET.get('q') or '').strip()
+    if len(termino) < 2:
+        return JsonResponse({'ok': True, 'clientes': []})
+
+    clientes_qs = (
+        Cliente.objects.select_related('user', 'puntos')
+        .filter(user__is_active=True)
+        .filter(
+            Q(user__username__icontains=termino)
+            | Q(user__email__icontains=termino)
+            | Q(user__first_name__icontains=termino)
+            | Q(user__last_name__icontains=termino)
+            | Q(telefono__icontains=termino)
+        )[:8]
+    )
+
+    resultados = []
+    for c in clientes_qs:
+        saldo = c.puntos.puntos_acumulados if hasattr(c, 'puntos') else 0
+        resultados.append({
+            'id': c.pk,
+            'nombre': c.user.get_full_name().strip() or c.user.username,
+            'username': c.user.username,
+            'email': c.user.email,
+            'telefono': c.telefono or '',
+            'puntos_disponibles': saldo,
         })
+
+    return JsonResponse({'ok': True, 'clientes': resultados})
 
 
 # --- HISTORIAL DE VENTAS DEL CAJERO (la libreta de su turno) ---

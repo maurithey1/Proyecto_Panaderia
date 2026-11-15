@@ -102,6 +102,60 @@
           </label>
         </fieldset>
 
+        {% if es_cliente_fidelizacion %}
+          <fieldset class="compra__seccion-fidelizacion">
+            <legend>Puntos de Fidelización</legend>
+            <p class="compra__ayuda" style="margin-top: 0;">
+              Tienes <strong>{{ puntos_disponibles }} puntos</strong> disponibles ($1 CLP = 1 punto).
+            </p>
+
+            {% if info_canje.max_puntos > 0 %}
+              <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 10px;">
+                <div>
+                  <label class="campo" for="puntos-a-canjear">Puntos a canjear</label>
+                  <input id="puntos-a-canjear" class="campo__control" type="number" name="puntos_a_canjear"
+                         min="0" max="{{ info_canje.max_puntos }}" step="1" value="0" style="max-width: 160px;">
+                </div>
+                <button type="button" class="boton boton--contorno" id="btn-max-puntos"
+                        data-max="{{ info_canje.max_puntos }}">
+                  Usar máximo ({{ info_canje.max_puntos }} pts)
+                </button>
+              </div>
+              <p class="compra__ayuda" style="margin-bottom: 10px;">
+                Puedes cubrir hasta el {{ info_canje.porcentaje_maximo }}% del subtotal (máx. {{ info_canje.max_descuento|clp }}, dejando un mínimo de {{ info_canje.minimo_pago|clp }} a pagar).
+              </p>
+            {% else %}
+              <input type="hidden" name="puntos_a_canjear" value="0">
+              <p class="compra__ayuda" style="margin-bottom: 10px;">
+                {% if puntos_disponibles == 0 %}
+                  Aún no tienes puntos acumulados para canjear en esta compra.
+                {% else %}
+                  El monto actual del pedido no permite aplicar canje (mínimo a pagar {{ info_canje.minimo_pago|clp }}).
+                {% endif %}
+              </p>
+            {% endif %}
+
+            <div style="padding: 10px 12px; border-radius: 8px; background: var(--crema, #faf6f0); border: 1px solid var(--borde); font-size: 0.92rem;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>Descuento aplicado por puntos:</span>
+                <strong id="resumen-descuento-puntos" style="color: #1b6b3a;">-$0</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span>Total estimado a pagar:</span>
+                <strong id="resumen-total-final" data-subtotal-inicial="{{ total|floatformat:'0u' }}">{{ total|clp }}</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; color: var(--texto-suave); font-size: 0.85rem;">
+                <span>Puntos a ganar con esta compra (10%):</span>
+                <strong id="resumen-puntos-ganar">+{{ puntos_estimados_compra }} pts</strong>
+              </div>
+            </div>
+          </fieldset>
+        {% elif not user.is_authenticated %}
+          <p class="compra__ayuda" style="padding: 10px 12px; border: 1px dashed var(--borde); border-radius: 8px;">
+            <a href="{% url 'login' %}?next={% url 'carrito' %}">Inicia sesión</a> para acumular el 10% en puntos o canjear tu saldo disponible.
+          </p>
+        {% endif %}
+
         <fieldset class="compra__seccion-pago">
           <legend>Método de Pago</legend>
           
