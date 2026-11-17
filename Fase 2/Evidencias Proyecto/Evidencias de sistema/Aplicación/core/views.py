@@ -18,7 +18,7 @@ from django.db.models import Case, Count, F, IntegerField, OuterRef, Prefetch, Q
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
-from django.utils.http import urlencode
+from django.utils.http import urlencode, url_has_allowed_host_and_scheme
 
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -1309,6 +1309,8 @@ def exportar_kpis_csv(request):
     Exporta las ventas y transacciones a un archivo CSV perfectamente ordenado y formateado para Excel.
     Compatible con Microsoft Excel en Windows mediante UTF-8 con BOM, directiva 'sep=;' y columnas legibles.
     """
+    from .reporte_excel import sanear_celda_exportacion
+
     periodo = request.GET.get('periodo', 'todo')
     desde = request.GET.get('desde') or None
     hasta = request.GET.get('hasta') or None
@@ -1391,7 +1393,7 @@ def exportar_kpis_csv(request):
             suma_unidades += d.cantidad
             suma_subtotales += int(d.subtotal)
 
-            writer.writerow([
+            writer.writerow([sanear_celda_exportacion(col) for col in [
                 d.id,
                 ped.id,
                 fecha_str,
@@ -1411,7 +1413,7 @@ def exportar_kpis_csv(request):
                 ped.nombre_cajero_display,
                 pago.metodo if pago else 'Sin registro',
                 (pago.codigo_autorizacion if pago and pago.codigo_autorizacion else 'N/A'),
-            ])
+            ]])
 
         # Fila final de totalización para Excel (19 columnas exactas)
         writer.writerow([
@@ -1500,7 +1502,7 @@ def exportar_kpis_csv(request):
             total_unidades_general += unidades_pedido
             total_monto_general += monto_int
 
-            writer.writerow([
+            writer.writerow([sanear_celda_exportacion(col) for col in [
                 p.id,
                 fecha_local,
                 p.nombre_canal_display,
@@ -1519,7 +1521,7 @@ def exportar_kpis_csv(request):
                 unidades_pedido,
                 desglose_items,
                 monto_int,
-            ])
+            ]])
 
         # Fila final de totalización para visualización y cuadratura rápida en Excel (18 columnas exactas)
         writer.writerow([
@@ -3290,6 +3292,14 @@ def login_view(request):
             messages.error(request, 'Por favor, ingrese su correo o usuario y contraseña.')
             return render(request, 'core/login.html', {'next': next_url})
 
+        # Límite de intentos fallidos por IP + identificador (máximo 5 intentos en 5 minutos)
+        ip_cliente = request.META.get('REMOTE_ADDR', '0.0.0.0')
+        clave_intentos = f"login_intentos:{ip_cliente}:{identificador.lower()}"
+        intentos = cache.get(clave_intentos, 0)
+        if intentos >= 5:
+            messages.error(request, 'Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.')
+            return render(request, 'core/login.html', {'next': next_url}, status=429)
+
         usuario_encontrado = Usuario.objects.filter(
             Q(username__iexact=identificador) | Q(email__iexact=identificador)
         ).first()
@@ -3303,18 +3313,25 @@ def login_view(request):
                 messages.error(request, 'Esta cuenta se encuentra desactivada.')
                 return render(request, 'core/login.html', {'next': next_url})
 
+            cache.delete(clave_intentos)
             login(request, user)
 
-            if next_url and next_url.startswith('/'):
+            if next_url and url_has_allowed_host_and_scheme(
+                next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
                 return redirect(next_url)
 
             return redireccionar_por_rol(user)
         else:
+            cache.set(clave_intentos, intentos + 1, timeout=300)
             messages.error(request, 'Credenciales incorrectas. Verifique sus datos e intente nuevamente.')
 
     return render(request, 'core/login.html', {'next': next_url})
 
 
+@require_POST
 def logout_view(request):
     logout(request)
     messages.info(request, 'Has cerrado sesión correctamente.')

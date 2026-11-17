@@ -159,10 +159,13 @@
               <span>Tienda de Clientes</span>
             </a>
             <hr class="admin-dropdown__divider">
-            <a href="{% url 'logout' %}" class="admin-dropdown__item admin-dropdown__item--danger">
-              <svg class="icono" aria-hidden="true"><use href="#i-salir" /></svg>
-              <span>Cerrar sesión</span>
-            </a>
+            <form method="post" action="{% url 'logout' %}" style="margin: 0;">
+              {% csrf_token %}
+              <button type="submit" class="admin-dropdown__item admin-dropdown__item--danger" style="width: 100%; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer;">
+                <svg class="icono" aria-hidden="true"><use href="#i-salir" /></svg>
+                <span>Cerrar sesión</span>
+              </button>
+            </form>
           </div>
         </div>
 

@@ -255,7 +255,7 @@ function renderizarSincronizado() {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td class="pos-item-info">
-                        <strong>${item.nombre}</strong>
+                        <strong></strong>
                         <small>${formatoCLP(item.precio)} c/u</small>
                     </td>
                     <td>
@@ -270,6 +270,7 @@ function renderizarSincronizado() {
                         <button type="button" class="cajero-btn-remove" onclick="quitarDelCarritoPos(${item.id})" title="Eliminar">&times;</button>
                     </td>
                 `;
+                tr.querySelector('.pos-item-info strong').textContent = String(item.nombre ?? '');
                 tbody.appendChild(tr);
             });
         }

@@ -47,6 +47,17 @@ def _crear_bordes(estilo_sup='thin', estilo_inf='thin', color='D6C6B2'):
     return Border(top=lado_sup, bottom=lado_inf, left=lado_lat, right=lado_lat)
 
 
+def sanear_celda_exportacion(valor):
+    """
+    Neutraliza cadenas que comienzan con caracteres de fórmula (=, +, -, @, tabulación o retorno)
+    anteponiendo un apóstrofo para evitar inyección de fórmulas en Excel y CSV.
+    """
+    if isinstance(valor, str) and valor:
+        if valor[0] in ('=', '+', '-', '@', '\t', '\r'):
+            return "'" + valor
+    return valor
+
+
 def _ajustar_anchos(ws, max_ancho=50, min_ancho=12):
     """Calcula y aplica el ancho óptimo para cada columna según el largo de sus celdas."""
     for col in ws.columns:
@@ -205,7 +216,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         ws1.row_dimensions[fila_actual].height = 20
 
         for col_idx, (val, alig, fmt) in enumerate(valores_fila, start=1):
-            celda = ws1.cell(row=fila_actual, column=col_idx, value=val)
+            celda = ws1.cell(row=fila_actual, column=col_idx, value=sanear_celda_exportacion(val))
             celda.font = Font(name='Segoe UI', size=9.5, color=COLORES['texto_oscuro'])
             celda.fill = fill_fila
             celda.alignment = Alignment(horizontal=alig, vertical='center')
@@ -363,7 +374,7 @@ def generar_libro_excel_kpis(periodo='todo', desde=None, hasta=None):
         ]
 
         for col_idx, (v, al, f_num) in enumerate(valores_d, start=1):
-            c_d = ws2.cell(row=fila_d, column=col_idx, value=v)
+            c_d = ws2.cell(row=fila_d, column=col_idx, value=sanear_celda_exportacion(v))
             c_d.font = Font(name='Segoe UI', size=9.5, color=COLORES['texto_oscuro'])
             c_d.fill = p_fill
             c_d.alignment = Alignment(horizontal=al, vertical='center')
