@@ -30,10 +30,11 @@ function mostrarToast(mensaje, tipo = 'success') {
   toast.innerHTML = `
     <div class="notificacion-toast__contenido">
       <span class="notificacion-toast__icono">${icono}</span>
-      <span class="notificacion-toast__texto">${mensaje}</span>
+      <span class="notificacion-toast__texto"></span>
     </div>
     <button type="button" class="notificacion-toast__cerrar" onclick="this.parentElement.remove()" aria-label="Cerrar notificación">&times;</button>
   `;
+  toast.querySelector('.notificacion-toast__texto').textContent = String(mensaje ?? '');
 
   contenedor.appendChild(toast);
 

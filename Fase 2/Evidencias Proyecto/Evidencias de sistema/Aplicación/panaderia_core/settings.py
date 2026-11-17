@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 from pathlib import Path
 import os
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Cargar variables del archivo .env
@@ -24,11 +25,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fdbgtbw3&m=t*$k2cj@u&v8ctupcktlriy33k^9+x_5_0gguev')
+# Seguridad: en producción DEBUG debe estar desactivado mediante variable de entorno
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
+# La clave secreta debe definirse en .env; solo se permite respaldo temporal en modo desarrollo (DEBUG=True)
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'django-insecure-dev-only-local-panaderia'
+    else:
+        raise ImproperlyConfigured('La variable de entorno SECRET_KEY es obligatoria en producción.')
+elif not DEBUG and SECRET_KEY.startswith('django-insecure-'):
+    raise ImproperlyConfigured('No está permitido usar una SECRET_KEY insegura en producción.')
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -177,3 +185,22 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 # NOTA PARA PRUEBAS LOCALES: Si deseas probar sin enviar correos reales,
 # descomenta la siguiente línea para ver el correo en la consola de Django:
 # EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# ==========================================
+# ENDURECIMIENTO DE SEGURIDAD HTTP Y SESIONES
+# ==========================================
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'same-origin'
+
+# Activar cookies seguras y cifrado estricto automáticamente fuera de desarrollo
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 't')
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True

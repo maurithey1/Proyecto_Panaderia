@@ -83,10 +83,13 @@
               <small>Caja: {{ user.perfil_cajero.num_caja_asignada|default:"1" }}</small>
             </div>
             <hr class="cajero-dropdown__divider">
-            <a href="{% url 'logout' %}" class="cajero-dropdown__item cajero-dropdown__item--danger">
-              <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>
-              <span>Cerrar Sesión</span>
-            </a>
+            <form method="post" action="{% url 'logout' %}" style="margin: 0;">
+              {% csrf_token %}
+              <button type="submit" class="cajero-dropdown__item cajero-dropdown__item--danger" style="width: 100%; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer;">
+                <svg class="icono" aria-hidden="true"><use href="#i-salir"/></svg>
+                <span>Cerrar Sesión</span>
+              </button>
+            </form>
           </div>
         </div>
       </div>
