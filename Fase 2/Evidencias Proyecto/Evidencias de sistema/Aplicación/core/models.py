@@ -320,12 +320,25 @@ class Producto(models.Model):
 # 3. INSUMOS, PROVEEDORES Y RECETAS
 # ==========================================
 class Proveedor(models.Model):
+    TIPOS_PROVEEDOR = (
+        ('MOLINERA', 'Molinera'),
+        ('LACTEOS', 'Lácteos y Grasas'),
+        ('AVICOLA', 'Avícola / Huevos'),
+        ('INSUMOS_PAN', 'Levaduras y Mejoradores'),
+        ('EMPAQUES', 'Empaques y Packaging'),
+        ('OTRO', 'Proveedor General'),
+    )
+
     rut = models.CharField(max_length=12, unique=True)
     nombre_proveedor = models.CharField(max_length=150)
+    tipo_proveedor = models.CharField(
+        max_length=25, choices=TIPOS_PROVEEDOR, default='MOLINERA', verbose_name="Rubro / Tipo de Proveedor"
+    )
     email = models.EmailField()
     telefono = models.CharField(max_length=20)
     direccion = models.CharField(max_length=255, blank=True, null=True)
     costo_flete = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    activo = models.BooleanField(default=True)  # <-- Borrado lógico igual que Producto
 
     class Meta:
         verbose_name = "Proveedor"
@@ -337,6 +350,16 @@ class Proveedor(models.Model):
 
 class Insumo(models.Model):
     # Unidad en que se mide la cantidad total y el contenido de cada saco, caja o bidón
+    TIPOS_INSUMO = (
+        ('HARINA', 'Harinas y Cereales'),
+        ('LACTEO', 'Lácteos y Grasas'),
+        ('HUEVO', 'Huevos'),
+        ('LEVADURA', 'Levaduras y Mejoradores'),
+        ('AZUCAR', 'Azúcares y Endulzantes'),
+        ('SEMILLAS', 'Semillas y Frutos Secos'),
+        ('OTRO', 'Otro Insumo'),
+    )
+    
     UNIDADES_MEDIDA = (
         ('kg', 'Kilos (kg)'),
         ('L', 'Litros (L)'),
@@ -345,7 +368,7 @@ class Insumo(models.Model):
 
     codigo = models.CharField(max_length=20, unique=True, default='', blank=True, verbose_name="ID / Código")
     nombre = models.CharField(max_length=100, verbose_name="Nombre producto")
-    tipo_insumo = models.CharField(max_length=50, default='Materia Prima', blank=True)
+    tipo_insumo = models.CharField(max_length=50, choices=TIPOS_INSUMO, default='HARINA', blank=True)
     unidad_medida = models.CharField(max_length=20, default='Kg', blank=True)
     stock_sacos = models.IntegerField(default=0, verbose_name="Stock (Bolsa/saco)")
     kilos_por_saco = models.DecimalField(max_digits=8, decimal_places=2, default=25.00, verbose_name="Kg por saco")
@@ -375,6 +398,12 @@ class Insumo(models.Model):
         if texto in ('u', 'un', 'unid', 'unidad', 'unidades'):
             return 'un.'
         return 'kg'
+
+    @property
+    def envase_referencia(self):
+        """Retorna el tipo de envase del último ingreso (ej: 'saco', 'caja', 'bidón') o 'saco' por defecto."""
+        ultimo = self.envases.exclude(tipo='').order_by('-fecha_ingreso', '-pk').first()
+        return ultimo.tipo.strip().lower() if ultimo else 'saco'
 
     def save(self, *args, **kwargs):
         # El stock real es lo que queda en sus envases (EnvaseInsumo) y se guarda sumado en total_kg
@@ -865,7 +894,7 @@ class OrdenCompra(models.Model):
     codigo = models.CharField(max_length=30, unique=True, verbose_name="Código de Orden")
     proveedor = models.ForeignKey(
         Proveedor,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,  # <-- Protege integridad si tiene órdenes (CP-022)
         related_name='ordenes_compra',
         verbose_name="Molinera / Proveedor"
     )
@@ -907,9 +936,9 @@ class OrdenCompra(models.Model):
 
     def calcular_totales(self):
         """Calcula el subtotal sumando los detalles y suma el flete para el total general."""
-        suma_detalles = sum(d.subtotal for d in self.detalles.all())
+        suma_detalles = sum((Decimal(str(d.subtotal)) for d in self.detalles.all()), Decimal('0.00'))
         self.subtotal = suma_detalles
-        self.total = suma_detalles + (self.costo_flete or 0)
+        self.total = suma_detalles + (self.costo_flete or Decimal('0.00'))
         self.save(update_fields=['subtotal', 'total'])
 
 
@@ -933,8 +962,9 @@ class DetalleOrdenCompra(models.Model):
         return f"{self.cantidad_sacos} sacos de {self.insumo.nombre} en {self.orden.codigo}"
 
     def save(self, *args, **kwargs):
-        self.total_kilos = float(self.cantidad_sacos) * float(self.kilos_por_saco)
-        self.subtotal = float(self.cantidad_sacos) * float(self.precio_unitario)
+        cant = Decimal(str(self.cantidad_sacos or 0))
+        self.total_kilos = cant * Decimal(str(self.kilos_por_saco or 0))
+        self.subtotal = cant * Decimal(str(self.precio_unitario or 0))
         super().save(*args, **kwargs)
 
 

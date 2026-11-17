@@ -1232,7 +1232,7 @@ def inicio_admin(request):
     request.session.pop('admin_preview', None)
 
     productos_stock = Producto.objects.filter(activo=True).order_by('stock', 'nombre')
-    tarifas_proveedores = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
+    tarifas_proveedores = ProveedorInsumo.objects.filter(proveedor__activo=True).select_related('proveedor', 'insumo')
     datos_graficos = metricas_kpi.obtener_graficos_inicio_admin()
 
     contexto = {
@@ -1572,8 +1572,22 @@ def crear_personal(request):
     rol = request.POST.get('rol', 'CAJERO')
     num_caja = request.POST.get('num_caja_asignada', 1)
 
+    if not username or not email or not password:
+        messages.error(request, 'El nombre de usuario, correo electrónico y contraseña son obligatorios.')
+        return redirect('gestion_usuarios')
+
+    try:
+        validate_email(email)
+    except ValidationError:
+        messages.error(request, 'Ingresa un correo electrónico válido.')
+        return redirect('gestion_usuarios')
+
     if Usuario.objects.filter(username__iexact=username).exists():
         messages.error(request, 'El nombre de usuario ya está registrado.')
+        return redirect('gestion_usuarios')
+
+    if Usuario.objects.filter(email__iexact=email).exists():
+        messages.error(request, 'El correo electrónico ya está en uso por otra cuenta.')
         return redirect('gestion_usuarios')
 
     try:
@@ -1609,6 +1623,20 @@ def editar_personal(request, pk):
     user.email = request.POST.get('email', '').strip().lower()
     nuevo_rol = request.POST.get('rol', user.rol)
     num_caja = request.POST.get('num_caja_asignada', 1)
+
+    if not user.email:
+        messages.error(request, 'El correo electrónico es obligatorio.')
+        return redirect('gestion_usuarios')
+
+    try:
+        validate_email(user.email)
+    except ValidationError:
+        messages.error(request, 'Ingresa un correo electrónico válido.')
+        return redirect('gestion_usuarios')
+
+    if Usuario.objects.filter(email__iexact=user.email).exclude(pk=user.pk).exists():
+        messages.error(request, 'El correo electrónico ya está en uso por otra cuenta.')
+        return redirect('gestion_usuarios')
 
     if nuevo_rol != user.rol:
         user.rol = nuevo_rol
@@ -1672,7 +1700,7 @@ def gestion_inventario(request):
         ),
     ).order_by('codigo', 'nombre')
 
-    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+    proveedores = Proveedor.objects.all().order_by('-activo', 'nombre_proveedor')
 
     siguiente_id = _siguiente_codigo_insumo()     # se muestra en "Agregar insumo"; se asigna al guardar
 
@@ -1699,6 +1727,7 @@ def gestion_inventario(request):
         'todos_los_productos': todos_los_productos,
         'categorias_productos': categorias_productos,
         'proveedores': proveedores,
+        'proveedores_activos': Proveedor.objects.filter(activo=True).order_by('nombre_proveedor'),
         'dias_semana': dias_semana,
         'unidades_medida': Insumo.UNIDADES_MEDIDA,
         # Sugerencias para "Tipo de envase": las de siempre y las que ya se usaron (se puede escribir otra)
@@ -1706,6 +1735,8 @@ def gestion_inventario(request):
             {'caja', 'bandeja de 6', 'bandeja de 12', 'bidón', 'saco', 'bolsa'}
             | set(EnvaseInsumo.objects.exclude(tipo='envase').values_list('tipo', flat=True))
         ),
+        'tipos_insumo': Insumo.TIPOS_INSUMO,
+        'tipos_proveedor': Proveedor.TIPOS_PROVEEDOR,
     }
     return render(request, 'core/tabla_crud_insumos.html', contexto)
 
@@ -1759,10 +1790,12 @@ def _con_punto(frase):
     return frase if frase.endswith('.') else frase + '.'
 
 
-def _leer_precio_envase(texto, valor_defecto='0'):
-    precio = normalizar_precio(texto, valor_defecto=valor_defecto)
+def _leer_precio_envase(precio_raw, valor_defecto='0.00'):
+    precio = normalizar_precio(precio_raw, valor_defecto=valor_defecto)
+    if precio <= 0:
+        raise InsumoInvalido('El precio total del envase debe ser mayor a $ 0.')
     if precio >= TOPE_PRECIO_ENVASE:
-        raise InsumoInvalido('El precio es demasiado grande: revisa que esté bien escrito.')
+        raise InsumoInvalido('El precio del envase debe ser menor a $100.000.000.')
     return precio
 
 
@@ -1808,6 +1841,39 @@ def _registrar_precio(insumo, proveedor, precio_anterior, origen):
         origen_cambio=origen,
     )
 
+def _normalizar_texto_clave(texto):
+    """Normaliza espacios, mayúsculas y tildes para comparar nombres y tipos de envase."""
+    limpio = ' '.join(str(texto or '').split())
+    return _sin_tildes(limpio)
+
+
+def _existe_insumo_identico(nombre, unidad, contenido, tipo_envase, proveedor, excluir_pk=None):
+    """
+    Retorna el Insumo existente si ya hay otro con idénticas características:
+    mismo nombre, misma unidad, misma cantidad por envase, mismo tipo de envase y mismo proveedor.
+    """
+    nombre_norm = _normalizar_texto_clave(nombre)
+    tipo_norm = _normalizar_texto_clave(tipo_envase)
+    prov_norm = _normalizar_texto_clave(proveedor.nombre_proveedor if proveedor else '')
+
+    candidatos = Insumo.objects.filter(
+        unidad_medida=unidad,
+        kilos_por_saco=contenido,
+    )
+    if excluir_pk is not None:
+        candidatos = candidatos.exclude(pk=excluir_pk)
+
+    for existente in candidatos:
+        if _normalizar_texto_clave(existente.nombre) != nombre_norm:
+            continue
+        if _normalizar_texto_clave(existente.proveedor_nombre) != prov_norm:
+            continue
+        ultimo_envase = existente.envases.order_by('-fecha_ingreso', '-pk').first()
+        tipo_existente = ultimo_envase.tipo if ultimo_envase else ''
+        if _normalizar_texto_clave(tipo_existente) == tipo_norm:
+            return existente
+    return None
+
 
 @admin_required
 @require_POST
@@ -1815,6 +1881,9 @@ def crear_insumo(request):
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     nombre = request.POST.get('nombre', '').strip()
     unidad = request.POST.get('unidad_medida', '')
+    tipo_insumo = request.POST.get('tipo_insumo', 'HARINA').strip()
+    if tipo_insumo not in dict(Insumo.TIPOS_INSUMO):
+        tipo_insumo = 'HARINA'
     try:
         if not nombre:
             raise InsumoInvalido('El nombre del insumo es obligatorio.')
@@ -1825,6 +1894,22 @@ def crear_insumo(request):
         messages.error(request, str(motivo))
         return redirect(next_url)
     proveedor = envase['proveedor']
+    duplicado = _existe_insumo_identico(
+        nombre=nombre,
+        unidad=unidad,
+        contenido=envase['contenido'],
+        tipo_envase=envase['tipo'],
+        proveedor=proveedor,
+    )
+    if duplicado is not None:
+        messages.error(
+            request,
+            f'El insumo "{duplicado.nombre}" ({duplicado.codigo}) ya existe con las mismas características '
+            f'({envase["tipo"]} de {_cantidad_con_unidad(envase["contenido"], duplicado.unidad)}'
+            f'{f", proveedor {proveedor.nombre_proveedor}" if proveedor else ""}). '
+            f'Si llegaron más unidades, usa "+ Envase" en la tabla.'
+        )
+        return redirect(next_url)
 
     # El código lo asigna el sistema. Si otro administrador guardó un insumo en el mismo instante
     # y se llevó ese código (es único), se reintenta con el siguiente.
@@ -1836,7 +1921,7 @@ def crear_insumo(request):
                     codigo=_siguiente_codigo_insumo(),
                     nombre=nombre,
                     unidad_medida=unidad,
-                    tipo_insumo='Materia Prima',
+                    tipo_insumo=tipo_insumo,
                     kilos_por_saco=envase['contenido'],
                     precio_saco=envase['precio'],
                     proveedor_nombre=proveedor.nombre_proveedor if proveedor else '',
@@ -1909,6 +1994,9 @@ def editar_insumo(request, pk):
     next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=insumos'
     insumo = get_object_or_404(Insumo, pk=pk)
     precio_anterior = insumo.precio_saco
+    tipo_insumo = request.POST.get('tipo_insumo', insumo.tipo_insumo).strip()
+    if tipo_insumo in dict(Insumo.TIPOS_INSUMO):
+        insumo.tipo_insumo = tipo_insumo
 
     nombre = request.POST.get('nombre', '').strip()
     try:
@@ -1918,12 +2006,42 @@ def editar_insumo(request, pk):
     except InsumoInvalido as motivo:
         messages.error(request, str(motivo))
         return redirect(next_url)
-    proveedor = _proveedor_elegido(request.POST)
+
+    raw_proveedor_id = request.POST.get('proveedor_id', '').strip()
+    if raw_proveedor_id == '__mantener__':
+        proveedor = Proveedor.objects.filter(nombre_proveedor=insumo.proveedor_nombre).first()
+        nuevo_nombre_proveedor = insumo.proveedor_nombre
+    else:
+        proveedor = _proveedor_elegido(request.POST)
+        nuevo_nombre_proveedor = proveedor.nombre_proveedor if proveedor else ''
+
+    ultimo_envase = insumo.envases.order_by('-fecha_ingreso', '-pk').first()
+    tipo_actual = ultimo_envase.tipo if ultimo_envase else 'envase'
+    duplicado = _existe_insumo_identico(
+        nombre=nombre,
+        unidad=insumo.unidad_medida,
+        contenido=insumo.kilos_por_saco,
+        tipo_envase=tipo_actual,
+        proveedor=proveedor,
+        excluir_pk=insumo.pk,
+    )
+    if duplicado is not None:
+        messages.error(
+            request,
+            f'Ya existe otro insumo "{duplicado.nombre}" ({duplicado.codigo}) con esas mismas características.'
+        )
+        return redirect(next_url)
 
     insumo.nombre = nombre
     insumo.precio_saco = precio_saco
-    insumo.proveedor_nombre = proveedor.nombre_proveedor if proveedor else ''
+    insumo.proveedor_nombre = nuevo_nombre_proveedor
     insumo.save()
+
+    # Mantener sincronizado el último envase con el nuevo precio y proveedor
+    if ultimo_envase:
+        ultimo_envase.precio = precio_saco
+        ultimo_envase.proveedor = proveedor
+        ultimo_envase.save(update_fields=['precio', 'proveedor'])
 
     if precio_anterior != precio_saco:
         _registrar_precio(insumo, proveedor, precio_anterior, 'Actualización Manual (CRUD Insumos)')
@@ -2082,6 +2200,9 @@ def crear_producto(request):
     nombre = request.POST.get('nombre', '').strip()
     categoria_id = request.POST.get('categoria_id')
     precio = normalizar_precio(request.POST.get('precio', 0))
+    if precio <= 0:
+            messages.error(request, 'El precio de venta debe ser mayor a $ 0.')
+            return redirect('panel_admin_inventario')
     stock = request.POST.get('stock', 0)
     stock_critico = request.POST.get('stock_critico', 10)
     unidad_medida = request.POST.get('unidad_medida', 'unid')
@@ -2147,6 +2268,9 @@ def editar_producto(request, pk):
         request.POST.get('precio'),
         valor_defecto=producto.precio
     )
+    if precio <= 0:
+            messages.error(request, 'El precio de venta debe ser mayor a $ 0.')
+            return redirect('panel_admin_inventario')
     # Stock protegido: no se lee ni se modifica request.POST.get('stock') aquí.
     # Solo cambia mediante registrar_produccion (+ Hornada / + Stock), ventas o mermas.
     stock_critico = request.POST.get('stock_critico', producto.stock_critico)
@@ -2432,6 +2556,78 @@ def normalizar_rut(rut_raw):
         
     return f"{cuerpo_fmt}-{dv}"
 
+def validar_rut_chileno(rut_normalizado):
+    """
+    Valida que un RUT en formato 'XX.XXX.XXX-D' tenga un cuerpo numérico válido
+    (7 a 8 dígitos) y que su dígito verificador coincida con el algoritmo Módulo 11.
+    """
+    if not rut_normalizado or '-' not in rut_normalizado:
+        return False
+
+    cuerpo_str, dv = rut_normalizado.rsplit('-', 1)
+    cuerpo_digitos = cuerpo_str.replace('.', '')
+
+    if not cuerpo_digitos.isdigit() or not (7 <= len(cuerpo_digitos) <= 8):
+        return False
+
+    suma = 0
+    multiplicador = 2
+    for digito in reversed(cuerpo_digitos):
+        suma += int(digito) * multiplicador
+        multiplicador = 2 if multiplicador == 7 else multiplicador + 1
+
+    resto = 11 - (suma % 11)
+    if resto == 11:
+        dv_esperado = '0'
+    elif resto == 10:
+        dv_esperado = 'K'
+    else:
+        dv_esperado = str(resto)
+
+    return dv.upper() == dv_esperado
+
+
+def validar_datos_proveedor(rut, nombre, email, telefono, costo_flete, excluir_pk=None):
+    """
+    Valida formato y unicidad de RUT, correo electrónico, teléfono y costo de flete.
+    Retorna un mensaje de error (str) si algo falla, o None si todo está correcto.
+    """
+    if not rut or not nombre:
+        return 'El RUT y la Razón Social son obligatorios.'
+
+    if not validar_rut_chileno(rut):
+        return f'El RUT {rut} no es válido. Verifica los números y el dígito verificador.'
+
+    qs_proveedores = Proveedor.objects.all()
+    if excluir_pk is not None:
+        qs_proveedores = qs_proveedores.exclude(pk=excluir_pk)
+
+    if qs_proveedores.filter(rut=rut).exists():
+        return f'Ya existe un proveedor registrado con el RUT {rut}.'
+
+    if not email:
+        return 'El correo electrónico del proveedor es obligatorio.'
+
+    try:
+        validate_email(email)
+    except ValidationError:
+        return 'Ingresa un correo electrónico válido (ej: contacto@molinera.cl).'
+
+    if qs_proveedores.filter(email__iexact=email).exists():
+        return f'El correo electrónico "{email}" ya está registrado en otro proveedor.'
+
+    digitos_tel = ''.join(c for c in telefono if c.isdigit())
+    if len(digitos_tel) != 11 or not digitos_tel.startswith('56'):
+        return 'Ingresa un teléfono válido de 9 dígitos (ej: +56 9 1234 5678).'
+
+    if qs_proveedores.filter(telefono=telefono).exists():
+        return f'El teléfono "{telefono}" ya está asociado a otro proveedor.'
+
+    if costo_flete < 0:
+        return 'El costo de flete no puede ser negativo.'
+
+    return None
+
 def normalizar_telefono(telefono_raw):
     """
     Formatea '912345678' o '56912345678' a '+56 9 1234 5678'.
@@ -2499,35 +2695,35 @@ def eliminar_categoria(request, pk):
 @require_POST
 def crear_proveedor(request):
     es_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-    next_url = request.POST.get('next') or 'gestion_inventario'
-    
-    # Normalización de entradas del formulario
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+
     rut = normalizar_rut(request.POST.get('rut', '').strip())
     nombre = request.POST.get('nombre_proveedor', '').strip()
-    email = request.POST.get('email', '').strip()
+    tipo_proveedor = request.POST.get('tipo_proveedor', 'MOLINERA').strip()
+    email = request.POST.get('email', '').strip().lower()
     telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
     direccion = request.POST.get('direccion', '').strip()
     costo_flete = normalizar_precio(request.POST.get('costo_flete', 0))
 
-    if not rut or not nombre:
-        if es_ajax:
-            return JsonResponse({'ok': False, 'error': 'El RUT y la Razón Social son obligatorios.'}, status=400)
-        messages.error(request, 'El RUT y la Razón Social son obligatorios.')
-        return redirect(next_url)
+    if tipo_proveedor not in dict(Proveedor.TIPOS_PROVEEDOR):
+        tipo_proveedor = 'MOLINERA'
 
-    if Proveedor.objects.filter(rut=rut).exists():
+    error = validar_datos_proveedor(rut, nombre, email, telefono, costo_flete)
+    if error:
         if es_ajax:
-            return JsonResponse({'ok': False, 'error': f'Ya existe un proveedor registrado con el RUT {rut}.'}, status=400)
-        messages.error(request, f'Ya existe un proveedor registrado con el RUT {rut}.')
+            return JsonResponse({'ok': False, 'error': error}, status=400)
+        messages.error(request, error)
         return redirect(next_url)
 
     proveedor = Proveedor.objects.create(
         rut=rut,
         nombre_proveedor=nombre,
+        tipo_proveedor=tipo_proveedor,
         email=email,
         telefono=telefono,
         direccion=direccion,
-        costo_flete=costo_flete
+        costo_flete=costo_flete,
+        activo=True,
     )
 
     if es_ajax:
@@ -2535,6 +2731,7 @@ def crear_proveedor(request):
             'ok': True,
             'id': proveedor.pk,
             'nombre': proveedor.nombre_proveedor,
+            'tipo_proveedor': proveedor.get_tipo_proveedor_display(),
             'rut': proveedor.rut,
             'email': proveedor.email or '—',
             'telefono': proveedor.telefono or '—',
@@ -2544,34 +2741,34 @@ def crear_proveedor(request):
         })
 
     messages.success(request, f'Proveedor "{nombre}" registrado correctamente con RUT {rut}.')
-    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
 
 
 @admin_required
 @require_POST
 def editar_proveedor(request, pk):
-    next_url = request.POST.get('next') or 'gestion_inventario'
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     proveedor = get_object_or_404(Proveedor, pk=pk)
 
     # Normalización de entradas del formulario
     rut = normalizar_rut(request.POST.get('rut', '').strip())
     nombre = request.POST.get('nombre_proveedor', '').strip()
-    email = request.POST.get('email', '').strip()
+    tipo_proveedor = request.POST.get('tipo_proveedor', proveedor.tipo_proveedor).strip()
+    email = request.POST.get('email', '').strip().lower()
     telefono = normalizar_telefono(request.POST.get('telefono', '').strip())
     direccion = request.POST.get('direccion', '').strip()
     costo_flete = normalizar_precio(
-        request.POST.get('costo_flete'), 
+        request.POST.get('costo_flete'),
         valor_defecto=proveedor.costo_flete
     )
 
-    if not rut or not nombre:
-        messages.error(request, 'El RUT y la Razón Social no pueden estar vacíos.')
+    error = validar_datos_proveedor(rut, nombre, email, telefono, costo_flete, excluir_pk=pk)
+    if error:
+        messages.error(request, error)
         return redirect(next_url)
 
-    if rut != proveedor.rut and Proveedor.objects.filter(rut=rut).exclude(pk=pk).exists():
-        messages.error(request, f'El RUT {rut} ya se encuentra registrado por otro proveedor.')
-        return redirect(next_url)
+    if tipo_proveedor in dict(Proveedor.TIPOS_PROVEEDOR):
+        proveedor.tipo_proveedor = tipo_proveedor
 
     proveedor.rut = rut
     proveedor.nombre_proveedor = nombre
@@ -2582,18 +2779,55 @@ def editar_proveedor(request, pk):
     proveedor.save()
 
     messages.success(request, f'Proveedor "{proveedor.nombre_proveedor}" actualizado correctamente.')
-    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def inactivar_proveedor(request, pk):
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+    proveedor = get_object_or_404(Proveedor, pk=pk)
+    proveedor.activo = False
+    proveedor.save(update_fields=['activo'])
+    messages.warning(
+        request,
+        f'El proveedor "{proveedor.nombre_proveedor}" quedó inactivo y dejó de mostrarse en órdenes de compra, comparador y selectores.'
+    )
+    return redirect(next_url)
+
+
+@admin_required
+@require_POST
+def activar_proveedor(request, pk):
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+    proveedor = get_object_or_404(Proveedor, pk=pk)
+    proveedor.activo = True
+    proveedor.save(update_fields=['activo'])
+    messages.success(
+        request,
+        f'El proveedor "{proveedor.nombre_proveedor}" fue activado nuevamente y vuelve a estar disponible.'
+    )
+    return redirect(next_url)
+
 
 @admin_required
 @require_POST
 def eliminar_proveedor(request, pk):
-    next_url = request.POST.get('next') or 'gestion_inventario'
+    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
     proveedor = get_object_or_404(Proveedor, pk=pk)
+
+    # CP-022: Impedir eliminar si tiene órdenes de compra asociadas
+    if proveedor.ordenes_compra.exists():
+        messages.error(
+            request,
+            f'No se puede eliminar a "{proveedor.nombre_proveedor}" porque tiene órdenes de compra registradas. '
+            'Usa el botón "Inactivar" para ocultarlo sin perder el historial.'
+        )
+        return redirect(next_url)
+
     nombre = proveedor.nombre_proveedor
     proveedor.delete()
-    messages.warning(request, f'El proveedor "{nombre}" ha sido eliminado.')
-    next_url = request.POST.get('next') or '/panel-admin/inventario/?tab=proveedores'
+    messages.warning(request, f'El proveedor "{nombre}" fue eliminado definitivamente (no tenía órdenes asociadas).')
     return redirect(next_url)
 
 
@@ -2661,7 +2895,7 @@ def _url_comparador(insumo_id=None, sacos=None):
 @admin_required
 def comparar_cotizaciones(request):
     insumos = Insumo.objects.all().order_by('codigo', 'nombre')
-    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+    proveedores = Proveedor.objects.filter(activo=True).order_by('nombre_proveedor')
 
     sacos = limitar_sacos(request.GET.get('sacos', 1))
     insumo = None
@@ -2701,7 +2935,7 @@ def comparar_cotizaciones(request):
 def guardar_cotizacion(request):
     """Registra (o actualiza) el precio por saco que cotiza una molinera para un insumo."""
     insumo = Insumo.objects.filter(pk=_entero_o_none(request.POST.get('insumo_id'))).first()
-    proveedor = Proveedor.objects.filter(pk=_entero_o_none(request.POST.get('proveedor_id'))).first()
+    proveedor = Proveedor.objects.filter(pk=_entero_o_none(request.POST.get('proveedor_id')), activo=True).first()
     sacos = limitar_sacos(request.POST.get('sacos', 1))
 
     if not insumo:
@@ -3300,13 +3534,22 @@ def login_view(request):
             messages.error(request, 'Demasiados intentos fallidos. Espera 5 minutos antes de volver a intentarlo.')
             return render(request, 'core/login.html', {'next': next_url}, status=429)
 
-        usuario_encontrado = Usuario.objects.filter(
+        candidatos = Usuario.objects.filter(
             Q(username__iexact=identificador) | Q(email__iexact=identificador)
-        ).first()
+        )
+        usuario_encontrado = next(
+            (
+                u for u in candidatos
+                if u.username == identificador or (u.email and u.email.lower() == identificador.lower())
+            ),
+            None,
+        )
 
-        username_auth = usuario_encontrado.username if usuario_encontrado else identificador
-
-        user = authenticate(request, username=username_auth, password=password)
+        user = (
+            authenticate(request, username=usuario_encontrado.username, password=password)
+            if usuario_encontrado is not None
+            else None
+        )
 
         if user is not None:
             if not user.is_active:
@@ -3324,6 +3567,13 @@ def login_view(request):
                 return redirect(next_url)
 
             return redireccionar_por_rol(user)
+        elif (
+            usuario_encontrado is not None
+            and not usuario_encontrado.is_active
+            and usuario_encontrado.check_password(password)
+        ):
+            messages.error(request, 'Esta cuenta se encuentra desactivada.')
+            return render(request, 'core/login.html', {'next': next_url})
         else:
             cache.set(clave_intentos, intentos + 1, timeout=300)
             messages.error(request, 'Credenciales incorrectas. Verifique sus datos e intente nuevamente.')
@@ -3503,7 +3753,7 @@ def lista_ordenes_compra(request):
     ordenes_pendientes = OrdenCompra.objects.filter(estado__in=['EMITIDA', 'ENVIADA']).count()
     ordenes_recibidas = OrdenCompra.objects.filter(estado='RECEPCIONADA').count()
 
-    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+    proveedores = Proveedor.objects.filter(activo=True).order_by('nombre_proveedor')
 
     contexto = {
         'ordenes': ordenes,
@@ -3561,7 +3811,7 @@ def crear_orden_compra(request):
             messages.error(request, 'Debe seleccionar un proveedor o molinera destinatario.')
             return redirect('crear_orden_compra')
 
-        proveedor = get_object_or_404(Proveedor, pk=proveedor_id)
+        proveedor = get_object_or_404(Proveedor, pk=proveedor_id, activo=True)
 
         # Insumos y cantidades
         insumos_ids = request.POST.getlist('insumo_id[]')
@@ -3627,9 +3877,9 @@ def crear_orden_compra(request):
     prov_pre = request.GET.get('proveedor')
     ins_pre = request.GET.get('insumo')
 
-    proveedores = Proveedor.objects.all().order_by('nombre_proveedor')
+    proveedores = Proveedor.objects.filter(activo=True).order_by('nombre_proveedor')
     insumos = Insumo.objects.all().order_by('nombre')
-    tarifas = ProveedorInsumo.objects.select_related('proveedor', 'insumo').all()
+    tarifas = ProveedorInsumo.objects.filter(proveedor__activo=True).select_related('proveedor', 'insumo')
 
     # Armamos un diccionario estructurado de tarifas para autocompletar en JavaScript
     tarifas_dict = {}

@@ -374,7 +374,7 @@ def calcular_metricas_kpi(periodo='mes', desde=None, hasta=None):
 
     # C) Costo total de adquisición por molinera ($)
     # Suma de precio del saco de harina / insumo más costo de flete por cada proveedor/molinera
-    proveedores_qs = Proveedor.objects.all().prefetch_related('insumos')
+    proveedores_qs = Proveedor.objects.filter(activo=True).prefetch_related('insumos')
     molineras_nombres = []
     molineras_costo_saco = []
     molineras_costo_flete = []
@@ -709,7 +709,8 @@ def graficos_adquisicion():
     validas = OrdenCompra.objects.exclude(estado='CANCELADA')
 
     por_proveedor = list(
-        validas.values('proveedor__nombre_proveedor')
+        validas.filter(proveedor__activo=True)
+        .values('proveedor__nombre_proveedor')
         .annotate(monto=Sum('total'), ordenes=Count('id')).order_by('-monto')
     )
     nombres_estado = dict(OrdenCompra.ESTADOS)

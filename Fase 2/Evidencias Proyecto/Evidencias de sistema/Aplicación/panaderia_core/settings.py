@@ -161,6 +161,8 @@ AUTH_USER_MODEL = 'core.Usuario'
 
 LOGIN_URL = 'login'  # Redirige a esta URL si el usuario no está autenticado
 
+PASSWORD_RESET_TIMEOUT = 900
+
 # ==========================================
 # CONFIGURACIÓN WEBPAY PLUS (TRANSBANK)
 # ==========================================

@@ -75,14 +75,30 @@ function cerrarModalAgregarInsumo() {
   if (modal) modal.style.display = 'none';
 }
 
-// El proveedor se guarda por su nombre: se elige la opción con ese nombre (o ninguna)
 function seleccionarProveedor(select, nombre) {
   if (!select) return;
-  const opcion = Array.from(select.options).find(o => o.value && o.text.trim() === (nombre || '').trim());
-  select.value = opcion ? opcion.value : '';
+  Array.from(select.options).filter(o => o.value === '__mantener__').forEach(o => o.remove());
+  const buscado = (nombre || '').trim().toLowerCase();
+  if (!buscado) {
+    select.value = '';
+    return;
+  }
+
+  const opcion = Array.from(select.options).find(
+    o => o.value && o.text.trim().toLowerCase() === buscado
+  );
+
+  if (opcion) {
+    select.value = opcion.value;
+  } else {
+    // Si el proveedor actual del insumo fue inactivado o no está en el select, lo mostramos igual para no perderlo al guardar
+    const optActual = new Option(`${nombre.trim()} (actual)`, '__mantener__');
+    select.add(optActual);
+    select.value = '__mantener__';
+  }
 }
 
-function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvase, proveedorNombre, precioSaco) {
+function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvase, proveedorNombre, precioSaco, tipoInsumo) {
   const form = document.getElementById('formEditarInsumo');
   if (form) {
     form.action = `/panel-admin/inventario/editar/${pk}/`;
@@ -94,6 +110,7 @@ function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvas
   if (document.getElementById('edit_insumo_nombre')) document.getElementById('edit_insumo_nombre').value = nombre || '';
   if (document.getElementById('edit_insumo_envase')) document.getElementById('edit_insumo_envase').value = `${tipoEnvase || 'envase'} de ${formatearCantidad(contenido)} ${unidad}`;
   if (document.getElementById('edit_insumo_precio_saco')) document.getElementById('edit_insumo_precio_saco').value = formatearPrecio(String(precioSaco || ''));
+  if (document.getElementById('edit_insumo_tipo')) document.getElementById('edit_insumo_tipo').value = tipoInsumo || 'otro';
   seleccionarProveedor(document.getElementById('edit_insumo_proveedor'), proveedorNombre);
 
   actualizarResumenInsumo(form);
@@ -747,14 +764,21 @@ function _insertarProveedorEnTabla(data) {
       <strong>${_escapeHtml(data.nombre)}</strong>
       ${data.direccion ? `<small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">${_escapeHtml(data.direccion)}</small>` : ''}
     </td>
+    <td class="crud-col-centro">
+      <span class="crud-badge-cat">${_escapeHtml(data.tipo_proveedor_label || 'General / Varios')}</span>
+    </td>
     <td class="crud-col-centro">${_escapeHtml(emailTabla)}</td>
     <td class="crud-col-centro">${_escapeHtml(telTabla)}</td>
     <td class="crud-col-precio">${_escapeHtml(data.costo_flete)}</td>
+    <td class="crud-col-centro">
+      <span class="crud-badge crud-badge--exito">Activo</span>
+    </td>
     <td class="crud-col-acciones">
       <button type="button" class="crud-btn-accion crud-btn-editar"
               data-pk="${_escapeHtml(data.id)}"
               data-rut="${_escapeHtml(rutLimpio)}"
               data-nombre="${_escapeHtml(data.nombre)}"
+              data-tipo="${_escapeHtml(data.tipo_proveedor || 'general')}"
               data-email="${_escapeHtml(emailLimpio)}"
               data-telefono="${_escapeHtml(telLimpio)}"
               data-direccion="${_escapeHtml(data.direccion || '')}"
@@ -765,8 +789,8 @@ function _insertarProveedorEnTabla(data) {
       <button type="button" class="crud-btn-accion crud-btn-eliminar"
               data-pk="${_escapeHtml(data.id)}"
               data-nombre="${_escapeHtml(data.nombre)}"
-              onclick="abrirModalEliminarProveedorBtn(this)">
-        Eliminar
+              onclick="abrirModalInactivarProveedorBtn(this)">
+        Inactivar
       </button>
     </td>
   `;
@@ -790,11 +814,11 @@ function cerrarModalAgregarProveedor() {
 }
 
 function abrirModalEditarProveedorBtn(btn) {
-  const { pk, rut, nombre, email, telefono, direccion, flete } = btn.dataset;
-  abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, flete);
+  const { pk, rut, nombre, tipo, email, telefono, direccion, flete } = btn.dataset;
+  abrirModalEditarProveedor(pk, rut, nombre, tipo, email, telefono, direccion, flete);
 }
 
-function abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, costoFlete) {
+function abrirModalEditarProveedor(pk, rut, nombre, tipo, email, telefono, direccion, costoFlete) {
   const modal = document.getElementById('modalEditarProveedor');
   const form = document.getElementById('formEditarProveedor');
   if (!modal || !form) return;
@@ -803,6 +827,7 @@ function abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, 
 
   const inputRut = document.getElementById('edit_prov_rut');
   const inputNombre = document.getElementById('edit_prov_nombre');
+  const inputTipo = document.getElementById('edit_prov_tipo');
   const inputEmail = document.getElementById('edit_prov_email');
   const inputTelefono = document.getElementById('edit_prov_telefono');
   const inputDir = document.getElementById('edit_prov_dir');
@@ -810,6 +835,7 @@ function abrirModalEditarProveedor(pk, rut, nombre, email, telefono, direccion, 
 
   if (inputRut) inputRut.value = formatearRut(rut || '');
   if (inputNombre) inputNombre.value = nombre || '';
+  if (inputTipo) inputTipo.value = tipo || 'general';
   if (inputEmail) inputEmail.value = email || '';
   if (inputTelefono) inputTelefono.value = telefono ? formatearTelefono(telefono) : '';
   if (inputDir) inputDir.value = direccion || '';
@@ -823,26 +849,37 @@ function cerrarModalEditarProveedor() {
   if (modal) modal.style.display = 'none';
 }
 
-function abrirModalEliminarProveedorBtn(btn) {
+function abrirModalInactivarProveedorBtn(btn) {
   const { pk, nombre } = btn.dataset;
-  abrirModalEliminarProveedor(pk, nombre);
-}
-
-function abrirModalEliminarProveedor(pk, nombre) {
-  const modal = document.getElementById('modalEliminarProveedor');
-  const form = document.getElementById('formEliminarProveedor');
+  const modal = document.getElementById('modalInactivarProveedor');
+  const form = document.getElementById('formInactivarProveedor');
   if (!modal || !form) return;
 
-  form.action = `/panel-admin/proveedores/eliminar/${pk}/`;
-
-  const texto = document.getElementById('eliminar_prov_texto');
+  form.action = `/panel-admin/proveedores/inactivar/${pk}/`;
+  const texto = document.getElementById('inactivar_prov_texto');
   if (texto) texto.textContent = nombre || '-';
-
   modal.style.display = 'flex';
 }
 
-function cerrarModalEliminarProveedor() {
-  const modal = document.getElementById('modalEliminarProveedor');
+function cerrarModalInactivarProveedor() {
+  const modal = document.getElementById('modalInactivarProveedor');
+  if (modal) modal.style.display = 'none';
+}
+
+function abrirModalActivarProveedorBtn(btn) {
+  const { pk, nombre } = btn.dataset;
+  const modal = document.getElementById('modalActivarProveedor');
+  const form = document.getElementById('formActivarProveedor');
+  if (!modal || !form) return;
+
+  form.action = `/panel-admin/proveedores/activar/${pk}/`;
+  const texto = document.getElementById('activar_prov_texto');
+  if (texto) texto.textContent = nombre || '-';
+  modal.style.display = 'flex';
+}
+
+function cerrarModalActivarProveedor() {
+  const modal = document.getElementById('modalActivarProveedor');
   if (modal) modal.style.display = 'none';
 }
 
@@ -1040,7 +1077,8 @@ const CIERRES_MODALES_CRUD = {
   modalInactivarProducto: cerrarModalInactivarProducto,
   modalActivarProducto: cerrarModalActivarProducto,
   modalEditarProveedor: cerrarModalEditarProveedor,
-  modalEliminarProveedor: cerrarModalEliminarProveedor,
+  modalInactivarProveedor: cerrarModalInactivarProveedor,
+  modalActivarProveedor: cerrarModalActivarProveedor,
 };
 
 function _obtenerModalCrudAbierto() {
@@ -1071,4 +1109,38 @@ document.addEventListener('click', function (e) {
   if (typeof cerrarFn === 'function') {
     cerrarFn();
   }
+});
+
+// ==========================================
+// 7. VALIDACIÓN DE PRECIOS MAYORES A $ 0
+// ==========================================
+document.addEventListener('DOMContentLoaded', function () {
+  const camposPrecioObligatorios = [
+    { formId: 'formAgregarInsumo', inputId: 'insumo_precio_saco', mensaje: 'El precio total del envase debe ser mayor a $ 0.' },
+    { formId: 'formEditarInsumo', inputId: 'edit_insumo_precio_saco', mensaje: 'El precio total del envase debe ser mayor a $ 0.' },
+    { formId: 'formAgregarProducto', inputId: 'prod_precio', mensaje: 'El precio de venta debe ser mayor a $ 0.' },
+    { formId: 'formEditarProducto', inputId: 'edit_prod_precio', mensaje: 'El precio de venta debe ser mayor a $ 0.' },
+  ];
+
+  camposPrecioObligatorios.forEach(({ formId, inputId, mensaje }) => {
+    const form = document.getElementById(formId);
+    const input = document.getElementById(inputId);
+    if (!form || !input) return;
+
+    input.addEventListener('input', function () {
+      input.setCustomValidity('');
+    });
+
+    form.addEventListener('submit', function (e) {
+      const monto = parseInt(input.value.replace(/\D/g, ''), 10) || 0;
+      if (monto <= 0) {
+        e.preventDefault();
+        input.setCustomValidity(mensaje);
+        input.reportValidity();
+        input.focus();
+      } else {
+        input.setCustomValidity('');
+      }
+    });
+  });
 });

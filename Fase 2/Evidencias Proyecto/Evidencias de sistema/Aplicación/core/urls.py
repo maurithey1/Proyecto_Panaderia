@@ -1,5 +1,6 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
+from .forms import CustomPasswordResetForm
 from . import views
 
 urlpatterns = [
@@ -65,6 +66,8 @@ urlpatterns = [
     # Proveedores y Cotizaciones
     path('panel-admin/proveedores/crear/', views.crear_proveedor, name='crear_proveedor'),
     path('panel-admin/proveedores/editar/<int:pk>/', views.editar_proveedor, name='editar_proveedor'),
+    path('panel-admin/proveedores/inactivar/<int:pk>/', views.inactivar_proveedor, name='inactivar_proveedor'),
+    path('panel-admin/proveedores/activar/<int:pk>/', views.activar_proveedor, name='activar_proveedor'),
     path('panel-admin/proveedores/eliminar/<int:pk>/', views.eliminar_proveedor, name='eliminar_proveedor'),
     path('panel-admin/cotizaciones/', views.comparar_cotizaciones, name='comparar_cotizaciones'),
     path('panel-admin/cotizaciones/guardar/', views.guardar_cotizacion, name='guardar_cotizacion'),
@@ -102,6 +105,7 @@ urlpatterns = [
     path(
         'recuperar-password/', 
         auth_views.PasswordResetView.as_view(
+            form_class=CustomPasswordResetForm,
             template_name='core/registration/password_reset_form.html',
             email_template_name='core/registration/password_reset_email.html',
             subject_template_name='core/registration/password_reset_subject.txt',

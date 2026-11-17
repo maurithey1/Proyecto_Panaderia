@@ -142,14 +142,19 @@
         <label class="cotiz__campo">
           <span>Materia prima</span>
           <select name="insumo" id="selectInsumoComparar" required>
-            <option value="" {% if not insumo %}selected{% endif %} disabled>Seleccione una materia prima…</option>
+            <option value="" data-envase="saco" data-tipo="HARINA" {% if not insumo %}selected{% endif %} disabled>Seleccione una materia prima…</option>
             {% for i in insumos %}
-              <option value="{{ i.pk }}" {% if insumo and insumo.pk == i.pk %}selected{% endif %}>{{ i.codigo }} · {{ i.nombre }}</option>
+              <option value="{{ i.pk }}"
+                      data-envase="{{ i.envase_referencia }}"
+                      data-tipo="{{ i.tipo_insumo }}"
+                      {% if insumo and insumo.pk == i.pk %}selected{% endif %}>
+                {{ i.codigo }} · {{ i.nombre }} ({{ i.envase_referencia }} de {{ i.kilos_por_saco|floatformat:"-2" }} {{ i.unidad }})
+              </option>
             {% endfor %}
           </select>
         </label>
         <label class="cotiz__campo cotiz__campo--corto">
-          <span>Sacos a comprar</span>
+          <span id="labelCantidadComparar">Sacos a comprar</span>
           <input type="number" name="sacos" id="inputSacosComparar" min="1" max="100000" step="1" value="{{ sacos }}" required>
         </label>
         <button type="submit" class="cotiz__boton" id="btnCompararCotizaciones">Comparar</button>
@@ -157,8 +162,8 @@
 
       {% if insumo %}
         <p class="cotiz__resumen-pedido">
-          Pedido simulado de <strong>{{ sacos }} saco{{ sacos|pluralize }}</strong> de <strong>{{ insumo.nombre }}</strong>
-          ({{ kilos|floatformat:"-2" }} kg en total, {{ insumo.kilos_por_saco|floatformat:"-2" }} kg por saco).
+          Pedido simulado de <strong>{{ sacos }} {{ insumo.envase_referencia }}(s)</strong> de <strong>{{ insumo.nombre }}</strong>
+          ({{ kilos|floatformat:"-2" }} {{ insumo.unidad }} en total, {{ insumo.kilos_por_saco|floatformat:"-2" }} {{ insumo.unidad }} por {{ insumo.envase_referencia }}).
         </p>
 
         {% if mejor %}
@@ -168,7 +173,11 @@
               <strong>Menor costo: {{ mejor.proveedor.nombre_proveedor }} · {{ mejor.total|clp }}</strong>
               <span>
                 {{ mejor.materia_prima|clp }} de materia prima + {{ mejor.flete|clp }} de flete.
-                {% if ahorro_maximo %}Ahorra hasta {{ ahorro_maximo|clp }} frente a la opción más cara.{% elif opciones|length == 1 %}Es la única cotización registrada para esta materia prima.{% endif %}
+                {% if ahorro_maximo %}
+                  Ahorra hasta {{ ahorro_maximo|clp }} frente a la opción más cara.
+                {% elif opciones|length == 1 %}
+                  Es la única cotización registrada para esta materia prima; no hay alternativas para comparar.
+                {% endif %}
               </span>
             </div>
           </div>
@@ -223,6 +232,13 @@
               </tbody>
             </table>
           </div>
+
+          {% if opciones|length == 1 %}
+            <div style="margin-top: 12px; padding: 12px 16px; border-radius: 8px; background-color: #fbf7f2; border-left: 4px solid #7b4b2a; color: #5c4033; font-size: 0.92rem;">
+              Este insumo tiene un único proveedor cotizado, por lo que <strong>no hay alternativas para comparar</strong>. Puedes registrar más cotizaciones abajo para evaluar otras opciones.
+            </div>
+          {% endif %}
+
           <p class="cotiz__nota">
             Costo total = precio por saco × {{ sacos }} saco{{ sacos|pluralize }} + flete de la molinera (un solo flete por pedido).
           </p>
@@ -235,32 +251,39 @@
 
       {# Registro de cotizaciones #}
       <hr class="admin-hr">
-      <h2 class="cotiz__subtitulo">Registrar o actualizar cotización de una molinera</h2>
+      <h2 class="cotiz__subtitulo" id="tituloGuardarCotizacion">Registrar o actualizar cotización de una molinera</h2>
       {% if proveedores and insumos %}
         <form method="post" action="{% url 'guardar_cotizacion' %}" class="cotiz__filtros" id="formGuardarCotizacion">
           {% csrf_token %}
           <input type="hidden" name="sacos" value="{{ sacos }}">
           <label class="cotiz__campo">
             <span>Materia prima</span>
-            <select name="insumo_id" required>
-              <option value="" {% if not insumo %}selected{% endif %} disabled>Seleccione…</option>
+            <select name="insumo_id" id="selectInsumoGuardar" required>
+              <option value="" data-envase="saco" data-tipo="HARINA" {% if not insumo %}selected{% endif %} disabled>Seleccione…</option>
               {% for i in insumos %}
-                <option value="{{ i.pk }}" {% if insumo and insumo.pk == i.pk %}selected{% endif %}>{{ i.codigo }} · {{ i.nombre }}</option>
+                <option value="{{ i.pk }}"
+                        data-envase="{{ i.envase_referencia }}"
+                        data-tipo="{{ i.tipo_insumo }}"
+                        {% if insumo and insumo.pk == i.pk %}selected{% endif %}>
+                  {{ i.codigo }} · {{ i.nombre }}
+                </option>
               {% endfor %}
             </select>
           </label>
           <label class="cotiz__campo">
-            <span>Molinera</span>
-            <select name="proveedor_id" required>
+            <span id="labelProveedorGuardar">Molinera</span>
+            <select name="proveedor_id" id="selectProveedorGuardar" required>
               <option value="" selected disabled>Seleccione…</option>
               {% for p in proveedores %}
-                <option value="{{ p.pk }}">{{ p.nombre_proveedor }} (flete {{ p.costo_flete|clp }})</option>
+                <option value="{{ p.pk }}" data-tipo-prov="{{ p.tipo_proveedor }}">
+                  {{ p.nombre_proveedor }} [{{ p.get_tipo_proveedor_display }}] (flete {{ p.costo_flete|clp }})
+                </option>
               {% endfor %}
             </select>
           </label>
           <label class="cotiz__campo cotiz__campo--corto">
-            <span>Precio por saco ($)</span>
-            <input type="text" name="precio_saco" inputmode="numeric" placeholder="Ej: 14500" required>
+            <span id="labelPrecioGuardar">Precio por saco ($)</span>
+            <input type="text" name="precio_saco" id="inputPrecioGuardar" class="crud-input input-precio" inputmode="numeric" placeholder="Ej: $ 15.000" required>
           </label>
           <button type="submit" class="cotiz__boton" id="btnGuardarCotizacion">Guardar cotización</button>
         </form>

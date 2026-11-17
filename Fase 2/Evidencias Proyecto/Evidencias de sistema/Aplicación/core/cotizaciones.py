@@ -32,7 +32,10 @@ def comparar_cotizaciones(insumo, sacos):
     más barata y las marcas `es_mejor` (única, la de menor costo) y `empata_mejor` (mismo total).
     """
     sacos = limitar_sacos(sacos)
-    cotizaciones = ProveedorInsumo.objects.filter(insumo=insumo).select_related('proveedor')
+    cotizaciones = ProveedorInsumo.objects.filter(
+        insumo=insumo,
+        proveedor__activo=True  # <-- Oculta proveedores desactivados
+    ).select_related('proveedor')
 
     opciones = []
     for cotizacion in cotizaciones:
@@ -64,7 +67,12 @@ def comparar_cotizaciones(insumo, sacos):
 def tabla_comparativa_insumos():
     """Genera un listado de todos los insumos mostrando el mejor proveedor y precio disponible para cada uno."""
     insumos = Insumo.objects.prefetch_related(
-        Prefetch('proveedorinsumo_set', queryset=ProveedorInsumo.objects.select_related('proveedor').order_by('precio_ofrecido'))
+        Prefetch(
+            'proveedorinsumo_set',
+            queryset=ProveedorInsumo.objects.filter(proveedor__activo=True)  # <-- Oculta proveedores desactivados
+            .select_related('proveedor')
+            .order_by('precio_ofrecido')
+        )
     ).order_by('codigo', 'nombre')
 
     resumen = []

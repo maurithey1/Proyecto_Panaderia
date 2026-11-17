@@ -91,7 +91,7 @@
                 </button>
                 <a href="{% url 'gestion_mermas' %}?item=insumo-{{ insumo.pk }}" class="crud-btn-accion crud-btn-merma">Merma</a>
                 <button type="button" class="crud-btn-accion crud-btn-editar"
-                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.unidad }}', '{{ insumo.kilos_por_saco|unlocalize }}', '{{ insumo.tipo_envase|default:''|escapejs }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0|unlocalize }}')">
+                        onclick="abrirModalEditarInsumo('{{ insumo.pk }}', '{{ insumo.codigo|escapejs }}', '{{ insumo.nombre|escapejs }}', '{{ insumo.unidad }}', '{{ insumo.kilos_por_saco|unlocalize }}', '{{ insumo.tipo_envase|default:''|escapejs }}', '{{ insumo.proveedor_nombre|escapejs }}', '{{ insumo.precio_saco|floatformat:0|unlocalize }}', '{{ insumo.tipo_insumo }}')">
                   Editar
                 </button>
                 <button type="button" class="crud-btn-accion crud-btn-eliminar"
@@ -221,17 +221,19 @@
       <table class="crud-tabla-pantallazo">
         <thead>
           <tr>
-            <th style="width: 12%;">RUT / ID</th>
-            <th style="width: 22%;">Razón Social / Nombre</th>
-            <th style="width: 20%;">Correo Electrónico</th>
-            <th style="width: 14%;">Teléfono</th>
-            <th style="width: 12%;">Costo Flete</th>
-            <th style="width: 20%;">Acciones</th>
+            <th style="width: 11%;">RUT / ID</th>
+            <th style="width: 21%;">Razón Social / Nombre</th>
+            <th style="width: 11%;">Rubro</th>
+            <th style="width: 17%;">Correo Electrónico</th>
+            <th style="width: 12%;">Teléfono</th>
+            <th style="width: 10%;">Costo Flete</th>
+            <th style="width: 8%;">Estado</th>
+            <th style="width: 10%;">Acciones</th>
           </tr>
         </thead>
         <tbody>
           {% for prov in proveedores %}
-            <tr>
+            <tr {% if not prov.activo %}style="opacity: 0.65;"{% endif %}>
               <td class="crud-col-id">{{ prov.rut|default:prov.pk }}</td>
               <td class="crud-col-nombre">
                 <strong>{{ prov.nombre_proveedor }}</strong>
@@ -239,14 +241,25 @@
                   <small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">{{ prov.direccion }}</small>
                 {% endif %}
               </td>
+              <td class="crud-col-centro">
+                <span class="crud-badge-cat">{{ prov.get_tipo_proveedor_display }}</span>
+              </td>
               <td class="crud-col-centro">{{ prov.email|default:"-" }}</td>
               <td class="crud-col-centro">{{ prov.telefono|default:"-" }}</td>
               <td class="crud-col-precio">{{ prov.costo_flete|clp }}</td>
+              <td class="crud-col-centro">
+                {% if prov.activo %}
+                  <span class="crud-badge crud-badge--exito">Activo</span>
+                {% else %}
+                  <span class="crud-badge crud-badge--inactivo">Inactivo</span>
+                {% endif %}
+              </td>
               <td class="crud-col-acciones">
                 <button type="button" class="crud-btn-accion crud-btn-editar"
                         data-pk="{{ prov.pk }}"
                         data-rut="{{ prov.rut|default:'' }}"
                         data-nombre="{{ prov.nombre_proveedor }}"
+                        data-tipo="{{ prov.tipo_proveedor }}"
                         data-email="{{ prov.email|default:'' }}"
                         data-telefono="{{ prov.telefono|default:'' }}"
                         data-direccion="{{ prov.direccion|default:'' }}"
@@ -254,17 +267,26 @@
                         onclick="abrirModalEditarProveedorBtn(this)">
                   Editar
                 </button>
-                <button type="button" class="crud-btn-accion crud-btn-eliminar"
-                        data-pk="{{ prov.pk }}"
-                        data-nombre="{{ prov.nombre_proveedor }}"
-                        onclick="abrirModalEliminarProveedorBtn(this)">
-                  Eliminar
-                </button>
+                {% if prov.activo %}
+                  <button type="button" class="crud-btn-accion crud-btn-eliminar"
+                          data-pk="{{ prov.pk }}"
+                          data-nombre="{{ prov.nombre_proveedor }}"
+                          onclick="abrirModalInactivarProveedorBtn(this)">
+                    Inactivar
+                  </button>
+                {% else %}
+                  <button type="button" class="crud-btn-accion" style="background-color: #2e7d32;"
+                          data-pk="{{ prov.pk }}"
+                          data-nombre="{{ prov.nombre_proveedor }}"
+                          onclick="abrirModalActivarProveedorBtn(this)">
+                    Activar
+                  </button>
+                {% endif %}
               </td>
             </tr>
           {% empty %}
             <tr>
-              <td colspan="6" style="text-align: center; padding: 28px; color: var(--texto-suave);">
+              <td colspan="8" style="text-align: center; padding: 28px; color: var(--texto-suave);">
                 No hay proveedores registrados. Presiona "+ Agregar Proveedor" para registrar el primero.
               </td>
             </tr>
@@ -353,13 +375,21 @@
             <input type="text" id="insumo_precio_unidad" class="crud-input crud-input--readonly" readonly
                    placeholder="Se calcula solo" data-insumo-precio-unidad>
           </div>
+          <div class="crud-form-grupo">
+            <label for="insumo_tipo">Categoría de insumo:</label>
+            <select id="insumo_tipo" name="tipo_insumo" class="crud-input">
+              {% for valor, etiqueta in tipos_insumo %}
+                <option value="{{ valor }}" {% if valor == 'otro' %}selected{% endif %}>{{ etiqueta }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
         <div class="crud-form-grupo">
           <label for="insumo_proveedor">Proveedor:</label>
           <div class="insumo-proveedor">
             <select id="insumo_proveedor" name="proveedor_id" class="crud-input">
               <option value="">Selecciona un proveedor</option>
-              {% for prov in proveedores %}
+              {% for prov in proveedores_activos %}
                 <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
               {% endfor %}
             </select>
@@ -419,16 +449,24 @@
                    data-insumo-precio-unidad>
           </div>
           <div class="crud-form-grupo">
-            <label for="edit_insumo_proveedor">Proveedor:</label>
-            <div class="insumo-proveedor">
-              <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input">
-                <option value="">Selecciona un proveedor</option>
-                {% for prov in proveedores %}
-                  <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
-                {% endfor %}
-              </select>
-              <button type="button" class="crud-btn-accion insumo-proveedor__nuevo" onclick="abrirModalAgregarProveedor()">+ Nuevo</button>
-            </div>
+            <label for="edit_insumo_tipo">Categoría de insumo:</label>
+            <select id="edit_insumo_tipo" name="tipo_insumo" class="crud-input">
+              {% for valor, etiqueta in tipos_insumo %}
+                <option value="{{ valor }}">{{ etiqueta }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="edit_insumo_proveedor">Proveedor:</label>
+          <div class="insumo-proveedor">
+            <select id="edit_insumo_proveedor" name="proveedor_id" class="crud-input">
+              <option value="">Selecciona un proveedor</option>
+              {% for prov in proveedores_activos %}
+                <option value="{{ prov.pk }}">{{ prov.nombre_proveedor }}</option>
+              {% endfor %}
+            </select>
+            <button type="button" class="crud-btn-accion insumo-proveedor__nuevo" onclick="abrirModalAgregarProveedor()">+ Nuevo</button>
           </div>
         </div>
         <p class="insumo-resumen">
@@ -842,23 +880,31 @@
         </div>
         <div class="crud-form-fila-doble">
           <div class="crud-form-grupo">
-            <label for="prov_email">Correo Electrónico:</label>
-            <input type="email" id="prov_email" name="email" class="crud-input" placeholder="contacto@molinos.cl">
-          </div>
-          <div class="crud-form-grupo">
-            <label for="prov_telefono">Teléfono:</label>
-            <input type="text" id="prov_telefono" name="telefono" class="crud-input input-telefono" placeholder="+56 9 1234 5678" maxlength="15">
-          </div>
-        </div>
-        <div class="crud-form-fila-doble">
-          <div class="crud-form-grupo">
-            <label for="prov_dir">Dirección:</label>
-            <input type="text" id="prov_dir" name="direccion" class="crud-input" placeholder="Av. Principal #123">
+            <label for="prov_tipo">Rubro / Tipo de Proveedor:</label>
+            <select id="prov_tipo" name="tipo_proveedor" class="crud-input">
+              {% for valor, etiqueta in tipos_proveedor %}
+                <option value="{{ valor }}" {% if valor == 'general' %}selected{% endif %}>{{ etiqueta }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="crud-form-grupo">
             <label for="prov_flete">Costo Flete ($CLP):</label>
             <input type="text" id="prov_flete" name="costo_flete" class="crud-input input-precio" placeholder="$ 0">
           </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="prov_email">Correo Electrónico:</label>
+            <input type="email" id="prov_email" name="email" required class="crud-input" placeholder="contacto@molinos.cl">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="prov_telefono">Teléfono:</label>
+            <input type="text" id="prov_telefono" name="telefono" required class="crud-input input-telefono" placeholder="+56 9 1234 5678" maxlength="15">
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="prov_dir">Dirección:</label>
+          <input type="text" id="prov_dir" name="direccion" class="crud-input" placeholder="Av. Principal #123">
         </div>
       </div>
       <div class="crud-modal-footer">
@@ -892,23 +938,31 @@
         </div>
         <div class="crud-form-fila-doble">
           <div class="crud-form-grupo">
-            <label for="edit_prov_email">Correo Electrónico:</label>
-            <input type="email" id="edit_prov_email" name="email" class="crud-input">
-          </div>
-          <div class="crud-form-grupo">
-            <label for="edit_prov_telefono">Teléfono:</label>
-            <input type="text" id="edit_prov_telefono" name="telefono" class="crud-input input-telefono" maxlength="15">
-          </div>
-        </div>
-        <div class="crud-form-fila-doble">
-          <div class="crud-form-grupo">
-            <label for="edit_prov_dir">Dirección:</label>
-            <input type="text" id="edit_prov_dir" name="direccion" class="crud-input">
+            <label for="edit_prov_tipo">Rubro / Tipo de Proveedor:</label>
+            <select id="edit_prov_tipo" name="tipo_proveedor" class="crud-input">
+              {% for valor, etiqueta in tipos_proveedor %}
+                <option value="{{ valor }}">{{ etiqueta }}</option>
+              {% endfor %}
+            </select>
           </div>
           <div class="crud-form-grupo">
             <label for="edit_prov_flete">Costo Flete ($CLP):</label>
             <input type="text" id="edit_prov_flete" name="costo_flete" class="crud-input input-precio" placeholder="$ 0">
           </div>
+        </div>
+        <div class="crud-form-fila-doble">
+          <div class="crud-form-grupo">
+            <label for="edit_prov_email">Correo Electrónico:</label>
+            <input type="email" id="edit_prov_email" name="email" required class="crud-input">
+          </div>
+          <div class="crud-form-grupo">
+            <label for="edit_prov_telefono">Teléfono:</label>
+            <input type="text" id="edit_prov_telefono" name="telefono" required class="crud-input input-telefono" maxlength="15">
+          </div>
+        </div>
+        <div class="crud-form-grupo">
+          <label for="edit_prov_dir">Dirección:</label>
+          <input type="text" id="edit_prov_dir" name="direccion" class="crud-input">
         </div>
       </div>
       <div class="crud-modal-footer">
@@ -919,27 +973,59 @@
   </div>
 </div>
 
-<!-- MODAL 12: Eliminar Proveedor -->
-<div class="crud-modal-backdrop" id="modalEliminarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalEliminarProveedor" style="display: none;">
+<!-- MODAL 12A: Inactivar Proveedor -->
+<div class="crud-modal-backdrop" id="modalInactivarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalInactivarProveedor" style="display: none;">
   <div class="crud-modal-caja crud-modal-caja--alerta">
     <div class="crud-modal-header">
-      <h3 id="tituloModalEliminarProveedor">Eliminar Proveedor</h3>
-      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalEliminarProveedor()">&times;</button>
+      <h3 id="tituloModalInactivarProveedor">Inactivar Proveedor</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalInactivarProveedor()">&times;</button>
     </div>
-    <form id="formEliminarProveedor" method="post" action="">
+    <form id="formInactivarProveedor" method="post" action="">
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ request.path }}?tab=proveedores">
       <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
         <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
-          ¿Estás seguro de que deseas eliminar este proveedor?
+          ¿Estás seguro de que deseas inactivar este proveedor?
         </p>
-        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="eliminar_prov_texto">
+        <p style="font-size: 1.2rem; font-weight: 700; color: var(--terracota); margin-bottom: 8px;" id="inactivar_prov_texto">
           -
         </p>
+        <small style="display: block; color: var(--texto-suave); font-size: 0.85rem;">
+          Conservará su historial de cotizaciones y órdenes de compra, pero dejará de aparecer como opción activa en nuevas compras e insumos.
+        </small>
       </div>
       <div class="crud-modal-footer" style="justify-content: center;">
-        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalEliminarProveedor()">Cancelar</button>
-        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Eliminación</button>
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalInactivarProveedor()">Cancelar</button>
+        <button type="submit" class="crud-btn-confirmar-eliminar">Confirmar Inactivación</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL 12B: Activar Proveedor -->
+<div class="crud-modal-backdrop" id="modalActivarProveedor" role="dialog" aria-modal="true" aria-labelledby="tituloModalActivarProveedor" style="display: none;">
+  <div class="crud-modal-caja crud-modal-caja--alerta">
+    <div class="crud-modal-header">
+      <h3 id="tituloModalActivarProveedor">Activar Proveedor</h3>
+      <button type="button" class="crud-modal-cerrar" onclick="cerrarModalActivarProveedor()">&times;</button>
+    </div>
+    <form id="formActivarProveedor" method="post" action="">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.path }}?tab=proveedores">
+      <div class="crud-modal-cuerpo" style="text-align: center; padding: 24px 16px;">
+        <p style="font-size: 1.05rem; margin-bottom: 12px; color: var(--cafe-oscuro);">
+          ¿Deseas reactivar este proveedor?
+        </p>
+        <p style="font-size: 1.2rem; font-weight: 700; color: #2e7d32; margin-bottom: 8px;" id="activar_prov_texto">
+          -
+        </p>
+        <small style="display: block; color: var(--texto-suave); font-size: 0.85rem;">
+          Volverá a estar disponible para nuevas cotizaciones, órdenes de compra e insumos.
+        </small>
+      </div>
+      <div class="crud-modal-footer" style="justify-content: center;">
+        <button type="button" class="crud-btn-cancelar" onclick="cerrarModalActivarProveedor()">Cancelar</button>
+        <button type="submit" class="crud-btn-guardar" style="background-color: #2e7d32;">Confirmar Activación</button>
       </div>
     </form>
   </div>

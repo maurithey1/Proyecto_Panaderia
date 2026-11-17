@@ -23,7 +23,7 @@
       </p>
     </div>
 
-    <form method="post" id="formOrdenCompra">
+    <form method="post" id="formOrdenCompra" data-tarifas="{{ tarifas_json|escapejs }}">
       {% csrf_token %}
 
       <!-- BLOQUE 1: DATOS DE LA MOLINERA Y CONTACTO -->
@@ -118,9 +118,9 @@
             <thead>
               <tr style="background: #f7ede2; color: var(--cafe-oscuro); text-align: left; font-size: 0.85rem;">
                 <th style="padding: 10px; border-radius: 6px 0 0 6px; width: 34%;">Materia Prima / Insumo</th>
-                <th style="padding: 10px; width: 14%; text-align: center;">Cantidad (Sacos)</th>
-                <th style="padding: 10px; width: 14%; text-align: center;">Kg por saco</th>
-                <th style="padding: 10px; width: 18%; text-align: right;">Precio Saco ($)</th>
+                <th style="padding: 10px; width: 14%; text-align: center;">Cantidad (Envases)</th>
+                <th style="padding: 10px; width: 14%; text-align: center;">Contenido / Envase</th>
+                <th style="padding: 10px; width: 18%; text-align: right;">Precio Envase ($)</th>
                 <th style="padding: 10px; width: 14%; text-align: right;">Subtotal ($)</th>
                 <th style="padding: 10px; border-radius: 0 6px 6px 0; width: 6%; text-align: center;">Acción</th>
               </tr>
@@ -135,17 +135,25 @@
                       <option value="{{ ins.pk }}" 
                         data-precio="{{ ins.precio_saco|default:0 }}"
                         data-kilos="{{ ins.kilos_por_saco|default:25 }}"
+                        data-envase="{{ ins.envase_referencia }}"
+                        data-unidad="{{ ins.unidad }}"
                         {% if ins_pre == ins.pk|stringformat:"s" %}selected{% endif %}>
-                        {{ ins.nombre }} ({{ ins.kilos_por_saco|floatformat:"-2" }} kg/saco)
+                        {{ ins.nombre }} ({{ ins.kilos_por_saco|floatformat:"-2" }} {{ ins.unidad }}/{{ ins.envase_referencia }})
                       </option>
                     {% endfor %}
                   </select>
                 </td>
                 <td style="padding: 10px 6px; text-align: center;">
-                  <input type="number" name="cantidad_sacos[]" min="1" value="5" required oninput="calcularTotales()" style="width: 80px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                  <div style="display: inline-flex; align-items: center; gap: 4px;">
+                    <input type="number" name="cantidad_sacos[]" min="1" value="5" required oninput="calcularTotales()" style="width: 72px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                    <small class="etiqueta-envase-fila" style="color: var(--texto-suave); font-weight: 600;">env.</small>
+                  </div>
                 </td>
                 <td style="padding: 10px 6px; text-align: center;">
-                  <input type="number" step="0.1" name="kilos_por_saco[]" value="25.0" required oninput="calcularTotales()" style="width: 80px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                  <div style="display: inline-flex; align-items: center; gap: 4px;">
+                    <input type="number" step="0.1" name="kilos_por_saco[]" value="25.0" required oninput="calcularTotales()" style="width: 72px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: center; font-size: 0.9rem;">
+                    <small class="etiqueta-unidad-fila" style="color: var(--texto-suave); font-weight: 600;">kg</small>
+                  </div>
                 </td>
                 <td style="padding: 10px 6px; text-align: right;">
                   <input type="number" step="1" name="precio_unitario[]" value="0" required oninput="calcularTotales()" style="width: 110px; padding: 8px; border: 1px solid #d4c2b2; border-radius: 6px; text-align: right; font-size: 0.9rem;">
@@ -212,108 +220,10 @@
 
 </div>
 
+{% endblock %}
+
 <!-- SCRIPT DE CÁLCULO EN VIVO Y COTIZACIONES -->
-<script>
-  const TARIFAS = {{ tarifas_json|safe }};
 
-  function formatearMonto(monto) {
-    return '$' + Math.round(monto).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  }
-
-  function actualizarDatosProveedor() {
-    const provSelect = document.getElementById('id_proveedor');
-    const opt = provSelect.options[provSelect.selectedIndex];
-    if (!opt || !opt.value) return;
-
-    if (opt.dataset.email) {
-      document.getElementById('id_contacto_email').value = opt.dataset.email;
-    }
-    if (opt.dataset.telefono) {
-      document.getElementById('id_contacto_telefono').value = opt.dataset.telefono;
-    }
-    if (opt.dataset.flete) {
-      document.getElementById('id_costo_flete').value = Math.round(parseFloat(opt.dataset.flete));
-    }
-
-    // Actualizar precios de insumos según tarifas del proveedor
-    const filas = document.querySelectorAll('.fila-insumo');
-    filas.forEach(fila => {
-      const selectInsumo = fila.querySelector('select[name="insumo_id[]"]');
-      actualizarPrecioFila(selectInsumo);
-    });
-
-    calcularTotales();
-  }
-
-  function actualizarPrecioFila(selectElem) {
-    const fila = selectElem.closest('.fila-insumo');
-    const optInsumo = selectElem.options[selectElem.selectedIndex];
-    if (!optInsumo || !optInsumo.value) return;
-
-    const insumoId = optInsumo.value;
-    const kilos = optInsumo.dataset.kilos || 25;
-    fila.querySelector('input[name="kilos_por_saco[]"]').value = kilos;
-
-    const provId = document.getElementById('id_proveedor').value;
-    let precio = optInsumo.dataset.precio || 0;
-
-    // Si existe una tarifa específica cotizada con ese proveedor, usarla
-    if (provId && TARIFAS[provId + '_' + insumoId]) {
-      precio = TARIFAS[provId + '_' + insumoId];
-    }
-
-    fila.querySelector('input[name="precio_unitario[]"]').value = Math.round(parseFloat(precio));
-    calcularTotales();
-  }
-
-  function calcularTotales() {
-    let subtotal = 0;
-    const filas = document.querySelectorAll('.fila-insumo');
-
-    filas.forEach(fila => {
-      const cant = parseFloat(fila.querySelector('input[name="cantidad_sacos[]"]').value) || 0;
-      const precio = parseFloat(fila.querySelector('input[name="precio_unitario[]"]').value) || 0;
-      const sub = cant * precio;
-      subtotal += sub;
-      fila.querySelector('.subtotal-fila').textContent = formatearMonto(sub);
-    });
-
-    const flete = parseFloat(document.getElementById('id_costo_flete').value) || 0;
-    const total = subtotal + flete;
-
-    document.getElementById('displaySubtotal').textContent = formatearMonto(subtotal);
-    document.getElementById('displayTotal').textContent = formatearMonto(total);
-  }
-
-  function agregarFilaInsumo() {
-    const cuerpo = document.getElementById('cuerpoTablaItems');
-    const primeraFila = cuerpo.querySelector('.fila-insumo');
-    const nuevaFila = primeraFila.cloneNode(true);
-
-    // Resetear valores en la nueva fila
-    nuevaFila.querySelector('select').selectedIndex = 0;
-    nuevaFila.querySelector('input[name="cantidad_sacos[]"]').value = 5;
-    nuevaFila.querySelector('input[name="kilos_por_saco[]"]').value = 25.0;
-    nuevaFila.querySelector('input[name="precio_unitario[]"]').value = 0;
-    nuevaFila.querySelector('.subtotal-fila').textContent = '$0';
-
-    cuerpo.appendChild(nuevaFila);
-  }
-
-  function eliminarFila(btn) {
-    const filas = document.querySelectorAll('.fila-insumo');
-    if (filas.length > 1) {
-      btn.closest('.fila-insumo').remove();
-      calcularTotales();
-    } else {
-      alert('La orden de compra debe contener al menos una materia prima.');
-    }
-  }
-
-  // Inicializar al cargar
-  document.addEventListener('DOMContentLoaded', function() {
-    actualizarDatosProveedor();
-    calcularTotales();
-  });
-</script>
+{% block scripts %}
+  <script src="{% static 'js/orden_compra_crear.js' %}"></script>
 {% endblock %}
