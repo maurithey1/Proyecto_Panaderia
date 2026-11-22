@@ -20,7 +20,7 @@ urlpatterns = [
     path('carrito/finalizar/', views.finalizar_compra, name='finalizar_compra'),
     path('carrito/webpay-confirmar/', views.webpay_confirmar, name='webpay_confirmar'),
     path('carrito/webpay-iniciar/', views.iniciar_pago_webpay, name='iniciar_pago_webpay'),
-    path('carrito/webpay-iniciar/<int:pedido_id>/', views.iniciar_pago_webpay, name='iniciar_pago_webpay'),
+    path('carrito/webpay-iniciar/<int:pedido_id>/', views.iniciar_pago_webpay, name='reintentar_pago_webpay'),
 
     # Comprobantes y Boletas
     path('comprobante/<int:pedido_id>/', views.comprobante_pedido, name='comprobante_pedido'),
@@ -60,6 +60,8 @@ urlpatterns = [
     path('panel-admin/productos/produccion/<int:pk>/', views.registrar_produccion, name='registrar_produccion'),
     path('panel-admin/productos/<int:pk>/receta/', views.receta_producto, name='receta_producto'),
     path('panel-admin/inventario/deficit/', views.deficit_insumos, name='deficit_insumos'),
+    path('panel-admin/tipos-envase/crear/', views.crear_tipo_envase, name='crear_tipo_envase'),
+    path('panel-admin/tipos-envase/eliminar/<int:pk>/', views.eliminar_tipo_envase, name='eliminar_tipo_envase'),
     path('panel-admin/categorias/crear/', views.crear_categoria, name='crear_categoria'),
     path('panel-admin/categorias/eliminar/<int:pk>/', views.eliminar_categoria, name='eliminar_categoria'),
 

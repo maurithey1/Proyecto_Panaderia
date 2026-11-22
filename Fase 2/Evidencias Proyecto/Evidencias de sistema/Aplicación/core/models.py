@@ -1,4 +1,5 @@
 import json
+from datetime import time
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth.models import AbstractUser
@@ -107,8 +108,17 @@ class Administrador(models.Model):
 
 
 class Cajero(models.Model):
+    JORNADAS = (
+        ('SEMANA', 'Lunes a Viernes / Sábado'),
+        ('FIN_DE_SEMANA', 'Fin de semana (Refuerzo)'),
+        ('ROTATIVO', 'Turnos rotativos'),
+    )
+
     user = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='perfil_cajero')
     num_caja_asignada = models.IntegerField(default=1)
+    jornada = models.CharField(
+        max_length=20, choices=JORNADAS, default='ROTATIVO', verbose_name='Jornada habitual'
+    )
 
     class Meta:
         verbose_name = "Perfil Cajero"
@@ -419,8 +429,9 @@ class Insumo(models.Model):
         if contenido > 0:
             self.stock_sacos = int(total // contenido)
             precio = Decimal(str(self.precio_saco or 0))
-            if precio > 0:
-                self.precio_unitario = precio / contenido
+            self.precio_unitario = (precio / contenido) if precio > 0 else Decimal('0')
+        else:
+            self.precio_unitario = Decimal('0')
         self.total_kg = total
         self.stock_actual = total
         super().save(*args, **kwargs)
@@ -439,6 +450,20 @@ class Insumo(models.Model):
 
     def __str__(self):
         return f"{self.codigo} - {self.nombre} ({self.total_kg} {self.unidad})"
+
+
+class TipoEnvase(models.Model):
+    TIPOS_BASE = ('display', 'bidón', 'bolsa', 'caja', 'saco')
+
+    nombre = models.CharField(max_length=60, unique=True, verbose_name="Tipo de envase")
+
+    class Meta:
+        verbose_name = "Tipo de envase"
+        verbose_name_plural = "Tipos de envase"
+        ordering = ['nombre']
+
+    def __str__(self):
+        return self.nombre
 
 
 class EnvaseInsumo(models.Model):
@@ -533,12 +558,18 @@ class Receta(models.Model):
 
 class IngredienteReceta(models.Model):
     receta = models.ForeignKey(Receta, on_delete=models.CASCADE, related_name='ingredientes')
-    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE)
+    insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT)
     cantidad = models.DecimalField(max_digits=10, decimal_places=3)
 
     class Meta:
         verbose_name = "Ingrediente de Receta"
         verbose_name_plural = "Ingredientes de Receta"
+        constraints = [
+            models.UniqueConstraint(
+                fields=['receta', 'insumo'],
+                name='uniq_ingrediente_por_receta',
+            )
+        ]
 
     def __str__(self):
         return f"{self.cantidad} {self.insumo.unidad_medida} de {self.insumo.nombre}"
@@ -805,7 +836,7 @@ class Pedido(models.Model):
 
 class DetallePedido(models.Model):
     pedido = models.ForeignKey(Pedido, on_delete=models.CASCADE, related_name='detalles')
-    producto = models.ForeignKey(Producto, on_delete=models.CASCADE)
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
     cantidad = models.IntegerField()
     precio_unitario = models.DecimalField(max_digits=10, decimal_places=2)
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
@@ -838,24 +869,82 @@ class Pago(models.Model):
 # 5. CAJA Y OPERACIONES (POS)
 # ==========================================
 class Caja(models.Model):
+    ESTADOS = [
+        ('ABIERTA', 'Abierta'),
+        ('CERRADA', 'Cerrada'),
+    ]
+    TURNOS = [
+        ('MANANA', 'Turno Mañana'),
+        ('TARDE', 'Turno Tarde'),
+    ]
+    HORA_CORTE_TURNO = time(14, 30)
+    # Ajusta estos rangos si el horario de atención del local varía
+    HORARIOS_TURNO = {
+        'MANANA': '08:00 a 14:30',
+        'TARDE': '14:30 a 21:00',
+    }
+
     cajero = models.ForeignKey(Cajero, on_delete=models.SET_NULL, null=True, related_name='cajas')
     numero = models.IntegerField(default=1, verbose_name='Número de caja')
+    turno = models.CharField(max_length=15, choices=TURNOS, blank=True, default='', verbose_name='Turno')
     fecha_apertura = models.DateTimeField(auto_now_add=True)
     fecha_cierre = models.DateTimeField(null=True, blank=True)
     monto_inicial = models.DecimalField(max_digits=10, decimal_places=2)
     observacion_apertura = models.TextField(blank=True, default='', verbose_name='Observación de apertura')
-    estado = models.CharField(max_length=20, default='ABIERTA')
+    estado = models.CharField(max_length=20, choices=ESTADOS, default='ABIERTA')
 
     class Meta:
         verbose_name = "Caja"
         verbose_name_plural = "Cajas"
 
+    @classmethod
+    def detectar_turno_actual(cls, momento=None):
+        ahora = timezone.localtime(momento) if momento else timezone.localtime()
+        return 'MANANA' if ahora.time() < cls.HORA_CORTE_TURNO else 'TARDE'
+
+    @classmethod
+    def info_turno(cls, codigo=None, momento=None):
+        """Retorna código, nombre y franja horaria del turno indicado o del turno vigente."""
+        cod = codigo or cls.detectar_turno_actual(momento)
+        nombre = dict(cls.TURNOS).get(cod, 'Turno no definido')
+        horario = cls.HORARIOS_TURNO.get(cod, '')
+        return {
+            'codigo': cod,
+            'nombre': nombre,
+            'horario': horario,
+            'texto_completo': f"{nombre} ({horario})" if horario else nombre,
+        }
+
+    @property
+    def codigo_turno_efectivo(self):
+        if self.turno:
+            return self.turno
+        return self.detectar_turno_actual(self.fecha_apertura)
+
+    @property
+    def nombre_turno_display(self):
+        return dict(self.TURNOS).get(self.codigo_turno_efectivo, 'Turno no definido')
+
+    @property
+    def horario_turno(self):
+        return self.HORARIOS_TURNO.get(self.codigo_turno_efectivo, '')
+
+    @property
+    def turno_completo_display(self):
+        horario = self.horario_turno
+        return f"{self.nombre_turno_display} ({horario})" if horario else self.nombre_turno_display
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.turno:
+            self.turno = self.detectar_turno_actual()
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"Caja #{self.id} - {self.cajero} ({self.estado})"
+        return f"Caja #{self.id} - {self.nombre_turno_display} - {self.cajero} ({self.estado})"
 
 
 class CierreCaja(models.Model):
-    caja = models.ForeignKey(Caja, on_delete=models.CASCADE, related_name='cierres')
+    caja = models.OneToOneField(Caja, on_delete=models.CASCADE, related_name='cierre')
     monto_inicial = models.DecimalField(max_digits=10, decimal_places=2)
     monto_ventas_sistema = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     monto_contado = models.DecimalField(max_digits=10, decimal_places=2)
@@ -947,7 +1036,7 @@ class DetalleOrdenCompra(models.Model):
     Renglón o ítem individual de materia prima dentro de una orden de compra.
     """
     orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name='detalles')
-    insumo = models.ForeignKey(Insumo, on_delete=models.CASCADE, verbose_name="Materia Prima / Insumo")
+    insumo = models.ForeignKey(Insumo, on_delete=models.PROTECT, verbose_name="Materia Prima / Insumo")
     cantidad_sacos = models.PositiveIntegerField(default=1, verbose_name="Cantidad de sacos / bultos")
     kilos_por_saco = models.DecimalField(max_digits=8, decimal_places=2, default=25.00, verbose_name="Kg por saco")
     total_kilos = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Total Kilogramos")

@@ -112,22 +112,28 @@ def opciones_items():
         envases = sorted(insumo.envases.all(), key=lambda envase: not envase.en_uso)    # el que está en uso, primero
         if not envases:
             insumos.append({**comun, 'valor': f'insumo-{insumo.pk}', 'etiqueta': f'{insumo.nombre}: sin stock',
-                            'stock': '0', 'precio': '0', 'tipo': '', 'sin_stock': True})
+                            'stock': '0', 'precio': '0', 'tipo': '', 'estado_envase': 'sin_stock', 'sin_stock': True})
             continue
         cerrados = {}
         for envase in envases:
             datos = {
                 **comun, 'valor': f'envase-{envase.pk}', 'stock': _numero(envase.restante),
+                'stock_grupo': _numero(envase.restante),
                 'precio': _numero(round(envase.precio_por_unidad, 2)), 'tipo': envase.tipo, 'sin_stock': False,
             }
             if envase.en_uso:
+                datos['estado_envase'] = 'en_uso'
                 datos['etiqueta'] = (f'{insumo.nombre}, {envase.tipo}: quedan {_numero(envase.restante).replace(".", ",")} '
                                      f'de {con_unidad(envase.contenido, u)} (en uso)')
                 insumos.append(datos)
             else:
+                datos['estado_envase'] = 'sin_abrir'
                 clave = (envase.tipo, envase.contenido, envase.precio)
                 if clave in cerrados:
                     cerrados[clave]['iguales'] += 1
+                    cerrados[clave]['stock_grupo'] = _numero(
+                        Decimal(cerrados[clave]['stock_grupo']) + envase.restante
+                    )
                 else:
                     datos['iguales'] = 1
                     cerrados[clave] = datos
@@ -221,26 +227,62 @@ def _merma_de_producto(responsable, pk, cantidad, motivo, detalle):
 
 
 def _merma_de_envase(responsable, envase, cantidad, motivo, detalle):
-    # Se bloquean el insumo y el envase (en ese orden, siempre): lo que se compara es lo que se descuenta
+    # Se bloquean el insumo y todos sus envases con stock en orden determinístico
     insumo = Insumo.objects.select_for_update().filter(pk=envase.insumo_id).first()
-    envase = EnvaseInsumo.objects.select_for_update().filter(pk=envase.pk).first()
-    if insumo is None or envase is None:
-        raise MermaInvalida('El envase seleccionado ya no existe.')
+    if insumo is None:
+        raise MermaInvalida('El insumo seleccionado ya no existe.')
+
+    envases_disponibles = list(
+        EnvaseInsumo.objects.select_for_update()
+        .filter(insumo=insumo, restante__gt=0)
+        .order_by('fecha_ingreso', 'pk')
+    )
+    elegido = next((e for e in envases_disponibles if e.pk == envase.pk), None)
+    if elegido is None:
+        raise MermaInvalida('El envase seleccionado ya no tiene stock disponible.')
+
     u = insumo.unidad
-    if cantidad > envase.restante:
+    disponible_total = sum((e.restante for e in envases_disponibles), Decimal('0'))
+    if cantidad > disponible_total:
         raise MermaInvalida(
-            f'Solo quedan {con_unidad(envase.restante, u)} en ese envase ({envase.tipo}) de {insumo.nombre}: '
+            f'Solo hay {con_unidad(disponible_total, u)} disponibles en total de {insumo.nombre}: '
             f'la cantidad ({con_unidad(cantidad, u)}) excede el stock disponible.'
         )
+
+    # Orden de descuento: 1° el envase elegido, 2° otros envases ya abiertos, 3° los sellados más antiguos
+    otros = [e for e in envases_disponibles if e.pk != elegido.pk]
+    otros.sort(key=lambda e: (not e.en_uso, e.fecha_ingreso, e.pk))
+    orden_descuento = [elegido] + otros
+
     stock_anterior = insumo.total_kg
-    envase.restante -= cantidad
-    envase.save(update_fields=['restante'])
+    por_descontar = cantidad
+    valor_total = Decimal('0.00')
+    envases_afectados = 0
+
+    for item_envase in orden_descuento:
+        if por_descontar <= 0:
+            break
+        toma = min(item_envase.restante, por_descontar)
+        item_envase.restante -= toma
+        item_envase.save(update_fields=['restante'])
+        valor_total += toma * item_envase.precio_por_unidad
+        por_descontar -= toma
+        envases_afectados += 1
+
     insumo.actualizar_stock()
+
+    if envases_afectados == 1:
+        envase_registro = elegido
+        nombre_registro = f'{insumo.nombre} ({elegido.tipo})'
+    else:
+        envase_registro = None
+        nombre_registro = f'{insumo.nombre} ({envases_afectados} envases)'
+
     return Merma.objects.create(
-        tipo=INSUMO, insumo=insumo, envase=envase, nombre_item=f'{insumo.nombre} ({envase.tipo})',
+        tipo=INSUMO, insumo=insumo, envase=envase_registro, nombre_item=nombre_registro,
         unidad=u, cantidad=cantidad, motivo=motivo, detalle=detalle,
         stock_anterior=stock_anterior, stock_resultante=insumo.total_kg,
-        valor_estimado=(cantidad * envase.precio_por_unidad).quantize(Decimal('0.01')), responsable=responsable,
+        valor_estimado=valor_total.quantize(Decimal('0.01')), responsable=responsable,
     )
 
 

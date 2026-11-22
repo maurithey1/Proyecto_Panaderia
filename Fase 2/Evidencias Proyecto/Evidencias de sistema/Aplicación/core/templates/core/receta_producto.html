@@ -49,7 +49,9 @@
                         <label class="sr-only" for="cantidad{{ linea.ingrediente.pk }}">Cantidad de {{ linea.insumo.nombre }}</label>
                         <div class="insumo-con-unidad receta-cantidad">
                           <input type="text" inputmode="decimal" id="cantidad{{ linea.ingrediente.pk }}" name="cantidad"
-                                 value="{{ linea.cantidad }}" maxlength="10" class="crud-input">
+                                  value="{{ linea.cantidad }}" maxlength="10" autocomplete="off" class="crud-input" required
+                                  onkeydown="if(['-', '+', 'e', 'E'].includes(event.key)) event.preventDefault();"
+                                  oninput="this.value = this.value.replace(/[^0-9.,]/g, '');">
                           <span class="insumo-con-unidad__sufijo">{{ linea.unidad_ingreso }}</span>
                         </div>
                         <button type="submit" class="merma-enlace">Guardar</button>
@@ -92,9 +94,11 @@
           <div class="crud-form-grupo receta-agregar__cantidad">
             <label for="recetaCantidad">Cantidad {{ texto_base }}</label>
             <div class="insumo-con-unidad">
-              <input type="text" inputmode="decimal" id="recetaCantidad" name="cantidad" required maxlength="10"
-                     class="crud-input" placeholder="Ej: 62">
-              <span class="insumo-con-unidad__sufijo" data-receta-unidad>g</span>
+              <input type="text" inputmode="decimal" id="recetaCantidad" name="cantidad" required maxlength="10" autocomplete="off"
+                      class="crud-input" placeholder="Ej: 62"
+                      onkeydown="if(['-', '+', 'e', 'E'].includes(event.key)) event.preventDefault();"
+                      oninput="this.value = this.value.replace(/[^0-9.,]/g, '');">
+              <span class="insumo-con-unidad__sufijo" id="recetaUnidad" data-receta-unidad>g</span>
             </div>
           </div>
           <button type="submit" class="merma-boton receta-agregar__boton">Agregar insumo</button>
@@ -110,7 +114,7 @@
         <p class="merma-total">{{ detalle.costo|clp }}</p>
         {% if detalle.margen is not None %}
           <div class="merma-medidor receta-medidor" aria-hidden="true">
-            <span class="merma-medidor__pierde" style="width: {{ detalle.parte_costo }}%"></span>
+            <span class="merma-medidor__pierde" style="width: {{ detalle.parte_costo|floatformat:0 }}%"></span>
             <span class="merma-medidor__queda"></span>
           </div>
           <dl class="merma-ficha__cifras">
@@ -119,9 +123,17 @@
             <div><dt>Ganancia {{ texto_base }}</dt><dd>{{ detalle.ganancia|clp }}</dd></div>
             <div class="merma-ficha__total"><dt>Margen (sin IVA)</dt><dd>{{ detalle.margen|floatformat:1 }}%</dd></div>
           </dl>
-          <p class="merma-ficha__nota">
-            Terracota: lo que cuestan los insumos. Trigo: lo que le queda a la panadería, sin contar gas, luz ni sueldos.
-          </p>
+
+          {% if detalle.margen < 30 %}
+            <p class="receta-alerta-margen" role="status">
+              Margen bajo el mínimo deseado (30%): considera ajustar el precio de venta o revisar el costo de los insumos.
+            </p>
+          {% endif %}
+
+          <div class="merma-ficha__nota-leyenda">
+            <p><strong class="receta-leyenda--terracota">Terracota</strong>: lo que cuestan los insumos.</p>
+            <p><strong class="receta-leyenda--trigo">Trigo</strong>: lo que le queda a la panadería, sin contar gas, luz ni sueldos.</p>
+          </div>
         {% else %}
           <p class="merma-ficha__vacia">Agrega los insumos de la receta para ver el costo de elaboración y el margen.</p>
         {% endif %}

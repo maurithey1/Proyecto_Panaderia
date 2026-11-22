@@ -20,12 +20,12 @@ function toggleCampoCajaCrear() {
   const selectRol = document.getElementById('crear_rol');
   const contenedorCaja = document.getElementById('contenedor_caja_crear');
   if (selectRol && contenedorCaja) {
-    contenedorCaja.style.display = (selectRol.value === 'CAJERO') ? 'block' : 'none';
+    contenedorCaja.style.display = (selectRol.value === 'CAJERO') ? '' : 'none';
   }
 }
 
 // --- MODAL EDITAR PERSONAL ---
-function abrirModalEditarUsuario(id, username, firstName, lastName, email, rol, numCaja) {
+function abrirModalEditarUsuario(id, username, firstName, lastName, email, rol, numCaja, jornada) {
   const modal = document.getElementById('modalEditarUsuario');
   const form = document.getElementById('formEditarUsuario');
   if (!modal || !form) return;
@@ -41,6 +41,11 @@ function abrirModalEditarUsuario(id, username, firstName, lastName, email, rol, 
   document.getElementById('edit_rol').value = rol;
   document.getElementById('edit_num_caja').value = numCaja || 1;
 
+  const selectJornada = document.getElementById('edit_jornada');
+  if (selectJornada) {
+    selectJornada.value = jornada || 'ROTATIVO';
+  }
+
   toggleCampoCajaEditar();
   modal.showModal();
 }
@@ -54,7 +59,7 @@ function toggleCampoCajaEditar() {
   const selectRol = document.getElementById('edit_rol');
   const contenedorCaja = document.getElementById('contenedor_caja_editar');
   if (selectRol && contenedorCaja) {
-    contenedorCaja.style.display = (selectRol.value === 'CAJERO') ? 'block' : 'none';
+    contenedorCaja.style.display = (selectRol.value === 'CAJERO') ? '' : 'none';
   }
 }
 

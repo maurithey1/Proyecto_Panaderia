@@ -17,7 +17,7 @@ from . import pedidos
 from .views import DisponibilidadInvalida
 from .disponibilidad import esta_disponible, proxima_disponibilidad, texto_proxima
 from .disponibilidad import resumen as resumen_de_disponibilidad
-from .models import Categoria, DetallePedido, Pago, Pedido, Producto, Turno, Usuario
+from .models import Categoria, DetallePedido, Pago, Pedido, Producto, Turno, Usuario, Insumo, Receta, IngredienteReceta, Notificacion
 from .retiro import ZONA_HORARIA, dias_de_retiro, franjas_del_dia, texto_retiro, validar_retiro
 from .views import WEBPAY_VIGENCIA_MIN
 from .zona_despacho import leer_coordenadas, punto_en_zona
@@ -4567,3 +4567,140 @@ class GraficosAdquisicionTests(TestCase):
         self.client.force_login(self.cajero)
         self.assertEqual(self.client.get(reverse('graficos_adquisicion')).status_code, 302)
         self.assertEqual(self.client.get(reverse('detalle_adquisicion'), {'tipo': 'estado', 'valor': 'EMITIDA'}).status_code, 302)
+        
+
+class AlertasMargenTests(TestCase):
+    """Pruebas de alerta por bajo margen tras alza de precios de insumos (HU-EP002-005 / CP-036)."""
+
+    def setUp(self):
+        self.admin = Usuario.objects.create_user(
+            username='admin_margen', password='123', rol='ADMINISTRADOR'
+        )
+        self.client.force_login(self.admin)
+
+        self.cat = Categoria.objects.create(nombre='Panadería')
+        # Precio bruto $1.190 -> Precio neto $1.000
+        self.producto = Producto.objects.create(
+            categoria=self.cat,
+            nombre='Marraqueta Especial',
+            precio=Decimal('1190'),
+            stock=20,
+            stock_critico=5,
+            unidad_medida='kg',
+            activo=True,
+        )
+        # Saco de 25 kg a $15.000 -> $600/kg
+        self.harina = Insumo.objects.create(
+            codigo='INS-MARG-01',
+            nombre='Harina Fuerza',
+            tipo_insumo='HARINA',
+            unidad_medida='kg',
+            kilos_por_saco=Decimal('25.00'),
+            precio_saco=Decimal('15000'),
+            total_kg=Decimal('50.00'),
+            stock_minimo=Decimal('10.00'),
+        )
+        # Receta: 1 kg de harina por 1 kg de pan -> Costo $600, Neto $1.000 -> Margen = 40% (> 30%, sin alerta)
+        receta = Receta.objects.create(producto=self.producto, nombre=self.producto.nombre)
+        IngredienteReceta.objects.create(receta=receta, insumo=self.harina, cantidad=Decimal('1.000'))
+
+    def test_cp036_alerta_margen_al_subir_precio_insumo(self):
+        from .alertas import verificar_y_generar_alertas_stock
+
+        # 1. Inicialmente margen es 40%: no debe haber alerta de margen
+        verificar_y_generar_alertas_stock()
+        self.assertFalse(Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').exists())
+
+        # 2. Admin edita el insumo y sube el saco de $15.000 a $20.000 ($800/kg -> margen baja a 20.0%)
+        resp = self.client.post(
+            reverse('editar_insumo', args=[self.harina.id]),
+            {
+                'nombre': self.harina.nombre,
+                'tipo_insumo': self.harina.tipo_insumo,
+                'unidad_medida': self.harina.unidad_medida,
+                'kilos_por_saco': '25.00',
+                'precio_saco': '20000',
+                'stock_minimo': '10.00',
+                'proveedor_nombre': 'Molinera Test',
+            },
+        )
+        self.assertEqual(resp.status_code, 302)
+
+        alerta = Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').first()
+        self.assertIsNotNone(alerta)
+        self.assertIn('20.0%', alerta.mensaje)
+        self.assertIn('Marraqueta Especial', alerta.titulo)
+
+        # 3. Si el saco vuelve a subir a $22.500 ($900/kg -> margen 10.0%), actualiza la alerta sin duplicarla
+        self.client.post(
+            reverse('editar_insumo', args=[self.harina.id]),
+            {
+                'nombre': self.harina.nombre,
+                'tipo_insumo': self.harina.tipo_insumo,
+                'unidad_medida': self.harina.unidad_medida,
+                'kilos_por_saco': '25.00',
+                'precio_saco': '22500',
+                'stock_minimo': '10.00',
+                'proveedor_nombre': 'Molinera Test',
+            },
+        )
+        self.assertEqual(Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').count(), 1)
+        alerta.refresh_from_db()
+        self.assertIn('10.0%', alerta.mensaje)
+
+        # 4. Si el precio de venta sube a $1.785 (neto $1.500 -> margen 40%), la alerta se limpia
+        self.producto.precio = Decimal('1785')
+        self.producto.save()
+        verificar_y_generar_alertas_stock()
+        self.assertFalse(Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').exists())
+
+    def test_alerta_margen_desde_vistas_receta_y_producto(self):
+        # Insumo adicional: 1 kg a $10.000 ($10/g)
+        levadura = Insumo.objects.create(
+            codigo='INS-MARG-02',
+            nombre='Levadura Fresca',
+            tipo_insumo='LEVADURA',
+            unidad_medida='kg',
+            kilos_por_saco=Decimal('1.00'),
+            precio_saco=Decimal('10000'),
+            total_kg=Decimal('5.00'),
+            stock_minimo=Decimal('1.00'),
+        )
+
+        # 1. Agregar 200 g ($200) vía POST a receta_producto: costo sube de $600 a $800
+        # Frente a $1.000 neto, el margen cae de 40.0% a 20.0% (< 30%)
+        resp_receta = self.client.post(
+            reverse('receta_producto', args=[self.producto.pk]),
+            {
+                'accion': 'agregar',
+                'insumo_id': levadura.pk,
+                'cantidad': '200',
+            },
+        )
+        self.assertEqual(resp_receta.status_code, 302)
+        self.assertTrue(Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').exists())
+
+        # Verificar que la vista de receta renderiza el banner de alerta en el HTML
+        ficha = self.client.get(reverse('receta_producto', args=[self.producto.pk]))
+        self.assertContains(ficha, 'receta-alerta-margen')
+        self.assertContains(ficha, '20.0%')
+
+        # 2. Subir el precio de venta vía POST a editar_producto a $1.785 ($1.500 neto)
+        # Margen sube a 46.7% (>= 30%) y la alerta debe desaparecer automáticamente
+        resp_prod = self.client.post(
+            reverse('editar_producto', args=[self.producto.pk]),
+            {
+                'nombre': self.producto.nombre,
+                'categoria_id': self.cat.pk,
+                'unidad_medida': self.producto.unidad_medida,
+                'precio': '1785',
+                'stock': str(self.producto.stock),
+                'stock_critico': str(self.producto.stock_critico),
+                'disponibilidad': 'mantener',
+            },
+        )
+        self.assertEqual(resp_prod.status_code, 302)
+        self.assertFalse(Notificacion.objects.filter(producto=self.producto, tipo='MERCADO').exists())
+
+        ficha_actualizada = self.client.get(reverse('receta_producto', args=[self.producto.pk]))
+        self.assertNotContains(ficha_actualizada, 'receta-alerta-margen')

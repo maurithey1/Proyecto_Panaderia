@@ -31,19 +31,42 @@
       <div class="crud-form-grupo merma-formulario__item">
         <div class="merma-campo-cabecera">
           <label for="mermaItem">Producto o insumo</label>
-          <!-- Con JavaScript, la lista se acorta a productos o a insumos (sin JavaScript se ven ambos grupos) -->
-          <fieldset class="merma-tipo" data-tipo hidden>
-            <legend class="sr-only">Mostrar en la lista</legend>
-            <label class="merma-tipo__opcion">
-              <input type="radio" name="lista" value="producto">
-              <span>Productos</span>
-            </label>
-            <label class="merma-tipo__opcion">
-              <input type="radio" name="lista" value="insumo">
-              <span>Insumos</span>
-            </label>
-          </fieldset>
+
+          <div class="merma-cabecera-controles">
+            <!-- Subfiltro de envases (alineado a la izquierda de Productos/Insumos, solo visible en Insumos) -->
+            <div class="merma-subfiltro-wrap" data-subfiltro-envase hidden>
+              <fieldset class="merma-tipo merma-tipo--compacto">
+                <legend class="sr-only">Filtrar envases por estado</legend>
+                <label class="merma-tipo__opcion">
+                  <input type="radio" name="estado_envase" value="todos" checked>
+                  <span data-etiqueta-estado="todos">Todos</span>
+                </label>
+                <label class="merma-tipo__opcion">
+                  <input type="radio" name="estado_envase" value="en_uso">
+                  <span data-etiqueta-estado="en_uso">En uso</span>
+                </label>
+                <label class="merma-tipo__opcion">
+                  <input type="radio" name="estado_envase" value="sin_abrir">
+                  <span data-etiqueta-estado="sin_abrir">Sin abrir</span>
+                </label>
+              </fieldset>
+            </div>
+
+            <!-- Selector principal: Productos o Insumos -->
+            <fieldset class="merma-tipo" data-tipo hidden>
+              <legend class="sr-only">Mostrar en la lista</legend>
+              <label class="merma-tipo__opcion">
+                <input type="radio" name="lista" value="producto">
+                <span>Productos</span>
+              </label>
+              <label class="merma-tipo__opcion">
+                <input type="radio" name="lista" value="insumo">
+                <span>Insumos</span>
+              </label>
+            </fieldset>
+          </div>
         </div>
+
         <select id="mermaItem" name="item" class="crud-input" required{% if error %} aria-describedby="mermaError"{% endif %}>
           <option value="">Selecciona qué se perdió</option>
           <optgroup label="Productos de la panadería" data-grupo="producto">
@@ -59,8 +82,10 @@
           <optgroup label="Insumos y materias primas" data-grupo="insumo">
             {% for o in opciones.insumos %}
               <option value="{{ o.valor }}" data-nombre="{{ o.nombre }}" data-stock="{{ o.stock }}"
+                      data-stock-grupo="{{ o.stock_grupo }}"
                       data-unidad="{{ o.unidad }}" data-precio="{{ o.precio }}" data-decimales="{{ o.decimales }}"
                       data-envase="{{ o.tipo }}" data-total="{{ o.total }}"
+                      data-estado-envase="{{ o.estado_envase }}"
                       {% if o.valor == formulario.item %}selected{% endif %}{% if o.sin_stock %} disabled{% endif %}>
                 {{ o.etiqueta }}
               </option>

@@ -36,7 +36,9 @@
                 {% if u.es_administrador %}
                   <span class="badge" style="background-color: var(--crema-2); color: var(--cafe-oscuro);">Administrador</span>
                 {% else %}
-                  <span class="badge" style="background-color: #e8f0fe; color: #1a73e8;">Cajero (Caja N° {{ u.perfil_cajero.num_caja_asignada|default:1 }})</span>
+                  <span class="badge" style="background-color: #e8f0fe; color: #1a73e8;">
+                    Cajero (Caja N° {{ u.perfil_cajero.num_caja_asignada|default:1 }} · {{ u.perfil_cajero.get_jornada_display|default:"Turnos rotativos" }})
+                  </span>
                 {% endif %}
               </td>
               <td>
@@ -50,7 +52,7 @@
                 <button 
                   type="button" 
                   class="boton-tabla"
-                  onclick="abrirModalEditarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}', '{{ u.first_name|escapejs }}', '{{ u.last_name|escapejs }}', '{{ u.email|escapejs }}', '{{ u.rol|escapejs }}', '{{ u.perfil_cajero.num_caja_asignada|default:1 }}')"
+                  onclick="abrirModalEditarUsuario('{{ u.pk }}', '{{ u.username|escapejs }}', '{{ u.first_name|escapejs }}', '{{ u.last_name|escapejs }}', '{{ u.email|escapejs }}', '{{ u.rol|escapejs }}', '{{ u.perfil_cajero.num_caja_asignada|default:1 }}', '{{ u.perfil_cajero.jornada|default:"ROTATIVO"|escapejs }}')"
                 >
                   ✏️ Editar
                 </button>
@@ -146,17 +148,26 @@
       <input type="email" name="email" class="entrada" required>
     </div>
 
-    <div class="fila-dos">
+    <div class="campo">
+      <label>Rol de Usuario:</label>
+      <select name="rol" id="crear_rol" class="entrada" onchange="toggleCampoCajaCrear()">
+        <option value="CAJERO" selected>Cajero (Acceso POS)</option>
+        <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
+      </select>
+    </div>
+
+    <div class="fila-dos" id="contenedor_caja_crear">
       <div class="campo">
-        <label>Rol de Usuario:</label>
-        <select name="rol" id="crear_rol" class="entrada" onchange="toggleCampoCajaCrear()">
-          <option value="CAJERO" selected>Cajero (Acceso POS)</option>
-          <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
-        </select>
-      </div>
-      <div class="campo" id="contenedor_caja_crear">
         <label>N° Caja Asignada:</label>
         <input type="number" name="num_caja_asignada" value="1" min="1" class="entrada">
+      </div>
+      <div class="campo">
+        <label>Jornada Habitual:</label>
+        <select name="jornada" id="crear_jornada" class="entrada">
+          {% for valor, etiqueta in jornadas_cajero %}
+            <option value="{{ valor }}" {% if valor == 'ROTATIVO' %}selected{% endif %}>{{ etiqueta }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
 
@@ -199,17 +210,26 @@
       <input type="email" name="email" id="edit_email" class="entrada" required>
     </div>
 
-    <div class="fila-dos">
+    <div class="campo">
+      <label>Rol de Usuario:</label>
+      <select name="rol" id="edit_rol" class="entrada" onchange="toggleCampoCajaEditar()">
+        <option value="CAJERO">Cajero (Acceso POS)</option>
+        <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
+      </select>
+    </div>
+
+    <div class="fila-dos" id="contenedor_caja_editar">
       <div class="campo">
-        <label>Rol de Usuario:</label>
-        <select name="rol" id="edit_rol" class="entrada" onchange="toggleCampoCajaEditar()">
-          <option value="CAJERO">Cajero (Acceso POS)</option>
-          <option value="ADMINISTRADOR">Administrador (Acceso Total)</option>
-        </select>
-      </div>
-      <div class="campo" id="contenedor_caja_editar">
         <label>N° Caja Asignada:</label>
         <input type="number" name="num_caja_asignada" id="edit_num_caja" min="1" class="entrada">
+      </div>
+      <div class="campo">
+        <label>Jornada Habitual:</label>
+        <select name="jornada" id="edit_jornada" class="entrada">
+          {% for valor, etiqueta in jornadas_cajero %}
+            <option value="{{ valor }}">{{ etiqueta }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
 

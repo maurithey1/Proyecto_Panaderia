@@ -4826,6 +4826,41 @@ body:has(.confirmacion-modal[open]) { overflow: hidden; }
 }
 .merma-tipo__opcion input:checked + span { background: var(--miga); color: var(--cafe-oscuro); }
 
+.merma-campo-cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.merma-campo-cabecera > label {
+  margin-bottom: 0;
+}
+
+.merma-cabecera-controles {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.merma-subfiltro-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.merma-subfiltro-wrap[hidden] {
+  display: none !important;
+}
+
+.merma-tipo--compacto .merma-tipo__opcion span {
+  font-size: 0.78rem;
+  padding: 3px 10px;
+}
+
 /* La unidad va pegada al número: "3 | unid." */
 .merma-cantidad { display: flex; }
 .merma-cantidad .crud-input {
@@ -4934,12 +4969,26 @@ body:has(.confirmacion-modal[open]) { overflow: hidden; }
   font-weight: 500;
   color: var(--texto-suave);
 }
-.merma-ficha__cifras .merma-ficha__total { padding-top: 10px; border-top: 1px solid var(--borde); }
+.merma-ficha__cifras .merma-ficha__total { padding-top: 10px; padding-bottom: 10px; border-top: 1px solid var(--borde); }
 .merma-ficha__total dt { font-weight: 600; color: var(--cafe-oscuro); }
 .merma-ficha__total dd { font-size: 1.5rem; color: var(--terracota); }
 .merma-ficha--excede [data-ficha-quedan] { color: var(--terracota); }
 
 .merma-ficha__nota { margin: 0; font-size: 0.8rem; color: var(--texto-suave); }
+
+.merma-ficha__nota-leyenda {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--texto-suave);
+}
+
+.merma-ficha__nota-leyenda p {
+  margin: 0;
+}
 
 /* Error de validación (del servidor o del formulario) */
 .merma-aviso {
@@ -5266,6 +5315,36 @@ body:has(.confirmacion-modal[open]) { overflow: hidden; }
   gap: 12px;
 }
 .receta-agregar .crud-input { width: 100%; min-width: 0; }
+
+/* Colores de referencia en la leyenda de la ficha de receta */
+.receta-leyenda--terracota {
+  color: var(--terracota);
+  font-weight: 700;
+}
+
+.receta-leyenda--trigo {
+  color: var(--trigo);
+  font-weight: 700;
+  /* Sombra sutil para que el amarillo trigo (#e3b25b) mantenga buena lectura sobre fondo --papel */
+  text-shadow: 0 0 1px rgba(62, 42, 29, 0.35);
+}
+
+/* Aviso explícito dentro de la ficha cuando el margen cae bajo el 30% (CP-036) */
+.receta-alerta-margen {
+  margin: 0;
+  padding: 9px 12px;
+  border-left: 3.5px solid var(--terracota);
+  border-radius: 6px;
+  background: #fbeee6;
+  color: #7a2e12;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.receta-medidor {
+  margin-bottom: 10px;
+}
 
 /* El medidor de la ficha: el costo ocupa su parte del precio sin IVA y la ganancia el resto */
 .receta-medidor .merma-medidor__queda { flex: 1; }

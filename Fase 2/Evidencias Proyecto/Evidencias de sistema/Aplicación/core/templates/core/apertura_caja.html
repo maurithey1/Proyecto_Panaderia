@@ -32,6 +32,16 @@
         <dd class="apertura-cifra">N° {% if caja %}{{ caja.numero }}{% else %}{{ numero_caja }}{% endif %}</dd>
       </div>
       <div class="apertura-estado__fila">
+        <dt>Turno:</dt>
+        <dd>
+          <strong>{% if caja %}{{ caja.nombre_turno_display }}{% else %}{{ turno_actual.nombre }}{% endif %}</strong>
+        </dd>
+      </div>
+      <div class="apertura-estado__fila">
+        <dt>Horario de turno:</dt>
+        <dd class="apertura-cifra">{% if caja %}{{ caja.horario_turno }}{% else %}{{ turno_actual.horario }}{% endif %}</dd>
+      </div>
+      <div class="apertura-estado__fila">
         <dt>Fecha de turno:</dt>
         <dd class="apertura-cifra">{% if caja %}{{ caja.fecha_apertura|date:"d/m/Y" }}{% else %}{{ ahora|date:"d/m/Y" }}{% endif %}</dd>
       </div>
@@ -123,7 +133,10 @@
             <h2 class="confirmacion-modal__titulo" id="confirmarAperturaTitulo" tabindex="-1" autofocus>Confirmar apertura</h2>
           </header>
           <div class="confirmacion-modal__cuerpo">
-            <p id="confirmarAperturaTexto">Vas a abrir la <strong>Caja <span data-confirmar-caja>{{ numero_caja }}</span></strong> con este monto inicial:</p>
+            <p id="confirmarAperturaTexto">
+              Vas a abrir la <strong>Caja <span data-confirmar-caja>{{ numero_caja }}</span></strong>
+              en el <strong>{{ turno_actual.texto_completo }}</strong> con este monto inicial:
+            </p>
             <p class="confirmacion-modal__monto" data-confirmar-monto></p>
             <p class="confirmacion-modal__nota">Revisa que sea el dinero físico que hay en la caja: no se puede cambiar después.</p>
           </div>

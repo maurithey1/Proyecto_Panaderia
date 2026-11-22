@@ -19,6 +19,7 @@
   var inputDetalle = document.getElementById('mermaDetalle');
   var grupoMotivo = formulario.querySelector('.merma-motivo');
   var selectorTipo = formulario.querySelector('[data-tipo]');
+  var subfiltroEnvase = formulario.querySelector('[data-subfiltro-envase]');
   var unidadCantidad = formulario.querySelector('[data-unidad-etiqueta]');
   var botonTodo = formulario.querySelector('[data-todo-envase]');
   var ayudaDetalle = formulario.querySelector('[data-detalle-ayuda]');
@@ -53,15 +54,19 @@
     var opcion = selectItem.options[selectItem.selectedIndex];
     if (!opcion || !opcion.value) { return null; }
     var envase = opcion.getAttribute('data-envase') || '';
+    var esEnvase = opcion.value.indexOf('envase-') === 0;
+    var stockEnvase = Number(opcion.getAttribute('data-stock'));
+    var total = Number(opcion.getAttribute('data-total') || 0);
     return {
       nombre: opcion.getAttribute('data-nombre'),
       envase: envase,                                          // tipo de envase ("caja"); vacío en productos
-      esEnvase: opcion.value.indexOf('envase-') === 0,
-      stock: Number(opcion.getAttribute('data-stock')),        // en un envase: lo que le queda
+      esEnvase: esEnvase,
+      stockEnvase: stockEnvase,                                // lo que trae 1 envase
+      stock: esEnvase ? total : stockEnvase,                   // máximo disponible para mermar
       unidad: opcion.getAttribute('data-unidad'),
       precio: Number(opcion.getAttribute('data-precio')),      // por unidad de venta, o por kg / L / un. del envase
       decimales: opcion.getAttribute('data-decimales') === '1',
-      total: Number(opcion.getAttribute('data-total') || 0)    // stock de todo el insumo (todos sus envases)
+      total: total
     };
   }
 
@@ -76,34 +81,83 @@
     return formulario.querySelector('input[name="motivo"]:checked');
   }
 
-  // --- Lista acortada a productos o insumos ---
+  // --- Lista acortada a productos o insumos (y por estado de envase) ---
   var grupos = {};
   Array.prototype.forEach.call(selectItem.querySelectorAll('optgroup[data-grupo]'), function (grupo) {
     grupos[grupo.getAttribute('data-grupo')] = grupo;
   });
   var opcionVacia = selectItem.options[0];
 
+  function estadoEnvaseElegido() {
+    if (!subfiltroEnvase) { return 'todos'; }
+    var marcado = subfiltroEnvase.querySelector('input[name="estado_envase"]:checked');
+    return marcado ? marcado.value : 'todos';
+  }
+
+  function actualizarContadoresEnvase() {
+    if (!subfiltroEnvase || !grupos.insumo) { return; }
+    var total = grupos.insumo.children.length;
+    var enUso = 0;
+    var sinAbrir = 0;
+    Array.prototype.forEach.call(grupos.insumo.children, function (opcion) {
+      var estado = opcion.getAttribute('data-estado-envase');
+      if (estado === 'en_uso') { enUso += 1; }
+      if (estado === 'sin_abrir') { sinAbrir += 1; }
+    });
+    var spanTodos = subfiltroEnvase.querySelector('[data-etiqueta-estado="todos"]');
+    var spanEnUso = subfiltroEnvase.querySelector('[data-etiqueta-estado="en_uso"]');
+    var spanSinAbrir = subfiltroEnvase.querySelector('[data-etiqueta-estado="sin_abrir"]');
+    if (spanTodos) { spanTodos.textContent = 'Todos (' + total + ')'; }
+    if (spanEnUso) { spanEnUso.textContent = 'En uso (' + enUso + ')'; }
+    if (spanSinAbrir) { spanSinAbrir.textContent = 'Sin abrir (' + sinAbrir + ')'; }
+  }
+
   function mostrarLista(tipo) {
     var elegido = selectItem.value;
+    var estadoFiltro = tipo === 'insumo' ? estadoEnvaseElegido() : 'todos';
+    if (subfiltroEnvase) {
+      subfiltroEnvase.hidden = (tipo !== 'insumo');
+    }
+
     selectItem.textContent = '';
     selectItem.appendChild(opcionVacia);
+    var sigueVisible = false;
+
     Array.prototype.forEach.call(grupos[tipo].children, function (opcion) {
+      if (tipo === 'insumo' && estadoFiltro !== 'todos') {
+        if (opcion.getAttribute('data-estado-envase') !== estadoFiltro) {
+          return;
+        }
+      }
       selectItem.appendChild(opcion.cloneNode(true));
+      if (opcion.value === elegido) {
+        sigueVisible = true;
+      }
     });
-    var esDelTipo = tipo === 'producto' ? elegido.indexOf('producto-') === 0 : elegido !== '' && elegido.indexOf('producto-') !== 0;
-    selectItem.value = esDelTipo ? elegido : '';
+
+    selectItem.value = sigueVisible ? elegido : '';
   }
 
   if (grupos.producto && grupos.insumo) {
+    actualizarContadoresEnvase();
     var tipoInicial = selectItem.value !== '' && selectItem.value.indexOf('producto-') !== 0 ? 'insumo' : 'producto';
     selectorTipo.querySelector('input[value="' + tipoInicial + '"]').checked = true;
     selectorTipo.hidden = false;
     mostrarLista(tipoInicial);
+
     selectorTipo.addEventListener('change', function (evento) {
       mostrarLista(evento.target.value);
       actualizar();
       mostrarAviso('');
     });
+
+    if (subfiltroEnvase) {
+      subfiltroEnvase.addEventListener('change', function () {
+        mostrarLista('insumo');
+        actualizar();
+        mostrarAviso('');
+      });
+    }
   }
 
   // --- Ficha: lo que hay, lo que quedaría y lo que se pierde ---
@@ -135,19 +189,32 @@
     medidorPierde.style.width = (excede ? 100 : porcentaje) + '%';
     medidorQueda.style.width = (excede ? 0 : 100 - porcentaje) + '%';
 
-    escribir(fichaHay, conUnidad(item.stock, item.unidad), item.esEnvase ? 'en el envase' : '');
+    escribir(
+      fichaHay,
+      conUnidad(item.stock, item.unidad),
+      item.esEnvase ? 'en total (' + conUnidad(item.stockEnvase, item.unidad) + ' por envase)' : ''
+    );
+
     if (excede) {
-      escribir(fichaQuedan, 'No alcanza', 'faltan ' + conUnidad(cantidad - item.stock, item.unidad));
+      escribir(fichaQuedan, 'No alcanza', 'faltan ' + conUnidad(Math.round((cantidad - item.stock) * 100) / 100, item.unidad));
       fichaPerdida.textContent = '—';
     } else {
-      escribir(fichaQuedan, conUnidad(item.stock - cantidad, item.unidad), item.esEnvase ? 'en el envase' : '');
+      var restanteTotal = Math.round((item.stock - cantidad) * 100) / 100;
+      var detalleQuedan = '';
+      if (item.esEnvase) {
+        if (cantidad <= item.stockEnvase) {
+          var restanteEnvase = Math.round((item.stockEnvase - cantidad) * 100) / 100;
+          detalleQuedan = 'en total (' + conUnidad(restanteEnvase, item.unidad) + ' en este envase)';
+        } else {
+          detalleQuedan = 'en total (abarca varios envases)';
+        }
+      }
+      escribir(fichaQuedan, conUnidad(restanteTotal, item.unidad), detalleQuedan);
       fichaPerdida.textContent = formatoCLP(item.precio * cantidad);
     }
+
     if (item.esEnvase) {
-      var quedanEnTotal = excede ? item.total : item.total - cantidad;
-      fichaNota.textContent = 'Stock total de ' + item.nombre + ': ' + conUnidad(item.total, item.unidad) +
-        (cantidad > 0 && !excede ? ' → ' + conUnidad(quedanEnTotal, item.unidad) : '') +
-        '. Cada ' + item.unidad + ' de este envase vale ' + formatoCLP(item.precio) + '.';
+      fichaNota.textContent = 'Cada ' + item.unidad + ' de este envase vale ' + formatoCLP(item.precio) + '.';
     } else {
       fichaNota.textContent = 'Precio de venta: ' + formatoCLP(item.precio) + ' por ' + (item.unidad === 'kg' ? 'kg' : 'unidad') + '.';
     }
@@ -197,7 +264,7 @@
     }
     if (cantidad > item.stock) {
       var mensaje = item.esEnvase
-        ? 'Solo quedan ' + conUnidad(item.stock, item.unidad) + ' en ese envase (' + item.envase + ') de ' + item.nombre
+        ? 'Solo hay ' + conUnidad(item.stock, item.unidad) + ' disponibles en total de ' + item.nombre
         : 'Solo hay ' + conUnidad(item.stock, item.unidad) + ' de ' + item.nombre;
       return [mensaje + ': la cantidad (' + conUnidad(cantidad, item.unidad) + ') excede el stock disponible.', inputCantidad];
     }
@@ -216,7 +283,7 @@
   botonTodo.addEventListener('click', function () {
     var item = itemElegido();
     if (!item) { return; }
-    inputCantidad.value = formatoNumero(item.stock).replace(/\./g, '');    // "76" o "12,5", sin puntos de miles
+    inputCantidad.value = formatoNumero(item.stockEnvase).replace(/\./g, '');    // "10" o "12,5", sin puntos de miles
     actualizar();
     mostrarAviso('');
     inputCantidad.focus();
@@ -293,9 +360,12 @@
     modal.querySelector('[data-confirmar-nombre]').textContent = nombre;
     modal.querySelector('[data-confirmar-motivo]').textContent = motivo;
     modal.querySelector('[data-confirmar-valor]').textContent = valor;
+
+    var stockFinal = Math.round((item.stock - cantidad) * 100) / 100;
     modal.querySelector('[data-confirmar-stock]').textContent =
-      (item.esEnvase ? 'El envase pasa de ' : 'El stock pasa de ') +
-      conUnidad(item.stock, item.unidad) + ' a ' + conUnidad(item.stock - cantidad, item.unidad) + '.';
+      (item.esEnvase ? 'El stock total de ' + item.nombre + ' pasa de ' : 'El stock pasa de ') +
+      conUnidad(item.stock, item.unidad) + ' a ' + conUnidad(stockFinal, item.unidad) + '.';
+
     modal.showModal();
   });
 

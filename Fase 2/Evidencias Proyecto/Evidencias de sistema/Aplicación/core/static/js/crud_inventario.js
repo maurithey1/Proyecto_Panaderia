@@ -65,6 +65,10 @@ document.addEventListener('DOMContentLoaded', function() {
 function abrirModalAgregarInsumo() {
   const modal = document.getElementById('modalAgregarInsumo');
   if (modal) {
+    const selectEnvase = document.getElementById('insumoTipoEnvase');
+    if (selectEnvase) selectEnvase.value = '';
+    actualizarEstadoBtnEliminarEnvase('insumoTipoEnvase', 'btnEliminarTipoEnvase');
+
     modal.style.display = 'flex';
     actualizarResumenInsumo(document.getElementById('formAgregarInsumo'));
   }
@@ -98,7 +102,7 @@ function seleccionarProveedor(select, nombre) {
   }
 }
 
-function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvase, proveedorNombre, precioSaco, tipoInsumo) {
+function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvase, proveedorNombre, precioSaco, tipoInsumo, stockMinimo) {
   const form = document.getElementById('formEditarInsumo');
   if (form) {
     form.action = `/panel-admin/inventario/editar/${pk}/`;
@@ -111,6 +115,9 @@ function abrirModalEditarInsumo(pk, codigo, nombre, unidad, contenido, tipoEnvas
   if (document.getElementById('edit_insumo_envase')) document.getElementById('edit_insumo_envase').value = `${tipoEnvase || 'envase'} de ${formatearCantidad(contenido)} ${unidad}`;
   if (document.getElementById('edit_insumo_precio_saco')) document.getElementById('edit_insumo_precio_saco').value = formatearPrecio(String(precioSaco || ''));
   if (document.getElementById('edit_insumo_tipo')) document.getElementById('edit_insumo_tipo').value = tipoInsumo || 'otro';
+  if (document.getElementById('edit_insumo_stock_minimo')) {
+    document.getElementById('edit_insumo_stock_minimo').value = stockMinimo ?? 5;
+  }
   seleccionarProveedor(document.getElementById('edit_insumo_proveedor'), proveedorNombre);
 
   actualizarResumenInsumo(form);
@@ -233,6 +240,81 @@ function abrirModalEliminarInsumo(pk, codigo, nombre) {
 function cerrarModalEliminarInsumo() {
   const modal = document.getElementById('modalEliminarInsumo');
   if (modal) modal.style.display = 'none';
+}
+
+function abrirModalAgregarTipoEnvase() {
+  _ocultarModalPadreActivo();
+  const modal = document.getElementById('modalAgregarTipoEnvase');
+  if (modal) {
+    const form = modal.querySelector('form');
+    if (form) form.reset();
+    modal.style.display = 'flex';
+  }
+}
+
+function cerrarModalAgregarTipoEnvase() {
+  const modal = document.getElementById('modalAgregarTipoEnvase');
+  if (modal) modal.style.display = 'none';
+  _restaurarModalPadreActivo();
+}
+
+function actualizarEstadoBtnEliminarEnvase(selectId, btnId) {
+  const select = document.getElementById(selectId);
+  const btn = document.getElementById(btnId);
+  if (!select || !btn) return;
+  const opt = select.options[select.selectedIndex];
+  btn.disabled = !(opt && opt.dataset && opt.dataset.id);
+}
+
+async function eliminarTipoEnvaseSeleccionado(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select || !select.value) return;
+
+  const optSeleccionada = select.options[select.selectedIndex];
+  const tipoEnvaseId = optSeleccionada?.dataset?.id;
+  const tipoEnvaseNombre = optSeleccionada?.text?.trim();
+  if (!tipoEnvaseId) return;
+
+  const confirmado = await confirmarAccionCrud({
+    titulo: 'Eliminar tipo de envase',
+    mensaje: `¿Estás seguro de eliminar el tipo de envase "${tipoEnvaseNombre}"?`,
+    nota: 'Solo se eliminará si no está asociado a ningún envase en inventario.',
+    textoAceptar: 'Sí, eliminar'
+  });
+  if (!confirmado) return;
+
+  const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+  const csrfToken = csrfInput ? csrfInput.value : '';
+
+  try {
+    const resp = await fetch(`/panel-admin/tipos-envase/eliminar/${tipoEnvaseId}/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+    const data = await resp.json();
+
+    if (resp.ok && data.ok) {
+      optSeleccionada.remove();
+      select.value = '';
+      actualizarEstadoBtnEliminarEnvase('insumoTipoEnvase', 'btnEliminarTipoEnvase');
+      actualizarResumenInsumo(document.getElementById('formAgregarInsumo'));
+
+      if (typeof mostrarToast === 'function') {
+        mostrarToast(`Tipo de envase "${tipoEnvaseNombre}" eliminado correctamente.`, 'success');
+      }
+    } else {
+      const msg = data.error || 'No se pudo eliminar el tipo de envase.';
+      if (typeof mostrarToast === 'function') mostrarToast(msg, 'error');
+    }
+  } catch (err) {
+    console.error('Error al eliminar tipo de envase:', err);
+    if (typeof mostrarToast === 'function') {
+      mostrarToast('Error de conexión al intentar eliminar el tipo de envase.', 'error');
+    }
+  }
 }
 
 // ==========================================
@@ -718,6 +800,64 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
   }
+
+  // 3. Interceptar envío de "Nuevo Tipo de Envase" cuando viene desde Agregar Insumo
+  const formTipoEnvase = document.querySelector('#modalAgregarTipoEnvase form');
+  if (formTipoEnvase) {
+    formTipoEnvase.addEventListener('submit', async function (e) {
+      if (!modalPadreTemporal) return;
+      e.preventDefault();
+
+      const btnSubmit = formTipoEnvase.querySelector('button[type="submit"]');
+      if (btnSubmit) btnSubmit.disabled = true;
+
+      try {
+        const resp = await fetch(formTipoEnvase.action, {
+          method: 'POST',
+          body: new FormData(formTipoEnvase),
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.ok) {
+          const select = document.getElementById('insumoTipoEnvase');
+          if (select) {
+            let opcion = Array.from(select.options).find(
+              o => o.value.trim().toLowerCase() === data.nombre.trim().toLowerCase()
+            );
+            if (!opcion) {
+              opcion = new Option(data.nombre, data.nombre);
+              opcion.dataset.id = data.id;
+              select.add(opcion);
+            } else {
+              opcion.dataset.id = data.id;
+            }
+            select.value = opcion.value;
+            actualizarEstadoBtnEliminarEnvase('insumoTipoEnvase', 'btnEliminarTipoEnvase');
+          }
+          cerrarModalAgregarTipoEnvase();
+          actualizarResumenInsumo(document.getElementById('formAgregarInsumo'));
+
+          if (typeof mostrarToast === 'function') {
+            const msg = data.creado === false
+              ? `Tipo de envase "${data.nombre}" seleccionado.`
+              : `Tipo de envase "${data.nombre}" creado y seleccionado.`;
+            mostrarToast(msg, 'success');
+          }
+        } else {
+          const errorMsg = data.error || 'No se pudo crear el tipo de envase.';
+          if (typeof mostrarToast === 'function') mostrarToast(errorMsg, 'error');
+        }
+      } catch (err) {
+        console.error('Error al crear tipo de envase:', err);
+        if (typeof mostrarToast === 'function') {
+          mostrarToast('Error de conexión al guardar el tipo de envase.', 'error');
+        }
+      } finally {
+        if (btnSubmit) btnSubmit.disabled = false;
+      }
+    });
+  }
 });
 
 // ==========================================
@@ -765,7 +905,7 @@ function _insertarProveedorEnTabla(data) {
       ${data.direccion ? `<small style="display: block; color: var(--texto-suave); font-weight: normal; margin-top: 2px;">${_escapeHtml(data.direccion)}</small>` : ''}
     </td>
     <td class="crud-col-centro">
-      <span class="crud-badge-cat">${_escapeHtml(data.tipo_proveedor_label || 'General / Varios')}</span>
+      <span class="crud-badge-cat">${_escapeHtml(data.tipo_proveedor || 'General / Varios')}</span>
     </td>
     <td class="crud-col-centro">${_escapeHtml(emailTabla)}</td>
     <td class="crud-col-centro">${_escapeHtml(telTabla)}</td>
@@ -1062,10 +1202,11 @@ function cargarDisponibilidad(contenedorElemento, datosDisponibilidad) {
 }
 
 // ==========================================
-// 6. CIERRE ACCESIBLE CON ESCAPE Y CLIC EN FONDO
+// 6. CIERRE ACCESIBLE Y BLOQUEO DE VISTA PRINCIPAL
 // ==========================================
 const CIERRES_MODALES_CRUD = {
   modalAgregarCategoria: cerrarModalAgregarCategoria,
+  modalAgregarTipoEnvase: cerrarModalAgregarTipoEnvase,
   modalAgregarProveedor: cerrarModalAgregarProveedor,
   modalAgregarInsumo: cerrarModalAgregarInsumo,
   modalEditarInsumo: cerrarModalEditarInsumo,
@@ -1091,6 +1232,41 @@ function _obtenerModalCrudAbierto() {
   return null;
 }
 
+function _sincronizarBloqueoFondoCrud() {
+  const dialogConfirm = document.getElementById('modalConfirmacionCrud');
+  const hayModalAbierto = Boolean(_obtenerModalCrudAbierto() || (dialogConfirm && dialogConfirm.open));
+  const vistaPrincipal = document.getElementById('crud-productos');
+
+  document.documentElement.style.overflow = hayModalAbierto ? 'hidden' : '';
+  document.body.style.overflow = hayModalAbierto ? 'hidden' : '';
+
+  if (vistaPrincipal) {
+    vistaPrincipal.style.pointerEvents = hayModalAbierto ? 'none' : '';
+    vistaPrincipal.inert = hayModalAbierto;
+    if (hayModalAbierto) {
+      vistaPrincipal.setAttribute('aria-hidden', 'true');
+    } else {
+      vistaPrincipal.removeAttribute('aria-hidden');
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const observer = new MutationObserver(_sincronizarBloqueoFondoCrud);
+  Object.keys(CIERRES_MODALES_CRUD).forEach(function (id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+      observer.observe(modal, { attributes: true, attributeFilter: ['style'] });
+    }
+  });
+
+  const dialogConfirm = document.getElementById('modalConfirmacionCrud');
+  if (dialogConfirm) {
+    observer.observe(dialogConfirm, { attributes: true, attributeFilter: ['open'] });
+    dialogConfirm.addEventListener('close', _sincronizarBloqueoFondoCrud);
+  }
+});
+
 document.addEventListener('keydown', function (e) {
   if (e.key !== 'Escape') return;
   const dialogConfirm = document.getElementById('modalConfirmacionCrud');
@@ -1103,13 +1279,30 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
+let _pulsoEnBackdropCrud = null;
+
+document.addEventListener('mousedown', function (e) {
+  _pulsoEnBackdropCrud = (e.target.classList && e.target.classList.contains('crud-modal-backdrop'))
+    ? e.target
+    : null;
+});
+
 document.addEventListener('click', function (e) {
   if (!e.target.classList || !e.target.classList.contains('crud-modal-backdrop')) return;
+  if (_pulsoEnBackdropCrud !== e.target) return;
+  _pulsoEnBackdropCrud = null;
+
   const cerrarFn = CIERRES_MODALES_CRUD[e.target.id];
   if (typeof cerrarFn === 'function') {
     cerrarFn();
   }
 });
+
+document.addEventListener('wheel', function (e) {
+  if (e.target.classList && e.target.classList.contains('crud-modal-backdrop')) {
+    e.preventDefault();
+  }
+}, { passive: false });
 
 // ==========================================
 // 7. VALIDACIÓN DE PRECIOS MAYORES A $ 0
@@ -1143,4 +1336,16 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     });
   });
+});
+
+// BLOQUEO DINAMICO DE DECIMALES SEGUN UNIDAD DE MEDIDA (Un o Kg)
+
+document.addEventListener('keydown', function (e) {
+  const input = e.target;
+  if (!input || !input.matches || !input.matches('[data-insumo-contenido]')) return;
+  const form = input.closest('.insumo-form');
+  const unidad = form?.querySelector('[data-insumo-unidad]')?.value;
+  if (unidad === 'un.' && ['.', ','].includes(e.key)) {
+    e.preventDefault();
+  }
 });

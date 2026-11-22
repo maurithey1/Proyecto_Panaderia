@@ -18,7 +18,7 @@ import re
 from datetime import datetime
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
@@ -243,47 +243,48 @@ def cerrar_caja(cajero, monto_contado_texto, observacion=''):
     if len(observacion) > LARGO_MAXIMO_OBSERVACION:
         raise CierreInvalido(f'La observación puede tener hasta {LARGO_MAXIMO_OBSERVACION} caracteres.')
 
-    with transaction.atomic():
-        # Bloquear la caja del cajero
-        caja = (
-            Caja.objects.select_for_update()
-            .filter(cajero=cajero, estado=ABIERTA)
-            .order_by('-fecha_apertura')
-            .first()
-        )
-        if caja is None:
-            raise CierreInvalido('No tienes ninguna caja abierta para cerrar.')
-
-        ventas = resumen_ventas_turno(caja)
-        monto_esperado = ventas['monto_esperado']
-        diferencia = monto_contado - monto_esperado
-
-        if diferencia == 0:
-            estado_cuadratura = 'Cuadrada'
-        elif diferencia > 0:
-            estado_cuadratura = 'Sobrante'
-        else:
-            estado_cuadratura = 'Faltante'
-
-        if diferencia != 0 and not observacion:
-            tipo_dif = 'un sobrante' if diferencia > 0 else 'un faltante'
-            raise CierreInvalido(
-                f'La caja no cuadra ({tipo_dif} de {clp(abs(diferencia))}): '
-                'escribe una observación que explique la diferencia antes de cerrar.'
+    try:
+        with transaction.atomic():
+            caja = (
+                Caja.objects.select_for_update()
+                .filter(cajero=cajero, estado=ABIERTA)
+                .order_by('-fecha_apertura')
+                .first()
             )
+            if caja is None:
+                raise CierreInvalido('No tienes ninguna caja abierta para cerrar.')
 
-        caja.estado = CERRADA
-        caja.fecha_cierre = timezone.now()
-        caja.save(update_fields=['estado', 'fecha_cierre'])
+            ventas = resumen_ventas_turno(caja)
+            monto_esperado = ventas['monto_esperado']
+            diferencia = monto_contado - monto_esperado
 
-        cierre = CierreCaja.objects.create(
-            caja=caja,
-            monto_inicial=caja.monto_inicial,
-            monto_ventas_sistema=ventas['ventas_efectivo'],
-            monto_contado=monto_contado,
-            diferencia=diferencia,
-            estado_cuadratura=estado_cuadratura,
-            observacion=observacion,
-        )
-        return cierre
+            if diferencia == 0:
+                estado_cuadratura = 'Cuadrada'
+            elif diferencia > 0:
+                estado_cuadratura = 'Sobrante'
+            else:
+                estado_cuadratura = 'Faltante'
+
+            if diferencia != 0 and not observacion:
+                tipo_dif = 'un sobrante' if diferencia > 0 else 'un faltante'
+                raise CierreInvalido(
+                    f'La caja no cuadra ({tipo_dif} de {clp(abs(diferencia))}): '
+                    'escribe una observación que explique la diferencia antes de cerrar.'
+                )
+
+            caja.estado = CERRADA
+            caja.fecha_cierre = timezone.now()
+            caja.save(update_fields=['estado', 'fecha_cierre'])
+
+            return CierreCaja.objects.create(
+                caja=caja,
+                monto_inicial=caja.monto_inicial,
+                monto_ventas_sistema=ventas['ventas_efectivo'],
+                monto_contado=monto_contado,
+                diferencia=diferencia,
+                estado_cuadratura=estado_cuadratura,
+                observacion=observacion,
+            )
+    except IntegrityError:
+        raise CierreInvalido('Esta caja ya fue cerrada anteriormente.')
 
