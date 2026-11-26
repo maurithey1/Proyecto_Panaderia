@@ -436,7 +436,15 @@ erDiagram
     core_pedido ||--o{ core_detallepedido : "desglosa"
     core_producto ||--o{ core_detallepedido : "incluido_en"
     core_pedido ||--|| core_pago : "se_cancela_con"
+```
 
+---
+
+## 2. MER — Modelo Físico Completo (Base de Datos Real)
+
+Este diagrama representa la totalidad de las 31 tablas creadas en la base de datos `panaderia_db` de MySQL, incluyendo autenticación, registros de auditoría y sesiones del framework Django.
+
+```mermaid
 erDiagram
 
     %% ====================================================
@@ -940,3 +948,4 @@ erDiagram
     django_content_type ||--o{ auth_permission : "define_modelo_de_permiso"
     django_content_type |o--o{ django_admin_log : "registra_modelo_modificado"
     core_usuario ||--o{ django_admin_log : "registra_accion_admin"
+```
